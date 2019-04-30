@@ -269,7 +269,7 @@
 
     (def echeck? (atom true))
 
-    (defrecord Env [at links members])
+    (defrecord Env [at members])
 
     (do :base
 
@@ -277,7 +277,7 @@
           [x] (when (instance? Env x) x))
 
         (def env0
-          (Env. root-path {} {}))
+          (Env. root-path {}))
 
         (defmacro env!
           [x]
@@ -295,7 +295,7 @@
           (clojure.pprint/simple-dispatch
            (condp = @env-print-mode
                    :mini 'E
-                   :members (into {} (dissoc e :meta))
+                   :members (into {} e)
                    :verbose (into {} e)))))
 
     (do :defne
@@ -352,25 +352,7 @@
         (defne env-relfind [e p]
           (env-absfind e (path (loc e) p)))
 
-        #_(nth-parent-path (path 'a.b.c:val) 0)
-
         (defne linked-path [e p]
-          (cs [? (apath? p) ;_ (pp 'linked-path? ?)
-               ;[pref & _xs] (.xs p) _ (pp 'linked-path-pref pref)
-               xs (.xs p)
-               pref (car xs)
-               _xs (rest xs)
-               target (get-in (.links e) [(ppath (loc e)) pref])]
-              (path (path* target _xs) (.mkey p))))
-
-        
-        #_(linked-path e1 (path 'ab))
-
-        (defne env-linkedfind [e p]
-          (cs [p' (linked-path e p)]
-              (env-absfind e p')))
-
-        (defne linked-path2 [e p]
           (cs [? (apath? p)
                xs (.xs p)
                pref (car xs)
@@ -380,8 +362,8 @@
 
         #_(linked-path2 e1' (path 'ab))
 
-        (defne env-linkedfind2 [e p]
-          (cs [p' (linked-path2 e p)]
+        (defne env-linkedfind [e p]
+          (cs [p' (linked-path e p)]
               (env-absfind e p')))
 
         (defne env-find [e p]
@@ -415,23 +397,9 @@
         (_ :tries
 
            (def e1
-             (Env.
-              root-path
-              {root-path {'ab (path 'a.b)}
-               (path 'li) {'abc (path 'a.b)}}
-              '{a {:val :a
-                   b {:val :ab
-                      c {:val :abc
-                         :sub :abc_sub}
-                      d {:val :abd}}}
-                b {b1 {:val :b1}
-                   b2 {:val :b2}
-                   a {:val :ba}}}))
-
-           (def e1'
               (Env.
                root-path
-               {}
+               #_{}
                '{:links {ab a.b}
                  a {:val :a
                     b {:val :ab
@@ -464,8 +432,6 @@
              (not (bubfind (cd e1 'foo) (path '...a.b)))
              )
 
-
-            
             (env-linkedfind e1 (path 'ab))
             (qualsym e1 (path 'ab.c))
             (qualsym (cd e1 'li) (path 'abc.c))
@@ -677,10 +643,6 @@
               (env-add-member e p ::unbound)
               e)))
 
-        (defn env-add-links [e p m]
-          (update-in e [:links p]
-                     merge ($vals m path)))
-
         (defn env-detailed-steps [e expr]
           (let [at (loc e)
                 qualified (qualify e expr)
@@ -725,7 +687,7 @@
           ([x]
            (env-upd_path-map x root-path))
           ([x from]
-           (if (and (map? x) (ppath? from))
+           (if (and (holymap? x) (ppath? from))
              (mapcat (fn [[k v]] (env-upd_path-map v (path from k))) x)
              [[from x]])))
 
@@ -762,7 +724,7 @@
                            [:def (epath p) x])]
                         (vec? x)
                         (env-upds (mv e p) x)
-                        [[_ updf] (env-upd_upd-expr? e x)]
+                        [[_ updf] (env-upd_upd-expr? (mv e p) x)]
                         (cs (= ::unbound updf)
                             (error "upd ::unbound error")
                             (env-upds (mv e p) (updf (mv e p) (cdr x))))
@@ -787,7 +749,7 @@
                    (fn [e]
                      (try
                        (condp = verb
-                         :link (env-add-links e at x)
+                         :link (env-add-member e (path at :links) x)
                          :declare (env-declare-member e at)
                          :fx (do (eval (mv e at) x) e)
                          :def (env-member-add-compiled e at x))
@@ -795,7 +757,9 @@
                          (error "\nenv-upd error compiling:\n" (pretty-str [verb at x]) "\n" e))))))
           @E)
 
-        (do :env-upd2
+        (_ :env-upd2
+
+           "an atempt to simplify upd mecanism. wip..."
 
             (defn env-upd2_prepend-declarations [u]
               #_(pp 'will-prep-decl u)
@@ -1032,6 +996,8 @@
         (E+ a.boo [{:doc "ab doc"} (fn [] 'b) c 1]
             :links {boo a.boo})
 
+        (into {} @E)
+
         (!! a.boo:doc)
         (!! boo:doc)
 
@@ -1238,9 +1204,12 @@
              build-upd
              (fn
                ([xs]
-                {:links
-                 (zipmap ($ xs (comp path->sym path-head path))
-                         xs)})
+                (let [ps ($ xs path)]
+                  (assert (c/every? ppath? ps)
+                          "cannot only import primary paths")
+                  {:links
+                   (zipmap ($ ps (comp path->sym path-head))
+                           ps)}))
 
                ([pref xs]
                 (build-upd ($ xs (p path pref))))
@@ -1541,7 +1510,7 @@
                                 :b [a b c #{foo a ...}]})))))
 
     (E+ joining
-        {:doc
+        [:doc
          "a bunch of function for handling monoidish things"
 
          pure
@@ -1568,7 +1537,7 @@
 
          sip
          [:doc
-          "add an element to a collection, similar to core.conj"
+          "add elements to a collection, similar to core.conj"
 
           (generic.reduced
            [a b]
@@ -1610,7 +1579,7 @@
          +
          [:doc
           "join two things together
-               similar to concat, merge..."
+           similar to concat, merge..."
 
           (generic.reduced
            [a b]
@@ -1621,45 +1590,23 @@
            :key (c/keyword (c/str (c/name a) (c/name b)))
            :any (c/reduce sip a (iter b)))
 
-          (check.thunk []
-                       (eq (+ {:a 1} {:b 2})
-                           {:a 1 :b 2})
-                       (eq (+ '(1 2) [3 4])
-                           '(1 2 3 4))
-                       (eq (+ [1 2] '(3 4) [5 6] '(7 8))
-                           [1 2 3 4 5 6 7 8])
-                       (eq (+ #{1 2} [3 4] '(5 6))
-                           #{1 2 3 4 5 6})
-                       (eq (+ :foo :bar)
-                           :foobar)
-                       (eq (+ 'foo :bar "baz")
-                           'foo:barbaz)
-                       (eq (+ "foo" 'bar 'baz)
-                           "foobarbaz")
-                       (eq ((+ inc inc inc) 0)
-                           3))]
-
-         wrap
-         [:doc
-          "use its first argument to determine which type of structure to build
-               and build it using given extra args,
-               'wrap uses sip
-               'wrap+ uses +
-               'wrap* uses sip applied (iterable last argument)
-               'wrap+* uses + applied (iterable last argument)"
-
-          wrap (fn& [x] (sip (pure x) ...))
-          wrap+ (fn& [x] (+ (pure x) ...))
-          wrap* (p apl wrap)
-          wrap+* (p apl wrap+)
-
-          (check.thunk
-           (eq (wrap [1 2 3] 4 5 6)
-               (wrap* [1 2 3] 4 '(5 6))
-               [4 5 6])
-           (eq (wrap+ '(pouet pouet) '(1 2 3) #{4} [5 6])
-               (wrap+* '(pouet pouet) '(1 2 3) [#{4} [5 6]])
-               '(1 2 3 4 5 6)))]
+          (check.thunk 
+           (eq (+ {:a 1} {:b 2})
+               {:a 1 :b 2})
+           (eq (+ '(1 2) [3 4])
+               '(1 2 3 4))
+           (eq (+ [1 2] '(3 4) [5 6] '(7 8))
+               [1 2 3 4 5 6 7 8])
+           (eq (+ #{1 2} [3 4] '(5 6))
+               #{1 2 3 4 5 6})
+           (eq (+ :foo :bar)
+               :foobar)
+           (eq (+ 'foo :bar "baz")
+               'foo:barbaz)
+           (eq (+ "foo" 'bar 'baz)
+               "foobarbaz")
+           (eq ((+ inc inc inc) 0)
+               3))]
 
          vals
          [:doc
@@ -1687,7 +1634,7 @@
                    :coll (c/range (c/count x))
                    :any (error "idxs: no impl for " x))
 
-          (check.thunk 
+          (check.thunk
            (eq '(0 1 2)
                (idxs '(1 2 3))
                (idxs [1 2 3]))
@@ -1716,14 +1663,131 @@
            (pure? {})
            (not (pure? [1 2]))
            (not (pure? {:a 1}))
-           (not (pure? "iop")))]}
+           (not (pure? "iop")))]
 
-        (move-members.to-root
+         wrap
+         [:doc
+          "use its first argument to determine which type of structure to build
+               and build it using given extra args,
+               'wrap uses sip
+               'wrap+ uses +
+               'wrap* uses sip applied (iterable last argument)
+               'wrap+* uses + applied (iterable last argument)"
+
+          wrap (fn& [x] (sip (pure x) ...))
+          wrap+ (fn& [x] (+ (pure x) ...))
+          wrap* (p apl wrap)
+          wrap+* (p apl wrap+)
+
+          derive
+          {:doc
+           "an update to derive wrap operations from your type
+            given a name and and a pure value returns a sequential update
+            that defines the four wrap variants for your type"
+
+           make-upd
+           (fn
+             ([[n e]]
+              (let [n+ (+ n '+:val)
+                    n* (+ n '*:val)
+                    n+* (+ n '+*:val)
+                    n (+ n :val)]
+                '[~n (fn& [] (sip ~e ...))
+                  ~n+ (fn& [] (+ ~e ...))
+                  ~n* (fn& [x] (apl ~n x ...))
+                  ~n+* (fn& [x] (apl ~n+ x ...))]))
+             ([x & xs]
+              (catv ($ (cons x xs) make-upd))))
+
+           :upd
+           (fn [_ xs]
+             (apl make-upd xs))}
+
+          (check.thunk
+           (eq (wrap [1 2 3] 4 5 6)
+               (wrap* [1 2 3] 4 '(5 6))
+               [4 5 6])
+           (eq (wrap+ '(pouet pouet) '(1 2 3) #{4} [5 6])
+               (wrap+* '(pouet pouet) '(1 2 3) [#{4} [5 6]])
+               '(1 2 3 4 5 6)))]
+
+         ]
+
+        ;; i'd liked to put this in the previous block
+        ;; but the wrap.derive update would not be available...
+
+        joining.builtins
+        [:doc
+         "wrap declinations for builtin holy types"
+
+         (wrap.derive
+          [lst ()]
+          [vec []]
+          [set #{}]
+          [map {}])
+
+         ;; overides for perf
+         vec c/vector
+         lst c/list
+         set c/hash-set
+
+         ;; words
+         str c/str
+         str* (fn& [x] (apl c/str x ...))
+         key (fn& [] (+ (c/keyword "") ...))
+         key* (fn& [x] (apl key x ...))
+         sym (fn& [x] (+ (c/symbol (c/name x)) ...))
+         sym* (fn& [x] (apl sym x ...))
+
+         (check.thunk
+
+          (eq (vec 1 2 3)
+              (vec* 1 [2 3])
+              (vec+ '(1) [2 3])
+              (vec+* '(1) [[2] #{3}])
+              [1 2 3])
+
+          (eq (lst 1 2 3)
+              (lst* 1 [2 3])
+              (lst+ '(1) [2 3])
+              (lst+* '(1) [[2] #{3}])
+              '(1 2 3))
+
+          (eq (set 1 2 3)
+              (set* 1 [2 3])
+              (set+ '(1) [2 3])
+              (set+* '(1) [[2] #{3}])
+              #{1 2 3})
+
+          (eq (map [:a 1] [:b 2] [:c 3])
+              (map* [:a 1] {:b 2 :c 3})
+              (map* [:a 1] #{[:b 2] [:c 3]})
+              (map+ {:a 1} #{[:b 2]} {:c 3})
+              {:a 1 :b 2 :c 3})
+
+          (eq (key "iop" 'foo :bar)
+              :iopfoobar)
+          (eq (sym "iop" 'foo :bar)
+              'iopfoo:bar)
+          (eq (str "iop" 'foo :bar)
+              "iopfoo:bar")
+          )
+         ]
+
+        (import
+
          joining
          [pure pure? sip iter + vals idxs
-          wrap.wrap wrap.wrap+ wrap.wrap* wrap.wrap+*])
+          wrap.wrap wrap.wrap+ wrap.wrap* wrap.wrap+*]
 
-        )
+         joining.builtins
+         [vec vec+ vec* vec+*
+          lst lst+ lst* lst+*
+          set set+ set* set+*
+          map map+ map* map+*
+          str str* key key* sym sym*]))
+
+    #_(get-in @E [:members 'joining 'builtins])
 
     #_(E+ joining
         {:doc
@@ -2108,7 +2172,7 @@
 
         )
 
-    (do :wrappables
+    #_(do :wrappables
 
         (E+
 
@@ -2191,7 +2255,79 @@
 
         )
 
-    (do :iterables
+    (E+ iterables.iterg
+        [:doc
+         "an update to define generic functions for iterables
+          hiding the iter/wrap boilerplate"
+         :upd
+         (fn [e [[a1 :as argv] expr]]
+           '(generic
+             ~argv
+             :seq
+             ~expr
+             (let [a ~a1
+                   ~a1 (iter ~a1)]
+               (wrap* a ~expr))))]
+
+        iterables
+        [:doc
+         "some functions to manipulate iterable structures"
+
+         car (generic [x] (c/first (iter x)))
+         last (generic [x] (c/last (iter x)))
+
+         take (iterg [x n] (c/take n x))
+         drop (iterg [x n] (c/drop n x))
+         takend (iterg [x n] (c/take-last n x))
+         dropend (iterg [x n] (c/drop-last n x))
+         butlast (iterg [x] (c/butlast x))
+         cdr (iterg [x] (c/rest x))
+         rev (iterg [x] (c/reverse x))
+
+         section
+         (iterg [x from to]
+                (-> x
+                    (take to)
+                    (drop from)))
+
+         splat
+         (fn [x n]
+           [(take x n) (drop x n)])
+
+         ;; uncons
+         uncs
+         (fn [x]
+           [(car x) (cdr x)])
+
+         ;; reversed uncons
+         runcs
+         (fn [x]
+           [(butlast x) (last x)])
+
+         cons
+         (fn
+           "like core.list*
+           but preserve collection type"
+           [& xs]
+           (c/let [[cars cdr] (runcs xs)]
+             (+ (pure cdr) cars cdr)))
+
+         cons?
+         (fn [x]
+           (when (and (coll? x)
+                      (not (pure? x)))
+             x))]
+
+        (import
+         iterables
+         [car cdr take drop rev
+          last butlast takend dropend
+          uncs runcs cons cons?
+          section splat])
+
+        )
+
+    #_(do :iterables
 
         (E+
 
@@ -2789,10 +2925,10 @@
                 (+ {:bs bs :expr body}
                    (select-keys opts [:strict :unified :short]))]
 
-               (cxp e
-                    (lst 'primitives.lambda (sym name) binding-form
-                         (bindings.let.compile e let-opts)))
-               ))
+             (cxp e
+                  (lst 'primitives.lambda (sym name) binding-form
+                       (bindings.let.compile e let-opts)))
+             ))
 
          compiler
          (fn [& flags]
@@ -3116,7 +3252,7 @@
         (E+
 
          zip
-         (f                             ;core/map(ish)
+         (f                            ;core/map(ish)
           [f . xs]
           (* c/map f ($ xs vals)))
 
@@ -3143,13 +3279,13 @@
           (* + #_(pure x) ($ x f)))
 
          zip+
-         (f                             ;core/mapcat(ish)
+         (f                            ;core/mapcat(ish)
           [f . xs]
           (c/if-let [ret (c/seq (* zip f xs))]
             (* + ret) ()))
 
          scan
-         (f                             ;similar to core/partition
+         (f                            ;similar to core/partition
           [x size step]
           (c/let [[pre post] (splat x size)]
             (if (cons? post)
@@ -3458,17 +3594,17 @@
           )
 
          ?c>
-         (f                             ;"a scheme-cond(ish) function"
+         (f                            ;"a scheme-cond(ish) function"
           [x . bs]
           (* ?< x ($ bs (* ?>_))))
 
          ?c
-         (f                             ;"a clojure-cond(ish) function"
+         (f                            ;"a clojure-cond(ish) function"
           [x . cs]
           (* ?c> x (chunk cs 2)))
 
          ?><
-         (f                  ;"at least one guard of each branch have to succeed
+         (f                 ;"at least one guard of each branch have to succeed
                                         ; last branch's first success returned"
           [x . bs]
           (* ?> x ($ bs (* ?<_))))
@@ -3489,8 +3625,8 @@
 
           (eq 10
               (?c 10
-                  num? (lt_ 3)  ;; if the second pred fail, we go to next couple
-                  num? (gt_ 7)  ;; this line succeed
+                  num? (lt_ 3) ;; if the second pred fail, we go to next couple
+                  num? (gt_ 7) ;; this line succeed
                   ))
 
           ;; (non function values act as constant functions)
@@ -3706,7 +3842,7 @@
                          #_(!! (*' add 1 2 3 [4 5 6]))
                          (!! (* add 1 2 3 [4 5 6])))
 
-          
+           
 
            (qbench (c/vec (range 10))
                    (!! (vec+ (range 10))))
@@ -3746,7 +3882,8 @@
 
           (_ :rt-mac-call
              (!! (let' [a 1] (c/+ a a)))
-             (!! (let':mac @E '([a 1] (c/+ a a))))))))
+             (!! (let':mac @E '([a 1] (c/+ a a)))))))
+    )
 
 (_ :benchs
 
@@ -3807,7 +3944,7 @@
 
    )
 
-(do :incub
+(_ :incub
 
     (do :partial-macro
 
