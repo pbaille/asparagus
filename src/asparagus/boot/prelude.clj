@@ -442,16 +442,15 @@
 
     (defn parse-fn [[fst & nxt :as all]]
 
-      (let [default-name (gensym "fn_")
-            [name fst & nxt]
+      (let [[name fst & nxt]
             (if (symbol? fst)
               (cons fst nxt)
-              (concat [default-name fst] nxt))
+              (concat [nil fst] nxt))
 
             [doc fst & nxt]
             (if (string? fst)
               (cons fst nxt)
-              (concat ["" fst] nxt))
+              (concat [nil fst] nxt))
 
             [opts fst & nxt]
             (if (map? fst)
@@ -467,13 +466,10 @@
                        [args (vec body)])
                      (cons fst nxt))))
 
-            name-key
-            (if (= default-name name)
-              :default-name
-              :name)]
+            ]
 
         (assoc opts
-               name-key name
+               :name name
                :doc doc
                :impls impls))))
 

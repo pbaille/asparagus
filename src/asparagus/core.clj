@@ -24,7 +24,9 @@
      lst lst* catv cat*
      mrg deep-merge flagmap
      ;; symbols
-     gensyms ns-resolve-sym shadows]]))
+     gensyms ns-resolve-sym shadows
+     ;;misc
+     call*]]))
 
 ;; env --------------
 
@@ -45,6 +47,10 @@
           (str (cs [l (.rel p)] (str* (repeat (inc l) '.)))
                (clojure.string/join "." (.xs p))
                (cs [mk (.mkey p)] (str ":" (name mk)))))
+
+        (defn path->sym
+          [p]
+          (symbol (path->str p)))
 
         (defmethod clojure.pprint/simple-dispatch
           Path [x]
@@ -192,6 +198,11 @@
         (defn path-segments [p]
           (catv (.xs p)
                 (cs [mk (.mkey p)] [mk])))
+
+        (defn path-head [p]
+          (let [mk (.mkey p)
+                ps (path-segments (ppath p))]
+            (path (last ps) mk)))
 
         (defn bubbling-path
           [p]
@@ -341,16 +352,36 @@
         (defne env-relfind [e p]
           (env-absfind e (path (loc e) p)))
 
-        (nth-parent-path (path 'a.b.c:val) 0)
+        #_(nth-parent-path (path 'a.b.c:val) 0)
 
         (defne linked-path [e p]
-          (cs [? (apath? p)
-               [pref & _xs] (.xs p)
+          (cs [? (apath? p) ;_ (pp 'linked-path? ?)
+               ;[pref & _xs] (.xs p) _ (pp 'linked-path-pref pref)
+               xs (.xs p)
+               pref (car xs)
+               _xs (rest xs)
                target (get-in (.links e) [(ppath (loc e)) pref])]
               (path (path* target _xs) (.mkey p))))
 
+        
+        #_(linked-path e1 (path 'ab))
+
         (defne env-linkedfind [e p]
           (cs [p' (linked-path e p)]
+              (env-absfind e p')))
+
+        (defne linked-path2 [e p]
+          (cs [? (apath? p)
+               xs (.xs p)
+               pref (car xs)
+               _xs (rest xs)
+               target (get (env-get e (path (loc e) :links)) pref)]
+              (path (path* target _xs) (.mkey p))))
+
+        #_(linked-path2 e1' (path 'ab))
+
+        (defne env-linkedfind2 [e p]
+          (cs [p' (linked-path2 e p)]
               (env-absfind e p')))
 
         (defne env-find [e p]
@@ -383,11 +414,26 @@
 
         (_ :tries
 
-            (def e1
+           (def e1
+             (Env.
+              root-path
+              {root-path {'ab (path 'a.b)}
+               (path 'li) {'abc (path 'a.b)}}
+              '{a {:val :a
+                   b {:val :ab
+                      c {:val :abc
+                         :sub :abc_sub}
+                      d {:val :abd}}}
+                b {b1 {:val :b1}
+                   b2 {:val :b2}
+                   a {:val :ba}}}))
+
+           (def e1'
               (Env.
                root-path
-               {root-path {'ab (path 'a.b)}}
-               '{a {:val :a
+               {}
+               '{:links {ab a.b}
+                 a {:val :a
                     b {:val :ab
                        c {:val :abc
                           :sub :abc_sub}
@@ -419,7 +465,10 @@
              )
 
 
+            
+            (env-linkedfind e1 (path 'ab))
             (qualsym e1 (path 'ab.c))
+            (qualsym (cd e1 'li) (path 'abc.c))
             (qualsym (cd e1 'foo) (path 'a))
             (qualsym (cd e1 'foo) (path '.a))
             (qualsym (cd e1 'foo) (path 'ab.c))
@@ -596,7 +645,6 @@
           (cons :meta (path-segments p)))
 
         (defn env-add-member [e p x]
-          #_(assoc-in e (env-member-path p) x)
           (update-in e (env-member-path p) deep-merge x))
 
         (defn env-merge-members [e xs]
@@ -663,9 +711,19 @@
               (map? x1) (cons x1 (env-upd_split (rest xs)))
               (cons {root-path x1} (env-upd_split (rest xs)))))
 
+        #_(defn env-upd_deep-split [[x1 x2 & rs :as xs]]
+          (cs (not (seq xs)) []
+              [p (path x1)]
+              (cs (mpath? p)
+                  (cons {x1 x2} (env-upd_deep-split rs))
+                  (concat ($ (env-upd_deep-split [x2]) #(do {x1 %}))))
+              (map? x1)
+              (cons x1 (env-upd_deep-split (rest xs)))
+              (cons {root-path x1} (env-upd_deep-split (rest xs)))))
+
         (defn env-upd_path-map
           ([x]
-           (into {} (env-upd_path-map x root-path)))
+           (env-upd_path-map x root-path))
           ([x from]
            (if (and (map? x) (ppath? from))
              (mapcat (fn [[k v]] (env-upd_path-map v (path from k))) x)
@@ -683,7 +741,7 @@
           #_(pp 'will-sort-u u)
           (let [filtype
                 (fn [t] (shrink+ u #(= t (car %))))]
-            (doall (mapcat filtype [:link :declare :meta :fx :def]))))
+            (doall (mapcat filtype [:link :declare :fx :def]))))
 
         (defn env-upd_upd-expr? [e x]
           (cs [? (seq? x)
@@ -697,16 +755,17 @@
             (->> (env-upd_path-map m)
                  (mapcat
                   (fn [[p x]]
-                    (cs [[_ updf] (env-upd_upd-expr? e x)]
-                        (env-upds (mv e p) (updf (mv e p) (cdr x)))
-                        (mpath? p)
-                        (cs (mkey= p :links)
-                            [[:link (epath (ppath p)) x]]
-                            (mkey= p :fx)
-                            [[:fx (epath (ppath p)) x]]
-                            (mkey= p :meta)
-                            [[:meta (epath p) x]]
-                            [[:def (epath p) x]])
+                    (cs (mpath? p)
+                        [(condp = (.mkey p)
+                           :links [:link (epath (ppath p)) x]
+                           :fx [:fx (epath (ppath p)) x]
+                           [:def (epath p) x])]
+                        (vec? x)
+                        (env-upds (mv e p) x)
+                        [[_ updf] (env-upd_upd-expr? e x)]
+                        (cs (= ::unbound updf)
+                            (error "upd ::unbound error")
+                            (env-upds (mv e p) (updf (mv e p) (cdr x))))
                         [[:def (epath p :val) x]])))
                  doall
                  env-upd_prepend-declarations
@@ -731,27 +790,74 @@
                          :link (env-add-links e at x)
                          :declare (env-declare-member e at)
                          :fx (do (eval (mv e at) x) e)
-                         :def (env-member-add-compiled e at x)
-                         :meta (env-merge-metas e at x))
+                         :def (env-member-add-compiled e at x))
                        (catch Exception e
                          (error "\nenv-upd error compiling:\n" (pretty-str [verb at x]) "\n" e))))))
-          @E))
+          @E)
+
+        (do :env-upd2
+
+            (defn env-upd2_prepend-declarations [u]
+              #_(pp 'will-prep-decl u)
+              (let [ps
+                    (-> (shrink- u #(#{:fx :links} (.mkey (car %))))
+                        ($ #(vector (car %) ::unbound))
+                        (shrink- (set u)))]
+                (doall (concat ps u))))
+
+            (defn env-upd2_sort [u]
+              #_(pp 'will-sort-u u)
+              (let [links? #(mkey= (car %) :links)
+                    decl? #(= (second %) ::unbound)
+                    prio? #(or (decl? %) (links? %))]
+                (sort-by (complement prio?) u)))
+
+            (defn env-upd2_path-map
+              ([e x]
+               (env-upd2_path-map e x root-path))
+              ([e x from]
+               (pp x from)
+               (cs (ppath? from)
+                   (cp x
+                       holymap? 
+                       (env-upd2_sort
+                        (env-upd2_prepend-declarations
+                         (mapcat (fn [[k v]] (env-upd2_path-map e v (path from k))) x)))
+                       vec?
+                       (mapcat #(env-upd2_path-map e % from) (env-upd_split x))
+                       (p env-upd_upd-expr? (mv e from))
+                       (let [[_ updf] (env-upd_upd-expr? (mv e from) x)]
+                         (env-upd2_path-map e (updf (mv e from) (cdr x)) from))
+                       [[(path from :val) x]])
+                   [[from x]])))
+
+            (env-upd2_path-map
+             @E '[iop (generic [x] :vec 'veciop)
+                  a 1
+                  b [c 1 {d 3 b:op 56}]])))
 
     )
 
 (do :API
 
     (defmacro E+ [& xs]
-      (let [upds (env-upd_split xs)]
-        `(do ~@(map (fn [u]
-                      `(env-upd_exe @E (env-upds @E '~u)))
-                    upds))))
+      `(do ~@(map (fn [u]
+                    `(env-upd_exe @E (env-upds @E '~u)))
+                  (env-upd_split xs))))
 
     (defmacro !! [x]
       (res @E x))
 
     (defn env-inspect [s]
-      (get-in @E (env-meta-path (path s))))
+      (let [x (env-access @E (path s))]
+        (println "\ndata:")
+        (pp x)
+        (println "\nmeta:")
+        (pp (meta x))
+        (println)))
+
+    (defmacro ppenv [s]
+      `(env-inspect '~s))
 
     (_ :tries
 
@@ -862,6 +968,75 @@
 
 (do :reboot
 
+    (_ :upd-tests
+       ;; nested vec upd test
+        (E+ iop [v:val [1 2 3] i 1 o {p 1 q [:doc "iop" pop 42]}])
+        ;; vec at mpath are normal vec values
+        (!! iop.v)
+        ;; nested vec updates works
+        (!! iop.o.q:doc)
+
+        ;; dual mac and upd test
+        (E+ um
+            {:mac (fn [e xs] (exp e (lst* 'add xs)))
+             :upd (fn [e xs] {:um (lst* 'um xs)})
+             })
+
+        (E+ iop (um 1 2 3))
+        (!! iop:um)
+
+        ;; an upd does not occur at mpath
+        (E+ iop:val (um 1 2 3))
+        (!! iop)
+
+        (E+ cq:mac
+            (fn [e [x]]
+              #_(pp (env-simple-quotf e x))
+              (exp e (env-simple-quotf e (composite.compile-quote x)))))
+
+        #_(call* '(+ 1 2))
+        #_(!! (let [x 1] (cq (~x . xs))))
+        #_(!! (cxp @E '(cq (a ~. as))))
+
+        ;; define an upd and use it in the same block
+        (E+ 
+         yupd:upd (c/fn [_ xs] {'pouet (vec xs)})
+         baba (yupd 1 2 3)
+         )
+
+        (_ :error
+           (rEset!)
+           (env-upds
+            @E '[op [yupd:upd (fn [_ xs] {'pouet:val (vec xs)})
+                     baba (op.yupd 1 2 3)]])
+
+           (E+ op [yupd:upd (fn [_ xs] {'pouet (vec xs)})
+                   baba (op.yupd 1 2 3)]))
+
+        ;; for macros it works as intended
+        (E+ post [fix:mac (fn [_ xs] (reverse xs))
+                  n (post.fix 1 2 3 +)])
+        (!! post.n)
+
+        ;; lambda upd
+        (E+ l2 (fn lamb1
+                 "lamb1 doc"
+                 {:some :meta
+                  :demo (fn [] (eq 1 (l2 3 1)))}
+                 ([x] x)
+                 ([x y] (lamb1 y))))
+
+        (!! (l2:demo))
+
+        ;; links test
+        (E+ a.boo [{:doc "ab doc"} (fn [] 'b) c 1]
+            :links {boo a.boo})
+
+        (!! a.boo:doc)
+        (!! boo:doc)
+
+        )
+
     (do :base
 
         (rEset!)
@@ -925,13 +1100,19 @@
            (c/fn [e {:keys [name impls]}]
              (c/let [name (or name 'rec)
                      [e n] (hygienic.shadow e name)]
-               (list* `fn n
+               (lst* `fn n
                       ($ (seq impls)
                          (p ..expand-case e)))))
            :mac
            (c/fn [e form]
              (.expand
-              e (.parse form)))}
+              e (.parse form)))
+
+           :upd
+           (c/fn [e form]
+             (c/let [parsed (.parse form)]
+               (assoc (dissoc parsed :impls :name)
+                      :val (lst* 'primitives.lambda form))))}
 
           let
           {parse
@@ -953,6 +1134,8 @@
               e (.parse form)))}}
 
          fn:mac primitives.lambda:mac
+         fn:upd primitives.lambda:upd
+
          let:mac primitives.let:mac
 
          add c/+
@@ -960,9 +1143,16 @@
          div c//
          mul c/*
 
-         check:mac
-         (fn [e xs]
-           (exp e (lst* 'asserts xs)))
+         check
+         {:mac
+          (fn [e xs]
+            (exp e (lst* `p/asserts xs)))
+          thunk
+          {:mac
+           (fn [e xs]
+             (exp e (lst 'fn [] (lst* `p/asserts xs))))
+           :upd
+           (fn [e xs] {:check (lst* 'check.thunk xs)})}}
 
          upd
          {:upd
@@ -975,8 +1165,8 @@
 
          group:upd
          (fn [e [metas & xs]]
-           ($vals (apl hash-map xs)
-                  #(lst 'upd [metas %])))
+           ($ (env-upd_split xs)
+              ($vals #(vector metas %))))
 
          tagged:upd
          (fn [e [t & xs]]
@@ -986,11 +1176,215 @@
                (fn [x] [($ x (fn [[k _]] [(path k :tags) ts])) x])
                (env-upd_split xs)))))
 
+         ;; used in checking blocks
+         ;; defined in compare section
+         eq ::unbound
+
          )
 
         (init-top-forms check)
 
+        (E+ move-members
+            {:doc
+             "a couple of updates for moving (aliasing is more accurate) members from path to path
+              It is mainly used in order to being able to define related functions in a module
+              which is handy to put documentation tests exemples and helpers
+              then make them available elsewhere (most commonly top level)"
+
+             :usage
+             '[(move-members target-path [mod1.foo mod2.bar])
+               (move-members base-path target-path [m1 m2 m3])
+               "if target-path is nil, root-path is used"]
+
+             ;; helpers
+
+             path-head
+             (fn [p]
+               (let [mk (.mkey p)
+                     ps (path-segments (ppath p))]
+                 (path (last ps) mk)))
+
+             switch-prefix
+             (fn [pref p]
+               (let [head (path-head p)]
+                 (or (path pref head) head)))
+
+             build-upd
+             (fn ([target-path xs]
+                 (let [xs ($ xs path)
+                       ks ($ xs (p switch-prefix target-path))]
+                   (zipmap ($ ks path->sym)
+                           ($ xs path->sym))))
+               ([base-path target-path xs]
+                (build-upd target-path
+                           ($ xs (p path base-path)))))
+
+             ;; update
+
+             :upd
+             (fn [_ xs]
+               (apl build-upd xs))
+
+             to-root:upd
+             (fn [_ [a b]]
+               (if-not b
+                 (build-upd nil a)
+                 (build-upd a nil b)))})
+
+        (E+ import
+            {:doc
+             "link the given paths at current location"
+
+             build-upd
+             (fn
+               ([xs]
+                {:links
+                 (zipmap ($ xs (comp path->sym path-head path))
+                         xs)})
+
+               ([pref xs]
+                (build-upd ($ xs (p path pref))))
+
+               ([x y & ys]
+                (if (vec? x)
+                  (deep-merge (build-upd x) (apl build-upd y ys))
+                  (deep-merge (build-upd x y) (apl build-upd ys)))))
+
+             :upd
+             (fn [_ xs]
+               (apl build-upd xs))
+
+             :tries
+             '(do
+                (E+ foo.bar {a [:doc "foobar a" (fn [] 'foobara)]}
+                    foo.qux 42
+                    (import [foo.bar foo.qux])
+                    here [(import foo [bar qux]) (add qux qux)])
+                (!! bar.a:doc)
+                (!! here:val))})
+
+        (_ tries
+
+           (E+ ffoo.bar {a 1 b 2}
+               (move-members nil [ffoo.bar.a ffoo.bar.b]))
+
+           (E+ ggoo.bar {a :ggoobara b :ggoobarb}
+               (move-members ggoo.bar nil [a b]))
+
+           (!! a))
+
         )
+
+    #_(do :composite
+
+        (E+ composite
+            {dotted?
+             (fn [x]
+               (cp x
+                   map? (contains? x '.)
+                   sequential? (indexof x '.)
+                   nil))
+
+             ;; x contains some composition operators
+             ;; (. and/or ..)
+             composed?
+             (fn [x]
+               (cp x
+                   quote? nil
+                   map? (or (contains? x '.) (contains? x '..))
+                   sequential? (or (indexof x '.) (indexof x '..))
+                   nil))
+
+             not-composed?
+             (fn [x] (not (composed? x)))
+
+             ;; x has only one dot
+             ;; (useful in bind)
+             single-dotted?
+             (fn [x]
+               (and (dotted? x)
+                    (cp x
+                        map? (not (contains? x '..))
+                        sequential?
+                        (and (not (indexof x '..))
+                             (= 1 (count (filter (p = '.) x)))))))
+
+             seq-parts
+             (fn [s]
+               (loop [[fs ss & rs] s ret []]
+                 (cp fs
+                     not ret
+                     (p = '.) (recur rs (conj ret ss))
+                     (p = '..) (catv (conj ret ss) rs)
+                     (recur (cons ss (or rs ()))
+                            (if (vector? (last ret))
+                              (conj (vec (butlast ret)) (conj (last ret) fs))
+                              (conj ret [fs]))))))
+
+             cat
+             (fn [parts]
+               (vary-meta
+                (lst* `concat parts)
+                assoc :composite-cat true))
+
+             cat?
+             (fn [x]
+               (some-> x meta :composite-cat))
+
+             expand
+             (fn rec [x]
+               (cp x
+
+                   composed?
+                   (cp x
+                       vec? (lst `vec (lst* `concat (map rec (seq-parts x))))
+                       seq? (composite.cat (map rec (seq-parts x)))
+                       map? (lst* `merge
+                                  (rec (dissoc x '. '..))
+                                  (rec (get x '.))
+                                  (map rec (get x '..))))
+                   holycoll?
+                   ($ x rec)
+
+                   x))
+
+             quotf
+             (fn [e form]
+               (env-simple-quotf e (composite.expand form)))
+
+             wrap-calls
+             (fn [x]
+               (cs (cat? x)
+                   (lst `call* ($ x rec))
+                   (holycoll? x)
+                   ($ x rec)
+                   x))
+
+             compile
+             (fn [x]
+               (wrap-calls
+                (composite.expand x)))
+
+             }
+
+            quote:mac
+            (fn [e [x]]
+              (pp (composite.quotf e x))
+              (composite.quotf e x))
+
+            cxp
+            (fn [e x]
+              (composite.compile (exp e x))))
+
+        (_ :tries
+           (!! (let [xs (range 10)] (sq (x ~@xs))))
+           (!! (c/let [xs (range 10)] '(x . ~xs)))
+           (!! '{:a a . b .. [c d]})
+           (!! (let [x 'a] '('~x . xs x)))
+           (!! (composite.seq-parts '[a b .. c d]))
+           (!! (composite.compile '[a b .. c d]))
+           (!! (composite.compile '[a b . c d (x y . z)]))
+           (!! (composite.seq-parts '[a b . c d]))))
 
     (do :generics
 
@@ -1146,26 +1540,402 @@
                                {:a [m n o ...]
                                 :b [a b c #{foo a ...}]})))))
 
-    (do :joining
+    (E+ joining
+        {:doc
+         "a bunch of function for handling monoidish things"
+
+         pure
+         [:doc
+          "a generic function that return the identity value from a given value"
+
+          (generic
+           [_]
+           :fun id
+           :vec []
+           :seq ()
+           :map {}
+           :set #{}
+           :str ""
+           :sym (c/symbol "")
+           :key (c/keyword "")
+           #{:nil :any} nil)
+
+          (check.thunk
+           (eq [] (pure [1 2 3]))
+           (eq #{} (pure #{:pouet 12}))
+           (eq {} (pure {:a 1}))
+           (eq "" (pure "hello")))]
+
+         sip
+         [:doc
+          "add an element to a collection, similar to core.conj"
+
+          (generic.reduced
+           [a b]
+           :seq (c/concat a [b])
+           #{:set :vec} (c/conj a b)
+           :map (c/assoc a (c/first b) (c/second b))
+           :fun (c/partial a b))
+
+          :notes
+          "maybe we should consider to implement sip for named
+                (sipping some chars makes sense)"
+
+          (check.thunk
+           (eq (sip [] 1 2) [1 2])
+           (eq (sip [1] 2 3) [1 2 3])
+           (eq (sip #{1} 2 3) #{1 2 3})
+           (eq (sip {:a 1} [:b 2] [:c 3]) {:a 1 :b 2 :c 3})
+           (eq ((sip add 1) 1) 2))]
+
+         iter
+         [:doc
+          "return a seq from something"
+
+          (generic
+           [a]
+           :nil ()
+           #{:sym :key} (iter (c/name a))
+           :any (c/or (c/seq a) ()))
+
+          (check.thunk
+           (eq () (iter []))
+           (eq () nil)
+           (eq () "")
+           (eq '(1 2) (iter [1 2]))
+           (eq '(1 2) (iter '(1 2)))
+           (eq '([:a 1] [:b 2]) (iter {:a 1 :b 2}))
+           (eq '(\f \o \o) (iter "foo") (iter 'foo) (iter :foo)))]
+
+         +
+         [:doc
+          "join two things together
+               similar to concat, merge..."
+
+          (generic.reduced
+           [a b]
+           :fun (c/comp b a)
+           :seq (c/concat a (iter b))
+           :str (c/str a (.toString b))
+           :sym (c/symbol (c/str (c/name a) (.toString b)))
+           :key (c/keyword (c/str (c/name a) (c/name b)))
+           :any (c/reduce sip a (iter b)))
+
+          (check.thunk []
+                       (eq (+ {:a 1} {:b 2})
+                           {:a 1 :b 2})
+                       (eq (+ '(1 2) [3 4])
+                           '(1 2 3 4))
+                       (eq (+ [1 2] '(3 4) [5 6] '(7 8))
+                           [1 2 3 4 5 6 7 8])
+                       (eq (+ #{1 2} [3 4] '(5 6))
+                           #{1 2 3 4 5 6})
+                       (eq (+ :foo :bar)
+                           :foobar)
+                       (eq (+ 'foo :bar "baz")
+                           'foo:barbaz)
+                       (eq (+ "foo" 'bar 'baz)
+                           "foobarbaz")
+                       (eq ((+ inc inc inc) 0)
+                           3))]
+
+         wrap
+         [:doc
+          "use its first argument to determine which type of structure to build
+               and build it using given extra args,
+               'wrap uses sip
+               'wrap+ uses +
+               'wrap* uses sip applied (iterable last argument)
+               'wrap+* uses + applied (iterable last argument)"
+
+          wrap (fn& [x] (sip (pure x) ...))
+          wrap+ (fn& [x] (+ (pure x) ...))
+          wrap* (p apl wrap)
+          wrap+* (p apl wrap+)
+
+          (check.thunk
+           (eq (wrap [1 2 3] 4 5 6)
+               (wrap* [1 2 3] 4 '(5 6))
+               [4 5 6])
+           (eq (wrap+ '(pouet pouet) '(1 2 3) #{4} [5 6])
+               (wrap+* '(pouet pouet) '(1 2 3) [#{4} [5 6]])
+               '(1 2 3 4 5 6)))]
+
+         vals
+         [:doc
+          "return the values of a collection"
+
+          (generic [x]
+                   :map (c/or (c/vals x) ())
+                   :coll (iter x)
+                   :any (error "vals: no impl for " x))
+
+          (check.thunk
+           (eq '(1 2 3)
+               (vals '(1 2 3))
+               (vals [1 2 3])
+               (sort (vals {:a 1 :b 2 :c 3}))
+               (sort (vals #{1 2 3}))))]
+
+         idxs
+         [:doc
+          "return the idxs or keys of a collection"
+
+          (generic [x]
+                   :map (c/or (c/keys x) ())
+                   :set (iter x)
+                   :coll (c/range (c/count x))
+                   :any (error "idxs: no impl for " x))
+
+          (check.thunk 
+           (eq '(0 1 2)
+               (idxs '(1 2 3))
+               (idxs [1 2 3]))
+           (eq '(:a :b :c)
+               (sort (idxs {:a 1 :b 2 :c 3}))
+               (sort (idxs #{:a :b :c}))))]
+
+         pure?
+         [:doc
+          "test if something is equal to its pure value"
+
+          (generic [x]
+                   :seq (when-not (seq x) ())
+                   (when (c/= x (pure x)) x)
+                   ;; using identical? is suspicious but seems to work...
+                   ;; core/= cannot be used here because (= [] ()) is true...
+                   #_(when (c/identical? x (pure x)) x)
+                   #_(when (if (holycoll? x) (not (seq x))
+                               (c/identical? x (pure x)))
+                       x))
+
+          (check.thunk
+           (pure? [])
+           (pure? #{})
+           (pure? "")
+           (pure? {})
+           (not (pure? [1 2]))
+           (not (pure? {:a 1}))
+           (not (pure? "iop")))]}
+
+        (move-members.to-root
+         joining
+         [pure pure? sip iter + vals idxs
+          wrap.wrap wrap.wrap+ wrap.wrap* wrap.wrap+*])
+
+        )
+
+    #_(E+ joining
+        {:doc
+         "a bunch of function for handling monoidish things"
+
+         pure
+         [:doc
+          "a generic function that return the identity value from a given value"
+
+          (generic
+           [_]
+           :fun id
+           :vec []
+           :seq ()
+           :map {}
+           :set #{}
+           :str ""
+           :sym (c/symbol "")
+           :key (c/keyword "")
+           #{:nil :any} nil)
+
+          (check.thunk
+           (eq [] (pure [1 2 3]))
+           (eq #{} (pure #{:pouet 12}))
+           (eq {} (pure {:a 1}))
+           (eq "" (pure "hello")))]
+
+         sip
+         [:doc
+          "add an element to a collection, similar to core.conj"
+
+          (generic.reduced
+           [a b]
+           :seq (c/concat a [b])
+           #{:set :vec} (c/conj a b)
+           :map (c/assoc a (c/first b) (c/second b))
+           :fun (c/partial a b))
+
+          :notes
+          "maybe we should consider to implement sip for named
+                (sipping some chars makes sense)"
+
+          (check.thunk
+           (eq (sip [] 1 2) [1 2])
+           (eq (sip [1] 2 3) [1 2 3])
+           (eq (sip #{1} 2 3) #{1 2 3})
+           (eq (sip {:a 1} [:b 2] [:c 3]) {:a 1 :b 2 :c 3})
+           (eq ((sip add 1) 1) 2))]
+
+         iter
+         [:doc
+          "return a seq from something"
+
+          (generic
+           [a]
+           :nil ()
+           #{:sym :key} (iter (c/name a))
+           :any (c/or (c/seq a) ()))
+
+          (check.thunk
+           (eq () (iter []))
+           (eq () nil)
+           (eq () "")
+           (eq '(1 2) (iter [1 2]))
+           (eq '(1 2) (iter '(1 2)))
+           (eq '([:a 1] [:b 2]) (iter {:a 1 :b 2}))
+           (eq '(\f \o \o) (iter "foo") (iter 'foo) (iter :foo)))]
+
+         +
+         [:doc
+          "join two things together
+               similar to concat, merge..."
+
+          (generic.reduced
+           [a b]
+           :fun (c/comp b a)
+           :seq (c/concat a (iter b))
+           :str (c/str a (.toString b))
+           :sym (c/symbol (c/str (c/name a) (.toString b)))
+           :key (c/keyword (c/str (c/name a) (c/name b)))
+           :any (c/reduce sip a (iter b)))
+
+          (check.thunk []
+                       (eq (+ {:a 1} {:b 2})
+                           {:a 1 :b 2})
+                       (eq (+ '(1 2) [3 4])
+                           '(1 2 3 4))
+                       (eq (+ [1 2] '(3 4) [5 6] '(7 8))
+                           [1 2 3 4 5 6 7 8])
+                       (eq (+ #{1 2} [3 4] '(5 6))
+                           #{1 2 3 4 5 6})
+                       (eq (+ :foo :bar)
+                           :foobar)
+                       (eq (+ 'foo :bar "baz")
+                           'foo:barbaz)
+                       (eq (+ "foo" 'bar 'baz)
+                           "foobarbaz")
+                       (eq ((+ inc inc inc) 0)
+                           3))]
+
+         wrap
+         [:doc
+          "use its first argument to determine which type of structure to build
+               and build it using given extra args,
+               'wrap uses sip
+               'wrap+ uses +
+               'wrap* uses sip applied (iterable last argument)
+               'wrap+* uses + applied (iterable last argument)"
+
+          wrap (fn& [x] (sip (pure x) ...))
+          wrap+ (fn& [x] (+ (pure x) ...))
+          wrap* (p apl wrap)
+          wrap+* (p apl wrap+)
+
+          (check.thunk
+           (eq (wrap [1 2 3] 4 5 6)
+               (wrap* [1 2 3] 4 '(5 6))
+               [4 5 6])
+           (eq (wrap+ '(pouet pouet) '(1 2 3) #{4} [5 6])
+               (wrap+* '(pouet pouet) '(1 2 3) [#{4} [5 6]])
+               '(1 2 3 4 5 6)))]
+
+         vals
+         [:doc
+          "return the values of a collection"
+
+          (generic [x]
+                   :map (c/or (c/vals x) ())
+                   :coll (iter x)
+                   :any (error "vals: no impl for " x))
+
+          (check.thunk
+           (eq '(1 2 3)
+               (vals '(1 2 3))
+               (vals [1 2 3])
+               (sort (vals {:a 1 :b 2 :c 3}))
+               (sort (vals #{1 2 3}))))]
+
+         idxs
+         [:doc
+          "return the idxs or keys of a collection"
+
+          (generic [x]
+                   :map (c/or (c/keys x) ())
+                   :set (iter x)
+                   :coll (c/range (c/count x))
+                   :any (error "idxs: no impl for " x))
+
+          (check.thunk 
+           (eq '(0 1 2)
+               (idxs '(1 2 3))
+               (idxs [1 2 3]))
+           (eq '(:a :b :c)
+               (sort (idxs {:a 1 :b 2 :c 3}))
+               (sort (idxs #{:a :b :c}))))]
+
+         pure?
+         [:doc
+          "test if something is equal to its pure value"
+
+          (generic [x]
+                   :seq (when-not (seq x) ())
+                   (when (c/= x (pure x)) x)
+                   ;; using identical? is suspicious but seems to work...
+                   ;; core/= cannot be used here because (= [] ()) is true...
+                   #_(when (c/identical? x (pure x)) x)
+                   #_(when (if (holycoll? x) (not (seq x))
+                               (c/identical? x (pure x)))
+                       x))
+
+          (check.thunk
+           (pure? [])
+           (pure? #{})
+           (pure? "")
+           (pure? {})
+           (not (pure? [1 2]))
+           (not (pure? {:a 1}))
+           (not (pure? "iop")))]}
+
+        (move-members.to-root
+         joining
+         [pure pure? sip iter + vals idxs
+          wrap.wrap wrap.wrap+ wrap.wrap* wrap.wrap+*])
+
+        )
+
+    #_(do :joining
 
         (E+
 
          pure
-         (generic
-          [_]
-          :fun id
-          :vec []
-          :seq ()
-          :map {}
-          :set #{}
-          :str ""
-          :sym (c/symbol "")
-          :key (c/keyword "")
-          #{:nil :any} nil)
+         [(generic
+           [_]
+           :fun id
+           :vec []
+           :seq ()
+           :map {}
+           :set #{}
+           :str ""
+           :sym (c/symbol "")
+           :key (c/keyword "")
+           #{:nil :any} nil)
 
-         ;; sip function
-         ;; semantically equiv to conj
-         ;; adds an element to a collection
+          :doc
+          "a generic function that return the identity value from a given value"
+
+          (check.thunk
+            (eq [] (pure [1 2 3]))
+            (eq #{} (pure #{:pouet 12}))
+            (eq {} (pure {:a 1}))
+            (eq "" (pure "hello")))]
+
          sip
          (generic.reduced
           [a b]
@@ -1174,14 +1944,39 @@
           :map (c/assoc a (c/first b) (c/second b))
           :fun (c/partial a b))
 
+         sip
+         {:doc
+          "add an element to a collection, similar to core.conj"
+          :notes
+          "maybe we should consider to implement sip for named
+           (sipping some chars makes sense)"
+          :check
+          (fn []
+            (eq (sip [] 1 2) [1 2])
+            (eq (sip [1] 2 3) [1 2 3])
+            (eq (sip #{1} 2 3) #{1 2 3})
+            (eq (sip {:a 1} [:b 2] [:c 3]) {:a 1 :b 2 :c 3})
+            (eq ((sip add 1) 1) 2))}
+
          iter
          (generic
-          "like clojure.core/seq
-          but extensible and more generic"
           [a]
           :nil ()
           #{:sym :key} (iter (c/name a))
           :any (c/or (c/seq a) ()))
+
+         iter
+         {:doc
+          "return a seq from something"
+          :check
+          (fn []
+            (eq () (iter []))
+            (eq () nil)
+            (eq () "")
+            (eq '(1 2) (iter [1 2]))
+            (eq '(1 2) (iter '(1 2)))
+            (eq '([:a 1] [:b 2]) (iter {:a 1 :b 2}))
+            (eq '(\f \o \o) (iter "foo") (iter 'foo) (iter :foo)))}
 
          +
          (generic.reduced
@@ -1193,10 +1988,50 @@
           :key (c/keyword (c/str (c/name a) (c/name b)))
           :any (c/reduce sip a (iter b)))
 
+         +
+         {:doc
+          "join two things together
+           similar to concat, merge..."
+          :check
+          (fn []
+            (eq (+ {:a 1} {:b 2})
+                {:a 1 :b 2})
+            (eq (+ '(1 2) [3 4])
+                '(1 2 3 4))
+            (eq (+ [1 2] '(3 4) [5 6] '(7 8))
+                [1 2 3 4 5 6 7 8])
+            (eq (+ #{1 2} [3 4] '(5 6))
+                #{1 2 3 4 5 6})
+            (eq (+ :foo :bar)
+                :foobar)
+            (eq (+ 'foo :bar "baz")
+                'foo:barbaz)
+            (eq (+ "foo" 'bar 'baz)
+                "foobarbaz")
+            (eq ((+ inc inc inc) 0)
+                3))}
+
          wrap (fn& [x] (sip (pure x) ...))
          wrap+ (fn& [x] (+ (pure x) ...))
          wrap* (p apl wrap)
          wrap+* (p apl wrap+)
+
+         wrap
+         {:doc
+          "use its first argument to determine which type of structure to build
+           and build it using given extra args,
+           'wrap uses sip
+           'wrap+ uses +
+           'wrap* uses sip applied (iterable last argument)
+           'wrap+* uses + applied (iterable last argument)"
+          :check
+          (fn []
+            (eq (wrap [1 2 3] 4 5 6)
+                (wrap* [1 2 3] 4 '(5 6))
+                [4 5 6])
+            (eq (wrap+ '(pouet pouet) '(1 2 3) #{4} [5 6])
+                (wrap+ '(pouet pouet) '(1 2 3) [#{4} [5 6]])
+                '(1 2 3 4 5 6)))}
 
          vals
          (generic [x]
@@ -1204,12 +2039,35 @@
                   :coll (iter x)
                   :any (error "vals: no impl for " x))
 
+         vals
+         {:doc
+          "return the values of a collection"
+          :check
+          (fn []
+            (eq '(1 2 3)
+                (vals '(1 2 3))
+                (vals [1 2 3])
+                (sort (vals {:a 1 :b 2 :c 3}))
+                (sort (vals #{1 2 3}))))}
+
          idxs
          (generic [x]
                   :map (c/or (c/keys x) ())
                   :set (iter x)
                   :coll (c/range (c/count x))
                   :any (error "idxs: no impl for " x))
+
+         idxs
+         {:doc
+          "return the idxs or keys of a collection"
+          :check
+          (fn []
+            (eq '(0 1 2)
+                (idxs '(1 2 3))
+                (idxs [1 2 3]))
+            (eq '(:a :b :c)
+                (sort (idxs {:a 1 :b 2 :c 3}))
+                (sort (idxs #{:a :b :c}))))}
 
          pure?
          (generic [x]
@@ -1222,9 +2080,19 @@
                               (c/identical? x (pure x)))
                       x))
 
+         pure?
+         {:doc
+          "test if something is equal to its pure value"
+          :check
+          (fn []
+            (pure? [])
+            (pure? #{})
+            (pure? "")
+            (pure? {})
+            (not (pure? [1 2]))
+            (not (pure? {:a 1}))
+            (not (pure? "iop")))}
          )
-
-        (identical? () (range 0))
 
         (_ :tries 
            #_(E+ wrap* (p* wrap))
@@ -1251,26 +2119,6 @@
                   n* (+ n '*:val)
                   n+* (+ n '+*:val)
                   n (+ n ":val")]
-              '{~n (fn& [] (sip ~e ...))
-                ~n+ (fn& [] (+ ~e ...))
-                ~n* (fn& [x] (apl ~n x ...))
-                ~n+* (fn& [x] (apl ~n+ x ...))}))
-
-          multimodule
-          (fn [xs]
-            (reduce (fn [x [n i]] (merge x (..module n i)))
-                    {} (c/partition 2 xs)))
-
-          definitions:upd
-          (fn [e xs]
-            (wrappable.multimodule xs))
-
-          module2
-          (fn [n e]
-            (let [n+ (+ n '+:val)
-                  n* (+ n '*:val)
-                  n+* (+ n '+*:val)
-                  n (+ n ":val")]
               '(tagged
                 :wrappable
                 ~n (fn& [] (sip ~e ...))
@@ -1278,17 +2126,14 @@
                 ~n* (fn& [x] (apl ~n x ...))
                 ~n+* (fn& [x] (apl ~n+ x ...)))))
 
-          definitions2:upd
+          definitions:upd
           (fn [e xs]
-            (mapv (p* ..module2) (c/partition 2 xs)))}
+            (mapv (p* ..module) (c/partition 2 xs)))}
 
 
-         (wrappable.definitions2
+         (wrappable.definitions
           lst () vec []
           set #{} map {})
-
-                                        ;tagged
-                                        ;:wrappable
 
          ;; overiding for perf
          (tagged
@@ -1304,20 +2149,47 @@
           key* (fn& [x] (apl key x ...))
           sym (fn& [x] (+ (c/symbol (c/name x)) ...))
           sym* (fn& [x] (apl sym x ...)))
+
+         tags
+         {:wrappable
+          {:doc
+           "things that implements +"
+           :check
+           (fn []
+             (eq (vec 1 2 3)
+                 (vec* 1 [2 3])
+                 (vec+ '(1) [2 3])
+                 (vec+* '(1) [[2] #{3}])
+                 [1 2 3])
+
+             (eq (lst 1 2 3)
+                 (lst* 1 [2 3])
+                 (lst+ '(1) [2 3])
+                 (lst+* '(1) [[2] #{3}])
+                 '(1 2 3))
+
+             (eq (set 1 2 3)
+                 (set* 1 [2 3])
+                 (set+ '(1) [2 3])
+                 (set+* '(1) [[2] #{3}])
+                 #{1 2 3})
+
+             (eq (map [:a 1] [:b 2] [:c 3])
+                 (map* [:a 1] {:b 2 :c 3})
+                 (map* [:a 1] #{[:b 2] [:c 3]})
+                 (map+ {:a 1} #{[:b 2]} {:c 3})
+                 {:a 1 :b 2 :c 3})
+
+             (eq (key "iop" 'foo :bar)
+                 :iopfoobar)
+             (eq (sym "iop" 'foo :bar)
+                 'iopfoo:bar)
+             (eq (str "iop" 'foo :bar)
+                 "iopfoo:bar")
+             )}}
          )
 
-        #_(qbench (c/str "aze" 'foo (c/name :bar))
-                  (!! (str "aze 'foo :bar"))
-                  (!! (str' "aze 'foo :bar")))
-        (_ :tries
-           (!! (wrappable.multimodule '[lst () vec []]))
-           (!! (str* "aze" 'io '(:op :ml)))
-           (!! (key "aze" 'io :op :ml))
-           (env-inspect 'sym*)
-           (!! (vec 1 2 3))
-           (!! (vec+ '(1 2 3) {:a 2}))
-           (!! (vec* 1 2 3 '(4 5 6)))
-           (!! (vec+* '(1 2 3) [#{5 6} {:a 2}]))))
+        )
 
     (do :iterables
 
@@ -1383,8 +2255,6 @@
               x)))
 
          )
-
-        (!! (take.inspect))
         )
 
     (do :type+
@@ -1573,19 +2443,20 @@
                    holycoll?
                    ($ x rec)
 
-                   x))
-
-             }
+                   x))}
 
             cxp
             (fn [e x]
               (composite.compile (exp e x))))
 
-        (!! (composite.compile '{:a a . b .. [c d]}))
-        (!! (composite.seq-parts '[a b .. c d]))
-        (!! (composite.compile '[a b .. c d]))
-        (!! (composite.compile '[a b . c d]))
-        (!! (composite.seq-parts '[a b . c d])))
+        (_ :tries
+           
+           (!! '{:a a . b .. [c d]})
+           (!! (let [x 'a] '('~x . xs x)))
+           (!! (composite.seq-parts '[a b .. c d]))
+           (!! (composite.compile '[a b .. c d]))
+           (!! (composite.compile2 '[a b . c d (x y . z)]))
+           (!! (composite.seq-parts '[a b . c d]))))
 
     (do :bindings
 
@@ -1597,13 +2468,14 @@
             (mapcat (p* bind) (partition 2 xs)))
 
           bind
-          {:val
-           (generic  [x y]
-                     :sym [x y]
-                     :vec (bind.vec x y)
-                     :map (bind.map x y)
-                     :seq (bind.seq x y)
-                     [(gensym) (lst 'eq x y)])
+          [(generic
+            [x y]
+            :sym [x y]
+            :vec (bind.vec x y)
+            :map (bind.map x y)
+            :seq (bind.seq x y)
+            [(gensym) (lst 'eq x y)])
+
            vec
            {:val
             (fn [x y]
@@ -1722,7 +2594,7 @@
             add
             (fn [s f]
               (swap! ..table assoc s f))}
-           }
+           ]
 
 
           unified
@@ -2126,7 +2998,8 @@
           (f [e [builder]]
              (let [[[a1 [e1]] . cs]
                    (fn&.cases '([x] ((~builder x) ...)))]
-               (exp e (sq (fn (~a1 (p ~e1)) ~@cs)))))}
+               (exp e (sq (fn (~a1 (p ~e1)) ~@cs)))
+               #_(exp e (lst 'fn '(~a1 (p ~e1)) . cs))))}
 
          invocation
          (generic
@@ -2163,7 +3036,8 @@
           :map (c/into {} (c/map (c/fn [[k v]] [k (§ f k v)]) x))
           :set (c/set (c/vals ($i (c/zipmap x x) f)))
           :vec (c/vec (c/map-indexed (§ f) x))
-          :seq (c/map-indexed (§ f) x))
+          :seq (c/map-indexed (§ f) x)
+          :any (error "not mappable" x))
 
          walk
          (f [x in out]
@@ -2173,26 +3047,20 @@
 
          dfwalk
          (f
-                                        ; depth first walk
           [x f]
           (walk x #(dfwalk % f) f))
 
          bfwalk
-         (f                             ;broad first walk
+         (f
           [x f]
           (walk (f x) #(bfwalk % f) id))
 
          walk?
          (f
-                                        ;x: some data
-                                        ;?: if this function succeed, map recur its result
-                                        ;f: if ? does not succeed f is applied
           [x ? f]
           (c/if-let [nxt (? x)]
             ($ nxt #(walk? % ? f))
-            (f x)))
-
-         )
+            (f x))) )
 
         (_ :tries 
            (!! ($+.inspect))

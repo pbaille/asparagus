@@ -3,9 +3,9 @@
   (:require [asparagus.boot.prelude :as p
              :refer [$ $vals]]))
 
-;; here is an atempt to hide direct interop
+;; here is an attempt to hide direct interop
 ;; the goal is ultimatly to provide a more readable and powerful
-;; way to create generic functions, see boot.core.generics
+;; way to create generic functions, see asparagus.boot.generics
 
 (defn- cmap [& xs]
   ($vals (apply hash-map xs)
