@@ -667,30 +667,6 @@
 
     (do :updates
 
-        (defn env-upd_split [[x1 x2 & rs :as xs]]
-          (cs (not (seq xs)) []
-              (word? x1) (cons {x1 x2} (env-upd_split rs))
-              (map? x1) (cons x1 (env-upd_split (rest xs)))
-              (cons {root-path x1} (env-upd_split (rest xs)))))
-
-        #_(defn env-upd_deep-split [[x1 x2 & rs :as xs]]
-          (cs (not (seq xs)) []
-              [p (path x1)]
-              (cs (mpath? p)
-                  (cons {x1 x2} (env-upd_deep-split rs))
-                  (concat ($ (env-upd_deep-split [x2]) #(do {x1 %}))))
-              (map? x1)
-              (cons x1 (env-upd_deep-split (rest xs)))
-              (cons {root-path x1} (env-upd_deep-split (rest xs)))))
-
-        (defn env-upd_path-map
-          ([x]
-           (env-upd_path-map x root-path))
-          ([x from]
-           (if (and (holymap? x) (ppath? from))
-             (mapcat (fn [[k v]] (env-upd_path-map v (path from k))) x)
-             [[from x]])))
-
         (defn env-upd_prepend-declarations [u]
           #_(pp 'will-prep-decl u)
           (let [ps
@@ -710,38 +686,126 @@
                p (path (car x) :upd)]
               (bubfind e (path (car x) :upd))))
 
-        (declare env-upds)
+        (_ :old-impl
 
-        (defn env-upd_map->upds [e m]
-          (let [epath (p path (loc e))]
-            (->> (env-upd_path-map m)
-                 (mapcat
-                  (fn [[p x]]
-                    (cs (mpath? p)
-                        [(condp = (.mkey p)
-                           :links [:link (epath (ppath p)) x]
-                           :fx [:fx (epath (ppath p)) x]
-                           [:def (epath p) x])]
-                        (vec? x)
-                        (env-upds (mv e p) x)
-                        [[_ updf] (env-upd_upd-expr? (mv e p) x)]
-                        (cs (= ::unbound updf)
-                            (error "upd ::unbound error")
-                            (env-upds (mv e p) (updf (mv e p) (cdr x))))
-                        [[:def (epath p :val) x]])))
-                 doall
-                 env-upd_prepend-declarations
-                 env-upd_sort)))
+           (defn env-upd_split [[x1 x2 & rs :as xs]]
+             (cs (not (seq xs)) []
+                 (word? x1) (cons {x1 x2} (env-upd_split rs))
+                 (map? x1) (cons x1 (env-upd_split (rest xs)))
+                 (cons {root-path x1} (env-upd_split (rest xs)))))
 
-        (defn env-upds [e x]
-          #_(pp 'env-upds e x)
-          (cp x
-              holymap?
-              (env-upd_map->upds e x)
-              seq?
-              (env-upd_map->upds e {root-path x})
-              vec?
-              (doall (mapcat (p env-upds e) (env-upd_split x)))))
+           (defn env-upd_path-map
+             ([x]
+              (env-upd_path-map x root-path))
+             ([x from]
+              (if (and (holymap? x) (ppath? from))
+                (mapcat (fn [[k v]] (env-upd_path-map v (path from k))) x)
+                [[from x]])))
+
+           (declare env-upds)
+
+           (defn env-upd_map->upds [e m]
+             (let [epath (p path (loc e))]
+               (->> (env-upd_path-map m)
+                    (mapcat
+                     (fn [[p x]]
+                       (cs (mpath? p)
+                           [(condp = (.mkey p)
+                              :links [:link (epath (ppath p)) x]
+                              :fx [:fx (epath (ppath p)) x]
+                              [:def (epath p) x])]
+                           (vec? x)
+                           (env-upds (mv e p) x)
+                           [[_ updf] (env-upd_upd-expr? (mv e p) x)]
+                           (cs (= ::unbound updf)
+                               (error "upd ::unbound error")
+                               (env-upds (mv e p) (updf (mv e p) (cdr x))))
+                           [[:def (epath p :val) x]])))
+                    doall
+                    env-upd_prepend-declarations
+                    env-upd_sort)))
+
+           (defn env-upds [e x]
+             #_(pp 'env-upds e x)
+             (cp x
+                 holymap?
+                 (env-upd_map->upds e x)
+                 seq?
+                 (env-upd_map->upds e {root-path x})
+                 vec?
+                 (doall (mapcat (p env-upds e) (env-upd_split x))))))
+
+        (do :new-impl
+
+            "the reason is to allow upds to be defined in sequential
+             updates (vecs) and available imediately after"
+
+            (defn env-upd_split [[x1 x2 & rs :as xs]]
+              (cs (not (seq xs)) []
+                  (word? x1)
+                  (cs (vec? x2)
+                      (concat ($ (env-upd_split x2) (p hash-map x1))
+                              (env-upd_split rs))
+                      (cons {x1 x2} (env-upd_split rs))) 
+                  (holymap? x1) (cons x1 (env-upd_split (rest xs)))
+                  (cons {root-path x1} (env-upd_split (rest xs)))))
+
+            (defn env-upds
+              ([e x]
+               (env-upds e x root-path))
+              ([e x from]
+               #_(println 'top x from)
+               (cs (ppath? from)
+                   (cp x
+
+                       holymap?
+                       (env-upd_sort
+                        (env-upd_prepend-declarations
+                         (mapcat (fn [[k v]] (env-upds e v (path from k))) x)))
+
+                       vec?
+                       (mapcat #(env-upds e % from) (env-upd_split x))
+
+                       (p env-upd_upd-expr? (mv e from))
+                       (let [[_ updf] (env-upd_upd-expr? (mv e from) x)]
+                         (env-upds e (updf (mv e from) (cdr x)) from))
+
+                       [[:def (path from :val) x]])
+
+                   [epath (p path (loc e))]
+                   [(condp = (.mkey from)
+                      :links [:link (epath (ppath from)) x]
+                      :fx [:fx (epath (ppath from)) x]
+                      [:def (epath from) x])])))
+
+            (_ :tries
+
+               (env-upds2
+                @E '[iop (generic [x] :vec 'veciop)
+                     a 1
+                     b [c 1 {d 3 b:op 56}]])
+
+               (defmacro E+ [& xs]
+                 `(do ~@(map (fn [u]
+                               `(env-upd_exe @E (env-upds2 @E '~u)))
+                             (env-upd2_split xs))))
+
+
+               (env-upds2 @E '{op {baba 12}})
+
+               (_ :error
+                  (rEset!)
+                  (map (p env-upds2 @E)
+                       (env-upd2_split
+                        '[op [yupd:upd (fn [_ xs] {'pouet:val (vec xs)})
+                              baba (op.yupd 1 2 3)]]))
+
+                  (E+2 op [yupd:upd (fn [_ xs] {'pouet:val (c/vec xs)})
+                           baba (op.yupd 1 2 3)])
+
+                  (!! op.baba.pouet)))
+
+            )
 
         (defn env-upd_exe [e u]
           (doseq [[verb at x] u]
@@ -757,48 +821,7 @@
                          (error "\nenv-upd error compiling:\n" (pretty-str [verb at x]) "\n" e))))))
           @E)
 
-        (_ :env-upd2
-
-           "an atempt to simplify upd mecanism. wip..."
-
-            (defn env-upd2_prepend-declarations [u]
-              #_(pp 'will-prep-decl u)
-              (let [ps
-                    (-> (shrink- u #(#{:fx :links} (.mkey (car %))))
-                        ($ #(vector (car %) ::unbound))
-                        (shrink- (set u)))]
-                (doall (concat ps u))))
-
-            (defn env-upd2_sort [u]
-              #_(pp 'will-sort-u u)
-              (let [links? #(mkey= (car %) :links)
-                    decl? #(= (second %) ::unbound)
-                    prio? #(or (decl? %) (links? %))]
-                (sort-by (complement prio?) u)))
-
-            (defn env-upd2_path-map
-              ([e x]
-               (env-upd2_path-map e x root-path))
-              ([e x from]
-               (pp x from)
-               (cs (ppath? from)
-                   (cp x
-                       holymap? 
-                       (env-upd2_sort
-                        (env-upd2_prepend-declarations
-                         (mapcat (fn [[k v]] (env-upd2_path-map e v (path from k))) x)))
-                       vec?
-                       (mapcat #(env-upd2_path-map e % from) (env-upd_split x))
-                       (p env-upd_upd-expr? (mv e from))
-                       (let [[_ updf] (env-upd_upd-expr? (mv e from) x)]
-                         (env-upd2_path-map e (updf (mv e from) (cdr x)) from))
-                       [[(path from :val) x]])
-                   [[from x]])))
-
-            (env-upd2_path-map
-             @E '[iop (generic [x] :vec 'veciop)
-                  a 1
-                  b [c 1 {d 3 b:op 56}]])))
+        )
 
     )
 
@@ -1711,67 +1734,64 @@
                (wrap+* '(pouet pouet) '(1 2 3) [#{4} [5 6]])
                '(1 2 3 4 5 6)))]
 
-         ]
+         builtins
+         [:doc
+          "wrap declinations for builtin holy types"
 
-        ;; i'd liked to put this in the previous block
-        ;; but the wrap.derive update would not be available...
+          (wrap.derive
+           [lst ()]
+           [vec []]
+           [set #{}]
+           [map {}])
 
-        joining.builtins
-        [:doc
-         "wrap declinations for builtin holy types"
+          ;; overides for perf
+          vec c/vector
+          lst c/list
+          set c/hash-set
 
-         (wrap.derive
-          [lst ()]
-          [vec []]
-          [set #{}]
-          [map {}])
+          ;; words
+          str c/str
+          str* (fn& [x] (apl c/str x ...))
+          key (fn& [] (+ (c/keyword "") ...))
+          key* (fn& [x] (apl key x ...))
+          sym (fn& [x] (+ (c/symbol (c/name x)) ...))
+          sym* (fn& [x] (apl sym x ...))
 
-         ;; overides for perf
-         vec c/vector
-         lst c/list
-         set c/hash-set
+          (check.thunk
 
-         ;; words
-         str c/str
-         str* (fn& [x] (apl c/str x ...))
-         key (fn& [] (+ (c/keyword "") ...))
-         key* (fn& [x] (apl key x ...))
-         sym (fn& [x] (+ (c/symbol (c/name x)) ...))
-         sym* (fn& [x] (apl sym x ...))
+           (eq (vec 1 2 3)
+               (vec* 1 [2 3])
+               (vec+ '(1) [2 3])
+               (vec+* '(1) [[2] #{3}])
+               [1 2 3])
 
-         (check.thunk
+           (eq (lst 1 2 3)
+               (lst* 1 [2 3])
+               (lst+ '(1) [2 3])
+               (lst+* '(1) [[2] #{3}])
+               '(1 2 3))
 
-          (eq (vec 1 2 3)
-              (vec* 1 [2 3])
-              (vec+ '(1) [2 3])
-              (vec+* '(1) [[2] #{3}])
-              [1 2 3])
+           (eq (set 1 2 3)
+               (set* 1 [2 3])
+               (set+ '(1) [2 3])
+               (set+* '(1) [[2] #{3}])
+               #{1 2 3})
 
-          (eq (lst 1 2 3)
-              (lst* 1 [2 3])
-              (lst+ '(1) [2 3])
-              (lst+* '(1) [[2] #{3}])
-              '(1 2 3))
+           (eq (map [:a 1] [:b 2] [:c 3])
+               (map* [:a 1] {:b 2 :c 3})
+               (map* [:a 1] #{[:b 2] [:c 3]})
+               (map+ {:a 1} #{[:b 2]} {:c 3})
+               {:a 1 :b 2 :c 3})
 
-          (eq (set 1 2 3)
-              (set* 1 [2 3])
-              (set+ '(1) [2 3])
-              (set+* '(1) [[2] #{3}])
-              #{1 2 3})
+           (eq (key "iop" 'foo :bar)
+               :iopfoobar)
+           (eq (sym "iop" 'foo :bar)
+               'iopfoo:bar)
+           (eq (str "iop" 'foo :bar)
+               "iopfoo:bar")
+           )
+          ]
 
-          (eq (map [:a 1] [:b 2] [:c 3])
-              (map* [:a 1] {:b 2 :c 3})
-              (map* [:a 1] #{[:b 2] [:c 3]})
-              (map+ {:a 1} #{[:b 2]} {:c 3})
-              {:a 1 :b 2 :c 3})
-
-          (eq (key "iop" 'foo :bar)
-              :iopfoobar)
-          (eq (sym "iop" 'foo :bar)
-              'iopfoo:bar)
-          (eq (str "iop" 'foo :bar)
-              "iopfoo:bar")
-          )
          ]
 
         (import
@@ -1786,8 +1806,6 @@
           set set+ set* set+*
           map map+ map* map+*
           str str* key key* sym sym*]))
-
-    #_(get-in @E [:members 'joining 'builtins])
 
     #_(E+ joining
         {:doc
@@ -2255,23 +2273,23 @@
 
         )
 
-    (E+ iterables.iterg
-        [:doc
-         "an update to define generic functions for iterables
-          hiding the iter/wrap boilerplate"
-         :upd
-         (fn [e [[a1 :as argv] expr]]
-           '(generic
-             ~argv
-             :seq
-             ~expr
-             (let [a ~a1
-                   ~a1 (iter ~a1)]
-               (wrap* a ~expr))))]
-
-        iterables
+    (E+ iterables
         [:doc
          "some functions to manipulate iterable structures"
+
+         iterg
+         [:doc
+          "an update to define generic functions for iterables
+          hiding the iter/wrap boilerplate"
+          :upd
+          (fn [e [[a1 :as argv] expr]]
+            '(generic
+              ~argv
+              :seq
+              ~expr
+              (let [a ~a1
+                    ~a1 (iter ~a1)]
+                (wrap* a ~expr))))]
 
          car (generic [x] (c/first (iter x)))
          last (generic [x] (c/last (iter x)))
