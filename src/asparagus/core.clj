@@ -1246,6 +1246,20 @@
              (fn [_ xs]
                (apl build-upd xs))
 
+             all
+             {:upd
+              (fn [e xs]
+                #_(pp (lst* 'import
+                          (interleave xs ($ xs (p all-members e)))))
+                (lst* 'import
+                      (interleave xs ($ xs (p all-members e)))))
+
+              all-members
+              (fn [e at]
+                (let [[_ v] (bubfind e (path at))]
+                  (pp (shrink+ (keys v) symbol?))
+                  (shrink+ (keys v) symbol?)))}
+
              :tries
              '(do
                 (E+ foo.bar {a [:doc "foobar a" (fn [] 'foobara)]}
@@ -1253,7 +1267,14 @@
                     (import [foo.bar foo.qux])
                     here [(import foo [bar qux]) (add qux qux)])
                 (!! bar.a:doc)
-                (!! here:val))})
+                (!! here:val)
+
+                (E+ foo {fooa 1 foob 2 fooc {n 4}})
+
+                (E+ (import.all foo))
+
+                (!! (add fooa foob fooc.n))
+                )})
 
         (_ tries
 
@@ -1378,106 +1399,110 @@
            (!! (composite.compile '[a b . c d (x y . z)]))
            (!! (composite.seq-parts '[a b . c d]))))
 
-    (do :generics
+    (E+ generic
+        {:doc
+         "an update to define a generic function
+           and its related inspection and extension capabilities"
 
-        (E+
+         :upd
+         (fn [e body]
+           (let [gsym (generic.symbol (loc e))
+                 e (env-add-member e (path (loc e) :val) ::unbound)]
+             #_(pp 'generic-fx (generic.init e gsym body))
+             (assoc (generic.module gsym)
+                    :fx (generic.init e gsym body))))
 
-         generic
-         {:upd
-          (fn [e body]
-            (let [gsym (generic.symbol (loc e))
-                  e (env-add-member e (path (loc e) :val) ::unbound)]
-              #_(pp 'generic-fx (generic.init e gsym body))
-              (assoc (generic.module gsym)
-                     :fx (generic.init e gsym body))))
+         reduced:upd
+         (fn [e [argv & decls]]
+           (generic:upd
+            e (lst '([x] x)
+                   (lst* argv decls)
+                   (lst* (conj argv '& 'xs)
+                         (c/mapcat
+                          (fn [[t i]]
+                            [t '(reduce (fn ~argv ~i) ~i xs)])
+                          (c/partition 2 decls))))))
 
-          reduced:upd
-          (fn [e [argv & decls]]
-            (generic:upd
-             e (lst '([x] x)
-                    (lst* argv decls)
-                    (lst* (conj argv '& 'xs)
-                          (c/mapcat
-                           (fn [[t i]]
-                             [t '(reduce (fn ~argv ~i) ~i xs)])
-                           (c/partition 2 decls))))))
+         module
+         (fn [gsym]
+           '{:val ~gsym
+             symbol:val '~gsym
+             inspect:val
+             (fn [] (@g/reg '~gsym))
+             extend:upd
+             (fn [e bod]
+               {:fx (g/extension-form
+                     (generic.spec e '~gsym bod))})
+             })
 
-          module
-          (fn [gsym]
-            '{:val ~gsym
-              symbol:val '~gsym
-              inspect:val
-              (fn [] (@g/reg '~gsym))
-              extend:upd
-              (fn [e bod]
-                {:fx (g/extension-form
-                      (generic.spec e '~gsym bod))})
-              })
-
-          spec
-          {:val
-           (fn [e n body]
-             (.exp-cases e (g/generic-spec n body)))
-
-           exp-case
-           (fn [e [argv & body]]
-             (let [[e argv] (hygienic.shadow e argv)]
-               (lst* argv (exp e body))))
-
-           exp-cases
-           (fn [e s]
-             (update s :cases $ (p ..exp-case e)))}
-
-          symbol
-          (fn [n]
-            (path->varsym (path n :generic)))
-
-          init
+         spec
+         {:val
           (fn [e n body]
-            (g/declaration-form
-             (..spec e n body)))}
+            (.exp-cases e (g/generic-spec n body)))
 
-         )
+          exp-case
+          (fn [e [argv & body]]
+            (let [[e argv] (hygienic.shadow e argv)]
+              (lst* argv (exp e body))))
 
-        (_ :tries
+          exp-cases
+          (fn [e s]
+            (update s :cases $ (p ..exp-case e)))}
 
-           #_(pp @E)
+         symbol
+         (fn [n]
+           (path->varsym (path n :generic)))
 
-           (E+ pul+
-               (generic [a b]
-                        :str (str a b)
-                        :sym (pul+ (str a) (str b))
-                        :num (+ a b)))
+         init
+         (fn [e n body]
+           (g/declaration-form
+            (..spec e n body)))
 
-           (!! (pul+.inspect))
+         type+
+         {:doc
+          "lets you implement some generics for a type
+            analog to extend-type"
 
-           (!! (pul+ 1 2))
-           (!! (pul+ "a" 2))
+          :upd
+          (fn [e [type & body]]
+            ($ (c/vec body)
+               (fn [[n & xs]]
+                 (lst* (p/sym n '.extend)
+                       (g/impl-body->cases type xs)))))}
 
-           (E+ (pul+.extend
-                [x y]
-                :vec (do (pp 'hey) (catv x y))))
+         :tries
+         '(do
 
-           (!! (pul+ [1] [7]))
-           (!! (pul+.inspect))
+            (E+ pul+
+                (generic [a b]
+                         :str (str a b)
+                         :sym (pul+ (str a) (str b))
+                         :num (+ a b)))
 
-           (E+ pouet
-               (generic.mk [a b]
-                           :str (c/str a b)
-                           :num (c/+ a b)))
+            (!! (pul+.inspect))
 
-           (E+ pil+
-               (generic.reduced [a b]
-                                :str (str a b)
-                                :num (+ a b)))
+            (!! (pul+ 1 2))
+            (!! (pul+ "a" 2))
 
-           (!! (pil+.inspect))
+            (E+ (pul+.extend
+                 [x y]
+                 :vec (do (pp 'hey) (catv x y))))
 
-           (!! (pil+ 7 9 7))
+            (!! (pul+ [1] [7]))
+            (!! (pul+.inspect))
 
-           (E+ foo.bar.fortytwo:sub (fn [_] 42))
-           (E+ foo.bar.g (generic [x] :num (+ ..fortytwo x)))
-           (!! (foo.bar.g 1))))
+            (E+ pil+
+                (generic.reduced [a b]
+                                 :str (str a b)
+                                 :num (+ a b)))
+
+            (!! (pil+.inspect))
+
+            (!! (pil+ 7 9 7))
+
+            (E+ foo.bar.fortytwo:sub (fn [_] 42))
+            (E+ foo.bar.g (generic [x] :num (+ ..fortytwo x)))
+            (!! (foo.bar.g 1)))})
 
     (do :fn&
 
@@ -1807,472 +1832,6 @@
           map map+ map* map+*
           str str* key key* sym sym*]))
 
-    #_(E+ joining
-        {:doc
-         "a bunch of function for handling monoidish things"
-
-         pure
-         [:doc
-          "a generic function that return the identity value from a given value"
-
-          (generic
-           [_]
-           :fun id
-           :vec []
-           :seq ()
-           :map {}
-           :set #{}
-           :str ""
-           :sym (c/symbol "")
-           :key (c/keyword "")
-           #{:nil :any} nil)
-
-          (check.thunk
-           (eq [] (pure [1 2 3]))
-           (eq #{} (pure #{:pouet 12}))
-           (eq {} (pure {:a 1}))
-           (eq "" (pure "hello")))]
-
-         sip
-         [:doc
-          "add an element to a collection, similar to core.conj"
-
-          (generic.reduced
-           [a b]
-           :seq (c/concat a [b])
-           #{:set :vec} (c/conj a b)
-           :map (c/assoc a (c/first b) (c/second b))
-           :fun (c/partial a b))
-
-          :notes
-          "maybe we should consider to implement sip for named
-                (sipping some chars makes sense)"
-
-          (check.thunk
-           (eq (sip [] 1 2) [1 2])
-           (eq (sip [1] 2 3) [1 2 3])
-           (eq (sip #{1} 2 3) #{1 2 3})
-           (eq (sip {:a 1} [:b 2] [:c 3]) {:a 1 :b 2 :c 3})
-           (eq ((sip add 1) 1) 2))]
-
-         iter
-         [:doc
-          "return a seq from something"
-
-          (generic
-           [a]
-           :nil ()
-           #{:sym :key} (iter (c/name a))
-           :any (c/or (c/seq a) ()))
-
-          (check.thunk
-           (eq () (iter []))
-           (eq () nil)
-           (eq () "")
-           (eq '(1 2) (iter [1 2]))
-           (eq '(1 2) (iter '(1 2)))
-           (eq '([:a 1] [:b 2]) (iter {:a 1 :b 2}))
-           (eq '(\f \o \o) (iter "foo") (iter 'foo) (iter :foo)))]
-
-         +
-         [:doc
-          "join two things together
-               similar to concat, merge..."
-
-          (generic.reduced
-           [a b]
-           :fun (c/comp b a)
-           :seq (c/concat a (iter b))
-           :str (c/str a (.toString b))
-           :sym (c/symbol (c/str (c/name a) (.toString b)))
-           :key (c/keyword (c/str (c/name a) (c/name b)))
-           :any (c/reduce sip a (iter b)))
-
-          (check.thunk []
-                       (eq (+ {:a 1} {:b 2})
-                           {:a 1 :b 2})
-                       (eq (+ '(1 2) [3 4])
-                           '(1 2 3 4))
-                       (eq (+ [1 2] '(3 4) [5 6] '(7 8))
-                           [1 2 3 4 5 6 7 8])
-                       (eq (+ #{1 2} [3 4] '(5 6))
-                           #{1 2 3 4 5 6})
-                       (eq (+ :foo :bar)
-                           :foobar)
-                       (eq (+ 'foo :bar "baz")
-                           'foo:barbaz)
-                       (eq (+ "foo" 'bar 'baz)
-                           "foobarbaz")
-                       (eq ((+ inc inc inc) 0)
-                           3))]
-
-         wrap
-         [:doc
-          "use its first argument to determine which type of structure to build
-               and build it using given extra args,
-               'wrap uses sip
-               'wrap+ uses +
-               'wrap* uses sip applied (iterable last argument)
-               'wrap+* uses + applied (iterable last argument)"
-
-          wrap (fn& [x] (sip (pure x) ...))
-          wrap+ (fn& [x] (+ (pure x) ...))
-          wrap* (p apl wrap)
-          wrap+* (p apl wrap+)
-
-          (check.thunk
-           (eq (wrap [1 2 3] 4 5 6)
-               (wrap* [1 2 3] 4 '(5 6))
-               [4 5 6])
-           (eq (wrap+ '(pouet pouet) '(1 2 3) #{4} [5 6])
-               (wrap+* '(pouet pouet) '(1 2 3) [#{4} [5 6]])
-               '(1 2 3 4 5 6)))]
-
-         vals
-         [:doc
-          "return the values of a collection"
-
-          (generic [x]
-                   :map (c/or (c/vals x) ())
-                   :coll (iter x)
-                   :any (error "vals: no impl for " x))
-
-          (check.thunk
-           (eq '(1 2 3)
-               (vals '(1 2 3))
-               (vals [1 2 3])
-               (sort (vals {:a 1 :b 2 :c 3}))
-               (sort (vals #{1 2 3}))))]
-
-         idxs
-         [:doc
-          "return the idxs or keys of a collection"
-
-          (generic [x]
-                   :map (c/or (c/keys x) ())
-                   :set (iter x)
-                   :coll (c/range (c/count x))
-                   :any (error "idxs: no impl for " x))
-
-          (check.thunk 
-           (eq '(0 1 2)
-               (idxs '(1 2 3))
-               (idxs [1 2 3]))
-           (eq '(:a :b :c)
-               (sort (idxs {:a 1 :b 2 :c 3}))
-               (sort (idxs #{:a :b :c}))))]
-
-         pure?
-         [:doc
-          "test if something is equal to its pure value"
-
-          (generic [x]
-                   :seq (when-not (seq x) ())
-                   (when (c/= x (pure x)) x)
-                   ;; using identical? is suspicious but seems to work...
-                   ;; core/= cannot be used here because (= [] ()) is true...
-                   #_(when (c/identical? x (pure x)) x)
-                   #_(when (if (holycoll? x) (not (seq x))
-                               (c/identical? x (pure x)))
-                       x))
-
-          (check.thunk
-           (pure? [])
-           (pure? #{})
-           (pure? "")
-           (pure? {})
-           (not (pure? [1 2]))
-           (not (pure? {:a 1}))
-           (not (pure? "iop")))]}
-
-        (move-members.to-root
-         joining
-         [pure pure? sip iter + vals idxs
-          wrap.wrap wrap.wrap+ wrap.wrap* wrap.wrap+*])
-
-        )
-
-    #_(do :joining
-
-        (E+
-
-         pure
-         [(generic
-           [_]
-           :fun id
-           :vec []
-           :seq ()
-           :map {}
-           :set #{}
-           :str ""
-           :sym (c/symbol "")
-           :key (c/keyword "")
-           #{:nil :any} nil)
-
-          :doc
-          "a generic function that return the identity value from a given value"
-
-          (check.thunk
-            (eq [] (pure [1 2 3]))
-            (eq #{} (pure #{:pouet 12}))
-            (eq {} (pure {:a 1}))
-            (eq "" (pure "hello")))]
-
-         sip
-         (generic.reduced
-          [a b]
-          :seq (c/concat a [b])
-          #{:set :vec} (c/conj a b)
-          :map (c/assoc a (c/first b) (c/second b))
-          :fun (c/partial a b))
-
-         sip
-         {:doc
-          "add an element to a collection, similar to core.conj"
-          :notes
-          "maybe we should consider to implement sip for named
-           (sipping some chars makes sense)"
-          :check
-          (fn []
-            (eq (sip [] 1 2) [1 2])
-            (eq (sip [1] 2 3) [1 2 3])
-            (eq (sip #{1} 2 3) #{1 2 3})
-            (eq (sip {:a 1} [:b 2] [:c 3]) {:a 1 :b 2 :c 3})
-            (eq ((sip add 1) 1) 2))}
-
-         iter
-         (generic
-          [a]
-          :nil ()
-          #{:sym :key} (iter (c/name a))
-          :any (c/or (c/seq a) ()))
-
-         iter
-         {:doc
-          "return a seq from something"
-          :check
-          (fn []
-            (eq () (iter []))
-            (eq () nil)
-            (eq () "")
-            (eq '(1 2) (iter [1 2]))
-            (eq '(1 2) (iter '(1 2)))
-            (eq '([:a 1] [:b 2]) (iter {:a 1 :b 2}))
-            (eq '(\f \o \o) (iter "foo") (iter 'foo) (iter :foo)))}
-
-         +
-         (generic.reduced
-          [a b]
-          :fun (c/comp b a)
-          :seq (c/concat a (iter b))
-          :str (c/str a (.toString b))
-          :sym (c/symbol (c/str (c/name a) (.toString b)))
-          :key (c/keyword (c/str (c/name a) (c/name b)))
-          :any (c/reduce sip a (iter b)))
-
-         +
-         {:doc
-          "join two things together
-           similar to concat, merge..."
-          :check
-          (fn []
-            (eq (+ {:a 1} {:b 2})
-                {:a 1 :b 2})
-            (eq (+ '(1 2) [3 4])
-                '(1 2 3 4))
-            (eq (+ [1 2] '(3 4) [5 6] '(7 8))
-                [1 2 3 4 5 6 7 8])
-            (eq (+ #{1 2} [3 4] '(5 6))
-                #{1 2 3 4 5 6})
-            (eq (+ :foo :bar)
-                :foobar)
-            (eq (+ 'foo :bar "baz")
-                'foo:barbaz)
-            (eq (+ "foo" 'bar 'baz)
-                "foobarbaz")
-            (eq ((+ inc inc inc) 0)
-                3))}
-
-         wrap (fn& [x] (sip (pure x) ...))
-         wrap+ (fn& [x] (+ (pure x) ...))
-         wrap* (p apl wrap)
-         wrap+* (p apl wrap+)
-
-         wrap
-         {:doc
-          "use its first argument to determine which type of structure to build
-           and build it using given extra args,
-           'wrap uses sip
-           'wrap+ uses +
-           'wrap* uses sip applied (iterable last argument)
-           'wrap+* uses + applied (iterable last argument)"
-          :check
-          (fn []
-            (eq (wrap [1 2 3] 4 5 6)
-                (wrap* [1 2 3] 4 '(5 6))
-                [4 5 6])
-            (eq (wrap+ '(pouet pouet) '(1 2 3) #{4} [5 6])
-                (wrap+ '(pouet pouet) '(1 2 3) [#{4} [5 6]])
-                '(1 2 3 4 5 6)))}
-
-         vals
-         (generic [x]
-                  :map (c/or (c/vals x) ())
-                  :coll (iter x)
-                  :any (error "vals: no impl for " x))
-
-         vals
-         {:doc
-          "return the values of a collection"
-          :check
-          (fn []
-            (eq '(1 2 3)
-                (vals '(1 2 3))
-                (vals [1 2 3])
-                (sort (vals {:a 1 :b 2 :c 3}))
-                (sort (vals #{1 2 3}))))}
-
-         idxs
-         (generic [x]
-                  :map (c/or (c/keys x) ())
-                  :set (iter x)
-                  :coll (c/range (c/count x))
-                  :any (error "idxs: no impl for " x))
-
-         idxs
-         {:doc
-          "return the idxs or keys of a collection"
-          :check
-          (fn []
-            (eq '(0 1 2)
-                (idxs '(1 2 3))
-                (idxs [1 2 3]))
-            (eq '(:a :b :c)
-                (sort (idxs {:a 1 :b 2 :c 3}))
-                (sort (idxs #{:a :b :c}))))}
-
-         pure?
-         (generic [x]
-                  :seq (when-not (seq x) ())
-                  (when (c/= x (pure x)) x)
-                  ;; using identical? is suspicious but seems to work...
-                  ;; core/= cannot be used here because (= [] ()) is true...
-                  #_(when (c/identical? x (pure x)) x)
-                  #_(when (if (holycoll? x) (not (seq x))
-                              (c/identical? x (pure x)))
-                      x))
-
-         pure?
-         {:doc
-          "test if something is equal to its pure value"
-          :check
-          (fn []
-            (pure? [])
-            (pure? #{})
-            (pure? "")
-            (pure? {})
-            (not (pure? [1 2]))
-            (not (pure? {:a 1}))
-            (not (pure? "iop")))}
-         )
-
-        (_ :tries 
-           #_(E+ wrap* (p* wrap))
-
-           #_(env-inspect 'wrap)
-           (pp @E)
-
-           (!! (+ 'iop "io" :op))
-           (!! (pure ()))
-           #_(!! (wrap [] 1 2 3))
-           #_(!! (wrap+ [] '(1 2 3) {:a 2}))
-           #_(!! (wrap+* #{} '(1 2 3) {:a 2} [{1 2} [8 9 0]])))
-
-        )
-
-    #_(do :wrappables
-
-        (E+
-
-         wrappable
-         {module
-          (fn [n e]
-            (let [n+ (+ n '+:val)
-                  n* (+ n '*:val)
-                  n+* (+ n '+*:val)
-                  n (+ n ":val")]
-              '(tagged
-                :wrappable
-                ~n (fn& [] (sip ~e ...))
-                ~n+ (fn& [] (+ ~e ...))
-                ~n* (fn& [x] (apl ~n x ...))
-                ~n+* (fn& [x] (apl ~n+ x ...)))))
-
-          definitions:upd
-          (fn [e xs]
-            (mapv (p* ..module) (c/partition 2 xs)))}
-
-
-         (wrappable.definitions
-          lst () vec []
-          set #{} map {})
-
-         ;; overiding for perf
-         (tagged
-          :wrappable
-          vec c/vector
-          lst c/list
-          set c/hash-set
-
-          ;; words
-          str c/str
-          str* (fn& [x] (apl c/str x ...))
-          key (fn& [] (+ (c/keyword "") ...))
-          key* (fn& [x] (apl key x ...))
-          sym (fn& [x] (+ (c/symbol (c/name x)) ...))
-          sym* (fn& [x] (apl sym x ...)))
-
-         tags
-         {:wrappable
-          {:doc
-           "things that implements +"
-           :check
-           (fn []
-             (eq (vec 1 2 3)
-                 (vec* 1 [2 3])
-                 (vec+ '(1) [2 3])
-                 (vec+* '(1) [[2] #{3}])
-                 [1 2 3])
-
-             (eq (lst 1 2 3)
-                 (lst* 1 [2 3])
-                 (lst+ '(1) [2 3])
-                 (lst+* '(1) [[2] #{3}])
-                 '(1 2 3))
-
-             (eq (set 1 2 3)
-                 (set* 1 [2 3])
-                 (set+ '(1) [2 3])
-                 (set+* '(1) [[2] #{3}])
-                 #{1 2 3})
-
-             (eq (map [:a 1] [:b 2] [:c 3])
-                 (map* [:a 1] {:b 2 :c 3})
-                 (map* [:a 1] #{[:b 2] [:c 3]})
-                 (map+ {:a 1} #{[:b 2]} {:c 3})
-                 {:a 1 :b 2 :c 3})
-
-             (eq (key "iop" 'foo :bar)
-                 :iopfoobar)
-             (eq (sym "iop" 'foo :bar)
-                 'iopfoo:bar)
-             (eq (str "iop" 'foo :bar)
-                 "iopfoo:bar")
-             )}}
-         )
-
-        )
-
     (E+ iterables
         [:doc
          "some functions to manipulate iterable structures"
@@ -2312,12 +1871,10 @@
          (fn [x n]
            [(take x n) (drop x n)])
 
-         ;; uncons
          uncs
          (fn [x]
            [(car x) (cdr x)])
 
-         ;; reversed uncons
          runcs
          (fn [x]
            [(butlast x) (last x)])
@@ -2343,198 +1900,231 @@
           uncs runcs cons cons?
           section splat])
 
+        ;; vector optimized impls
+
+        (generic.type+
+           :vec
+           (last [x] (get x (dec (count x))))
+           (take [x n] (subvec x 0 (min (count x) n)))
+           (drop [x n] (subvec x (min (count x) n)))
+           (takend [x n] (let [c (count x)] (subvec x (- c n) c)))
+           (dropend [x n] (subvec x 0 (- (count x) n)))
+           (butlast [x] (subvec x 0 (dec (count x))))
+           (section [x from to] (subvec x (max 0 from) (min (count x) to)))
+           (cdr [x] (subvec x 1)))
+
         )
 
-    #_(do :iterables
+    (E+ types
+        [
+         prims (keys t/prims)
+         builtins t/builtin-types
+         preds t/builtin-preds
 
-        (E+
+         ;; type generic
+         (upd.mk
+          (sq {type
+               (generic
+                [x]
+                ~@(c/interleave prims prims)
+                :any (c/type x))}))]
 
-         iterg:upd
-         (fn [e [[a1 :as argv] expr]]
-           '(generic
-             ~argv
-             :seq
-             ~expr
-             (let [a ~a1
-                   ~a1 (iter ~a1)]
-               (wrap* a ~expr))))
+        (import types [type]))
 
-         (tagged
+    (E+ guards
+        [:doc
+         "guards are like predicates
+          but returns their first argument for success
+          otherwise nil"
 
-          :iterables
+         guard
+         [:doc
+          "building guards utilities"
 
-          car (generic [x] (c/first (iter x)))
-          last (generic [x] (c/last (iter x)))
+          template
+          (fn [arity]
+            (let [syms (gensyms)
+                  argv
+                  (if arity
+                    (vec+ (take syms arity))
+                    [(gensym) '& (gensym)])
+                  test
+                  (if arity
+                    (lst* 'f argv)
+                    (lst 'apl 'f (car argv) (nth argv 2)))
+                  form
+                  '(fn [f] (fn ~argv (when ~test ~(car argv))))]
+              form))
 
-          take (iterg [x n] (c/take n x))
-          drop (iterg [x n] (c/drop n x))
-          takend (iterg [x n] (c/take-last n x))
-          dropend (iterg [x n] (c/drop-last n x))
-          butlast (iterg [x] (c/butlast x))
-          cdr (iterg [x] (c/rest x))
-          rev (iterg [x] (c/reverse x))
+          builder:mac
+          (fn [e [arity]]
+            (exp e (guard.template arity)))
 
-          section
-          (iterg [x from to]
-                 (-> x
-                     (take to)
-                     (drop from)))
+          unary (builder 1)
+          binary (builder 2)
+          ternary (builder 3)
+          variadic (builder nil)]
 
-          splat
-          (fn [x n]
-            [(take x n) (drop x n)])
+         import
+         {:doc
+          "an update to wrap clojure predicates into guards"
 
-          ;; uncons
-          uncs
-          (fn [x]
-            [(car x) (cdr x)])
+          :upd
+          (fn [_ xs]
+            (apl build-upd xs))
 
-          ;; reversed uncons
-          runcs
-          (fn [x]
-            [(butlast x) (last x)])
-
-          cons
+          build-upd
           (fn
-            "like core.list*
-           but preserve collection type"
-            [& xs]
-            (c/let [[cars cdr] (runcs xs)]
-              (+ (pure cdr) cars cdr)))
+            ([[name arity original-name]]
+             {name '(~(guard.template arity)
+                     ~(ns-resolve-sym (or original-name name)))})
+            ([x & xs]
+             ($ (vec* x xs) rec)))
 
-          cons?
-          (fn [x]
-            (when (and (coll? x)
-                       (not (pure? x)))
-              x)))
+          types:upd
+          (fn [e _]
+            (let [ts (seq (disj types.builtins :nil))]
+              (zipmap
+               ($ ts #(sym % "?"))
+               ($ ts #(lst 'types.preds %)))))}
 
-         )
-        )
+         builtins
+         [(import
+           [neg? 1]
+           [pos? 1]
+           [zero? 1]
+           [empty? 1]
+           [gt 2 c/>]
+           [lt 2 c/<]
+           [gte 2 c/>=]
+           [lte 2 c/<=]
+           [eq 2 c/=]
+           [neq 2 c/not=])
 
-    (do :type+
+          (import.types)]
 
-        (E+ generic.type+:upd
-            (fn [e [type & body]]
-              ($ (vec* body)
-                 (fn [[n & xs]]
-                   (lst* (sym n '.extend)
-                         (g/impl-body->cases type xs)))))))
+         :tries
+         '(do
 
-    (do :vec-optimizations
+            (res @E '(guard.types-definition nil nil))
 
-        (E+ (generic.type+
-             :vec
-             (last [x] (get x (dec (count x))))
-             (take [x n] (subvec x 0 (min (count x) n)))
-             (drop [x n] (subvec x (min (count x) n)))
-             (takend [x n] (let [c (count x)] (subvec x (- c n) c)))
-             (dropend [x n] (subvec x 0 (- (count x) n)))
-             (butlast [x] (subvec x 0 (dec (count x))))
-             (section [x from to] (subvec x (max 0 from) (min (count x) to)))
-             (cdr [x] (subvec x 1))))
+            #_(!! (map? []))
+            #_(!! (nil? nil))
+            #_(!! (vec? []))
 
-        (_ :tries
-           (!! (last [1 2 3]))
-           (!! (butlast [1 2 3]))
-           (!! (takend [1 2 3] 2))
-           (!! (section (range 10) 2 6))
-           (!! (section [1 2 3 4 5] 0 3))))
+            (res @E '(guard.declare-types-guards))
 
-    (do :guards
+            (res @E '(guard.import neg? 1))
+            (env-upd? (exp @E '(guard.imports [neg? 1]
+                                              [pos? 1]
+                                              [gt 2 >])))
 
-        (E+ guard
-            {template
-             (fn [arity]
-               (let [syms (gensyms)
-                     argv
-                     (if arity
-                       (vec+ (take syms arity))
-                       [(gensym) '& (gensym)])
-                     test
-                     (if arity
-                       (lst* 'f argv)
-                       (lst 'apl 'f (car argv) (nth argv 2)))
-                     form
-                     '(fn [f] (fn ~argv (when ~test ~(car argv))))]
-                 form))
+            #_(!! (line? [1 2]))
 
-             builder:mac
-             (fn [e [arity]]
-               (exp e (guard.template arity)))}
+            (E+ (guard.import neg? 1))
+            (E+ (guard.imports [neg? 1]
+                               [pos? 1]
+                               [gt 2 >]))
+            (!! (neg? 2))
+            ((!! (guard.unary pos?)) 2)
+            ((!! (guard.variadic =)) 2 (+ 1 1) (- 4 2))
+            (res @E '(guard.template nil)))]
 
-            guard
-            {unary (guard.builder 1)
-             binary (guard.builder 2)
-             ternary (guard.builder 3)
-             variadic (guard.builder nil)
+        (import.all guards.builtins))
 
-             import:upd
-             (fn [e [name arity original-name]]
-               {name '(~(guard.template arity)
-                       ~(ns-resolve-sym (or original-name name)))})
+    #_(do :guards
 
-             imports:upd
-             (fn [e xs]
-               ($ (vec* xs) (p import:upd e)))
+          (E+ guard
+              {template
+               (fn [arity]
+                 (let [syms (gensyms)
+                       argv
+                       (if arity
+                         (vec+ (take syms arity))
+                         [(gensym) '& (gensym)])
+                       test
+                       (if arity
+                         (lst* 'f argv)
+                         (lst 'apl 'f (car argv) (nth argv 2)))
+                       form
+                       '(fn [f] (fn ~argv (when ~test ~(car argv))))]
+                   form))
 
-             types-definition:upd
-             (fn [e _]
-               (let [ts (seq (disj t/builtin-types :nil))]
-                 (zipmap
-                  ($ ts #(sym % "?"))
-                  ($ ts #(lst `t/builtin-preds %))
-                  #_($ ts #(guard.unary (t/isa %)))
-                  )))}
+               builder:mac
+               (fn [e [arity]]
+                 (exp e (guard.template arity)))}
 
-            (guard.imports
-             [neg? 1]
-             [pos? 1]
-             [zero? 1]
-             [empty? 1]
-             [gt 2 c/>]
-             [lt 2 c/<]
-             [gte 2 c/>=]
-             [lte 2 c/<=]
-             [eq 2 c/=]
-             [neq 2 c/not=])
+              guard
+              {unary (guard.builder 1)
+               binary (guard.builder 2)
+               ternary (guard.builder 3)
+               variadic (guard.builder nil)
 
-            (guard.types-definition)
+               import:upd
+               (fn [e [name arity original-name]]
+                 {name '(~(guard.template arity)
+                         ~(ns-resolve-sym (or original-name name)))})
 
-            (upd.mk
-             (let [ts (keys t/prims)]
-               (sq {type
-                    (generic
-                     [x]
-                     ~@(c/interleave ts ts)
-                     :any (c/type x))})))
+               imports:upd
+               (fn [e xs]
+                 ($ (vec* xs) (p import:upd e)))
 
-            )
+               types-definition:upd
+               (fn [e _]
+                 (let [ts (seq (disj t/builtin-types :nil))]
+                   (zipmap
+                    ($ ts #(sym % "?"))
+                    ($ ts #(lst `t/builtin-preds %)))))}
 
-        (_ :tries
+              (guard.imports
+               [neg? 1]
+               [pos? 1]
+               [zero? 1]
+               [empty? 1]
+               [gt 2 c/>]
+               [lt 2 c/<]
+               [gte 2 c/>=]
+               [lte 2 c/<=]
+               [eq 2 c/=]
+               [neq 2 c/not=])
 
-           (res @E '(guard.types-definition nil nil))
+              (guard.types-definition)
 
-           (!! (map? []))
-           #_(!! (nil? nil))
-           (!! (vec? []))
+              (upd.mk
+               (let [ts (keys t/prims)]
+                 (sq {type
+                      (generic
+                       [x]
+                       ~@(c/interleave ts ts)
+                       :any (c/type x))})))
 
-           (res @E '(guard.declare-types-guards))
+              )
 
-           (res @E '(guard.import neg? 1))
-           (env-upd? (exp @E '(guard.imports [neg? 1]
-                                             [pos? 1]
-                                             [gt 2 >])))
+          (_ :tries
 
-           (!! (line? [1 2]))
+             (res @E '(guard.types-definition nil nil))
 
-           (E+ (guard.import neg? 1))
-           (E+ (guard.imports [neg? 1]
-                              [pos? 1]
-                              [gt 2 >]))
-           (!! (neg? 2))
-           ((!! (guard.unary pos?)) 2)
-           ((!! (guard.variadic =)) 2 (+ 1 1) (- 4 2))
-           (res @E '(guard.template nil))))
+             (!! (map? []))
+             #_(!! (nil? nil))
+             (!! (vec? []))
+
+             (res @E '(guard.declare-types-guards))
+
+             (res @E '(guard.import neg? 1))
+             (env-upd? (exp @E '(guard.imports [neg? 1]
+                                               [pos? 1]
+                                               [gt 2 >])))
+
+             (!! (line? [1 2]))
+
+             (E+ (guard.import neg? 1))
+             (E+ (guard.imports [neg? 1]
+                                [pos? 1]
+                                [gt 2 >]))
+             (!! (neg? 2))
+             ((!! (guard.unary pos?)) 2)
+             ((!! (guard.variadic =)) 2 (+ 1 1) (- 4 2))
+             (res @E '(guard.template nil))))
 
     (do :composite
 
