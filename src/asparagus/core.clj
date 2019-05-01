@@ -204,6 +204,14 @@
                 ps (path-segments (ppath p))]
             (path (last ps) mk)))
 
+        (defn path-prefix [p]
+          (cs (apath? p)
+              (car (.xs p))))
+
+        (defn path-unprefix [p]
+          (cs (apath? p)
+              (update p :xs (comp vec rest))))
+
         (defn bubbling-path
           [p]
           #_(pp 'bubling-path p)
@@ -278,6 +286,8 @@
 
         (def env0
           (Env. root-path {}))
+
+        (def ROOT_PREFIX 'ROOT)
 
         (defmacro env!
           [x]
@@ -370,10 +380,16 @@
           (or (env-relfind e p)
               (env-linkedfind e p)))
 
+        (defn root-pathsym? [p]
+          (= ROOT_PREFIX (path-prefix p)))
+
         (defne bubfind [e p]
           (cs
 
            (dotpath? p) nil
+
+           (root-pathsym? p)
+           (env-absfind e (path-unprefix p))
 
            [plvl (.rel p) ;; p is relative
             loc' (nth-parent-path (ppath (loc e)) plvl)]
@@ -426,6 +442,8 @@
              (bubfind (cd e1 'foo) (path 'ab))
              ;; bubling first found
              (bubfind (cd e1 'b.c.d) (path 'a:val))
+             ;; root-pathsym
+             (bubfind (cd e1 'b.c.d) (path 'ROOT.a:val))
 
              (not (bubfind e1 (path '.iop)))
              (not (bubfind (cd e1 'foo) (path '.a.b)))
@@ -930,6 +948,20 @@
           holycoll? ($ form (p env-simple-quotf e))
           (list 'quote form)))
 
+    (do :quote-unquote-xp
+        (defn quote-unquote? [x]
+          (and (quote? x) (unquote? (second x))))
+
+        (defn env-simple-quotf2
+          "env aware version of simplest-quote"
+          [e form]
+          (cp form
+              unquote? (exp e (second form))
+              quote-unquote? (list 'quote (->> form second second (exp e)))
+              seq? (cons `list ($ form (p env-simple-quotf2 e)))
+              holycoll? ($ form (p env-simple-quotf2 e))
+              (list 'quote form))))
+
     (defn env-quotf
       "@bbloom/backtic, env aware version"
       [e form]
@@ -953,7 +985,32 @@
 
     (env-quotf @E '(1 2 3)))
 
-(do :reboot
+(do :qquote
+    (defn env-qquotf
+      "@bbloom/backtic, env aware version"
+      [e form]
+      (cp form
+          symbol? (list 'quote (cs [[p _] (bubfind e (path form))] p form))
+          unquote? (exp e (second form))
+          unquote-splicing? (error "splice not in list")
+          holycoll?
+          (let [xs (if (map? form) (cat* form) form)
+                parts (for [x xs]
+                        (if (unquote-splicing? x)
+                          (exp e (second x))
+                          [(env-qquotf e x)]))
+                cat (doall `(concat ~@parts))]
+            (cp form
+                vec? `(vec ~cat)
+                map? `(apply hash-map ~cat)
+                set? `(set ~cat)
+                seq? `(list* ~cat)
+                (error "Unknown collection type")))
+          (list 'quote form)))
+
+    #_(exp @E (c/eval (env-qquotf @E '(fn [a] a)))))
+
+(_ :reboot
 
     (_ :upd-tests
        ;; nested vec upd test
@@ -1024,6 +1081,8 @@
         (!! a.boo:doc)
         (!! boo:doc)
 
+        
+
         )
 
     (do :base
@@ -1039,6 +1098,13 @@
          sq:mac
          (c/fn [e [form]]
            (env-quotf e form))
+
+         qsym:mac
+         (c/fn [e [x]]
+           (let [p (p/assert (path x) (str "not pathable: " x))
+                 [qp _] (p/assert (bubfind e p) (str "unfound: " p))
+                 s (path->sym (path 'ROOT qp))]
+             (lst 'quote s)))
 
          hygienic
          {shadow
@@ -1127,51 +1193,79 @@
 
          let:mac primitives.let:mac
 
-         add c/+
-         sub c/-
-         div c//
-         mul c/*
+         qual:tries
+         '(do
+            (E+ qual.test:mac
+                (fn [e xs]
+                  (exp e (lst* (qsym fn:mac) xs)))
 
-         check
-         {:mac
-          (fn [e xs]
-            (exp e (lst* `p/asserts xs)))
-          thunk
-          {:mac
-           (fn [e xs]
-             (exp e (lst 'fn [] (lst* `p/asserts xs))))
-           :upd
-           (fn [e xs] {:check (lst* 'check.thunk xs)})}}
+                mod1
+                {fn:mac (c/fn [e _] (error "qsym bad behavior"))
+                 x (qual.test [a] a)})
 
-         upd
-         {:upd
-          (fn [e xs]
-            (if (next xs)
-              (c/vec xs)
-              (car xs)))
-          mk:upd
-          (fn [e [x]] (eval e x))}
-
-         group:upd
-         (fn [e [metas & xs]]
-           ($ (env-upd_split xs)
-              ($vals #(vector metas %))))
-
-         tagged:upd
-         (fn [e [t & xs]]
-           (let [ts (if (c/keyword? t) #{t} (c/set t))]
-             (c/vec
-              (mapcat
-               (fn [x] [($ x (fn [[k _]] [(path k :tags) ts])) x])
-               (env-upd_split xs)))))
-
-         ;; used in checking blocks
-         ;; defined in compare section
-         eq ::unbound
+            (ppenv mod1.x))
 
          )
 
+        (E+ ;:extramess
+
+            add c/+
+            sub c/-
+            div c//
+            mul c/*
+
+            check
+            {:mac
+             (fn [e xs]
+               (exp e (lst* `p/asserts xs)))
+             thunk
+             {:mac
+              (fn [e xs]
+                (exp e (lst 'fn [] (lst* `p/asserts xs))))
+              :upd
+              (fn [e xs] {:check (lst* 'check.thunk xs)})}}
+
+            upd
+            {:upd
+             (fn [e xs]
+               (if (next xs)
+                 (c/vec xs)
+                 (car xs)))
+             mk:upd
+             (fn [e [x]] (eval e x))}
+
+            group:upd
+            (fn [e [metas & xs]]
+              ($ (env-upd_split xs)
+                 ($vals #(vector metas %))))
+
+            tagged:upd
+            (fn [e [t & xs]]
+              (let [ts (if (c/keyword? t) #{t} (c/set t))]
+                (c/vec
+                 (mapcat
+                  (fn [x] [($ x (fn [[k _]] [(path k :tags) ts])) x])
+                  (env-upd_split xs)))))
+
+            ;; used in checking blocks
+            ;; defined in compare section
+            eq ::unbound)
+
         (init-top-forms check)
+
+        (_ tries
+
+           (E+ ffoo.bar {a 1 b 2}
+               (move-members nil [ffoo.bar.a ffoo.bar.b]))
+
+           (E+ ggoo.bar {a :ggoobara b :ggoobarb}
+               (move-members ggoo.bar nil [a b]))
+
+           (!! a))
+
+        )
+
+    (do :links-imports
 
         (E+ move-members
             {:doc
@@ -1235,7 +1329,9 @@
                            ps)}))
 
                ([pref xs]
-                (build-upd ($ xs (p path pref))))
+                (if (= xs :all)
+                  (lst 'ROOT.import.all pref)
+                  (build-upd ($ xs (p path pref)))))
 
                ([x y & ys]
                 (if (vec? x)
@@ -1249,15 +1345,13 @@
              all
              {:upd
               (fn [e xs]
-                #_(pp (lst* 'import
-                          (interleave xs ($ xs (p all-members e)))))
-                (lst* 'import
-                      (interleave xs ($ xs (p all-members e)))))
+                (apl build-upd
+                     (interleave xs ($ xs (p all-members e)))))
 
               all-members
               (fn [e at]
                 (let [[_ v] (bubfind e (path at))]
-                  (pp (shrink+ (keys v) symbol?))
+                  #_(pp (shrink+ (keys v) symbol?))
                   (shrink+ (keys v) symbol?)))}
 
              :tries
@@ -1269,80 +1363,68 @@
                 (!! bar.a:doc)
                 (!! here:val)
 
-                (E+ foo {fooa 1 foob 2 fooc {n 4}})
+                (E+ foot {foota 1 footb 2 footc {n 4}})
 
-                (E+ (import.all foo))
+                (E+ (import foot :all))
 
-                (!! (add fooa foob fooc.n))
-                )})
+                (!! (add foota footb footc.n))
 
-        (_ tries
+                (exp @E (lst (path 'fn:mac) '[a] 'a))
 
-           (E+ ffoo.bar {a 1 b 2}
-               (move-members nil [ffoo.bar.a ffoo.bar.b]))
-
-           (E+ ggoo.bar {a :ggoobara b :ggoobarb}
-               (move-members ggoo.bar nil [a b]))
-
-           (!! a))
-
-        )
+                )}))
 
     #_(do :composite
 
         (E+ composite
-            {dotted?
+            [dot (symbol ".")
+             dotdot (symbol "..")
+             dot? (fn [x] (= dot x))
+             dotdot? (fn [x] (= dotdot x))
+
+             dotted?
              (fn [x]
                (cp x
-                   map? (contains? x '.)
-                   sequential? (indexof x '.)
+                   map? (contains? x dot)
+                   sequential? (indexof x dot)
                    nil))
 
-             ;; x contains some composition operators
-             ;; (. and/or ..)
              composed?
-             (fn [x]
+             (fn
+               "x contains some composition operators
+                (. and/or ..)"
+               [x]
                (cp x
                    quote? nil
-                   map? (or (contains? x '.) (contains? x '..))
-                   sequential? (or (indexof x '.) (indexof x '..))
+                   map? (or (contains? x dot) (contains? x dotdot))
+                   sequential? (or (indexof x dot) (indexof x dotdot))
                    nil))
 
              not-composed?
              (fn [x] (not (composed? x)))
 
-             ;; x has only one dot
-             ;; (useful in bind)
              single-dotted?
-             (fn [x]
+             (fn
+               "x has only one dot
+                (useful in bind)"
+               [x]
                (and (dotted? x)
                     (cp x
-                        map? (not (contains? x '..))
+                        map? (not (contains? x dotdot))
                         sequential?
-                        (and (not (indexof x '..))
-                             (= 1 (count (filter (p = '.) x)))))))
+                        (and (not (indexof x dotdot))
+                             (= 1 (count (filter dot? x)))))))
 
              seq-parts
              (fn [s]
                (loop [[fs ss & rs] s ret []]
                  (cp fs
                      not ret
-                     (p = '.) (recur rs (conj ret ss))
-                     (p = '..) (catv (conj ret ss) rs)
+                     dot? (recur rs (conj ret ss))
+                     dotdot? (catv (conj ret ss) rs)
                      (recur (cons ss (or rs ()))
                             (if (vector? (last ret))
                               (conj (vec (butlast ret)) (conj (last ret) fs))
                               (conj ret [fs]))))))
-
-             cat
-             (fn [parts]
-               (vary-meta
-                (lst* `concat parts)
-                assoc :composite-cat true))
-
-             cat?
-             (fn [x]
-               (some-> x meta :composite-cat))
 
              expand
              (fn rec [x]
@@ -1351,47 +1433,55 @@
                    composed?
                    (cp x
                        vec? (lst `vec (lst* `concat (map rec (seq-parts x))))
-                       seq? (composite.cat (map rec (seq-parts x)))
+                       seq? (lst `p/call* (lst* `concat (map rec (seq-parts x))))
                        map? (lst* `merge
-                                  (rec (dissoc x '. '..))
-                                  (rec (get x '.))
-                                  (map rec (get x '..))))
+                                  (rec (dissoc x dot dotdot))
+                                  (rec (get x dot))
+                                  (map rec (get x dotdot))))
                    holycoll?
                    ($ x rec)
 
                    x))
 
+             quotf.wrap
+             (fn [x] (list (symbol "quote") x))
+
              quotf
-             (fn [e form]
-               (env-simple-quotf e (composite.expand form)))
+             (fn
+               "quoting function,
+                handles unquoting, does not quote dots,
+                qualifies symbols if possible"
+               [e form]
+               (cp form
+                   dot? dot
+                   dotdot? dotdot
+                   unquote? (exp e (second form))
+                   seq? (cons `list ($ form (p quotf e)))
+                   holycoll? ($ form (p quotf e))
+                   symbol?
+                   (cs [p (path form)
+                        [p _] (bubfind e p)]
+                       (.wrap p)
+                       (.wrap form))
+                   (.wrap form)))
 
-             wrap-calls
-             (fn [x]
-               (cs (cat? x)
-                   (lst `call* ($ x rec))
-                   (holycoll? x)
-                   ($ x rec)
-                   x))
+             quote:mac
+             (fn [e [x]]
+               #_(pp (quotf e x))
+               (expand (quotf e x)))
 
-             compile
-             (fn [x]
-               (wrap-calls
-                (composite.expand x)))
+             cxp
+             (fn [e x]
+               (expand (exp e x)))
 
-             }
 
-            quote:mac
-            (fn [e [x]]
-              (pp (composite.quotf e x))
-              (composite.quotf e x))
+             ]
 
-            cxp
-            (fn [e x]
-              (composite.compile (exp e x))))
+            )
 
         (_ :tries
            (!! (let [xs (range 10)] (sq (x ~@xs))))
-           (!! (c/let [xs (range 10)] '(x . ~xs)))
+           (!! (c/let [xs (range 10)] (composite.quote (x . ~xs))))
            (!! '{:a a . b .. [c d]})
            (!! (let [x 'a] '('~x . xs x)))
            (!! (composite.seq-parts '[a b .. c d]))
