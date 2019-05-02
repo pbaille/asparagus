@@ -854,7 +854,8 @@
       (res @E x))
 
     (defn env-inspect [s]
-      (let [x (env-access @E (path s))]
+      (let [[p x] (bubfind @E (path s))]
+        (println "at: " p)
         (println "\ndata:")
         (pp x)
         (println "\nmeta:")
@@ -1091,27 +1092,12 @@
 
         (E+
 
-         quote:mac
-         (c/fn [e [form]]
-           (env-simple-quotf e form))
-
-         sq:mac
-         (c/fn [e [form]]
-           (env-quotf e form))
-
-         qsym:mac
-         (c/fn [e [x]]
-           (let [p (p/assert (path x) (str "not pathable: " x))
-                 [qp _] (p/assert (bubfind e p) (str "unfound: " p))
-                 s (path->sym (path 'ROOT qp))]
-             (lst 'quote s)))
-
-         hygienic
+         hygiene
          {shadow
           {:val
            (c/fn [e pat]
              (c/let [pat (.expand-keys-pattern pat)
-                     syms (seq (shadows pat))
+                     syms (shrink- (p/findeep pat symbol?) (p = '&))
                      shadenv (.env e syms)]
                [shadenv (exp shadenv pat)]))
 
@@ -1124,7 +1110,7 @@
                    e {(path at :sub) (k (gensym (sym s '_)))
                       ;; maybe should avoid when no existant macro... perf penality?
                       (path at :mac) (c/fn [e form] ($ (cons s form) (p exp e)))})))
-              e syms))
+              e (set syms)))
 
            expand-keys-pattern
            (c/fn rec [pat]
@@ -1141,23 +1127,51 @@
          {:doc
           "hygienic versions of lambda and let"
 
-          lambda
+          fn
           {parse
-           (c/fn [form]
-             (p/parse-fn form))
+           (c/fn [[fst & nxt :as all]]
+             (c/let [[name fst & nxt]
+                     (if (symbol? fst)
+                       (cons fst nxt)
+                       (concat [nil fst] nxt))
+
+                     [doc fst & nxt]
+                     (if (string? fst)
+                       (cons fst nxt)
+                       (concat [nil fst] nxt))
+
+                     [opts fst & nxt]
+                     (if (map? fst)
+                       (cons fst nxt)
+                       (concat [{} fst] nxt))
+
+                     impls
+                     (if (vector? fst)
+                       {fst (vec nxt)}
+                       (into {}
+                             (map
+                              (c/fn [[args & body]]
+                                [args (vec body)])
+                              (cons fst nxt))))]
+
+               (assoc opts
+                      :name name
+                      :doc doc
+                      :impls impls)))
 
            expand-case
            (c/fn [e [argv body]]
-             (c/let [[e argv] (hygienic.shadow e argv)]
+             (c/let [[e argv] (hygiene.shadow e argv)]
                (cons argv (exp e body))))
 
            expand
            (c/fn [e {:keys [name impls]}]
              (c/let [name (or name 'rec)
-                     [e n] (hygienic.shadow e name)]
+                     [e n] (hygiene.shadow e name)]
                (lst* `fn n
                       ($ (seq impls)
                          (p ..expand-case e)))))
+
            :mac
            (c/fn [e form]
              (.expand
@@ -1165,9 +1179,9 @@
 
            :upd
            (c/fn [e form]
-             (c/let [parsed (.parse form)]
+             (c/let [parsed (shrink+ (.parse form) val)]
                (assoc (dissoc parsed :impls :name)
-                      :val (lst* 'primitives.lambda form))))}
+                      :val (lst* 'primitives.fn form))))}
 
           let
           {parse
@@ -1180,7 +1194,7 @@
            (c/fn [e {:keys [bindings body monobody]}]
              (c/loop [e e ret [] [[p1 e1] & pes] bindings]
                (if p1
-                 (c/let [[e' pat] (hygienic.shadow e p1)]
+                 (c/let [[e' pat] (hygiene.shadow e p1)]
                    (recur e' (conj ret pat (exp e e1)) pes))
                  (lst `let ret (exp e (if monobody (car body) (cons 'do body)))))))
            :mac
@@ -1188,195 +1202,14 @@
              (.expand
               e (.parse form)))}}
 
-         fn:mac primitives.lambda:mac
-         fn:upd primitives.lambda:upd
-
-         let:mac primitives.let:mac
-
-         qual:tries
-         '(do
-            (E+ qual.test:mac
-                (fn [e xs]
-                  (exp e (lst* (qsym fn:mac) xs)))
-
-                mod1
-                {fn:mac (c/fn [e _] (error "qsym bad behavior"))
-                 x (qual.test [a] a)})
-
-            (ppenv mod1.x))
+         :links {fn primitives.fn
+                 let primitives.let}
 
          )
 
-        (E+ ;:extramess
-
-            add c/+
-            sub c/-
-            div c//
-            mul c/*
-
-            check
-            {:mac
-             (fn [e xs]
-               (exp e (lst* `p/asserts xs)))
-             thunk
-             {:mac
-              (fn [e xs]
-                (exp e (lst 'fn [] (lst* `p/asserts xs))))
-              :upd
-              (fn [e xs] {:check (lst* 'check.thunk xs)})}}
-
-            upd
-            {:upd
-             (fn [e xs]
-               (if (next xs)
-                 (c/vec xs)
-                 (car xs)))
-             mk:upd
-             (fn [e [x]] (eval e x))}
-
-            group:upd
-            (fn [e [metas & xs]]
-              ($ (env-upd_split xs)
-                 ($vals #(vector metas %))))
-
-            tagged:upd
-            (fn [e [t & xs]]
-              (let [ts (if (c/keyword? t) #{t} (c/set t))]
-                (c/vec
-                 (mapcat
-                  (fn [x] [($ x (fn [[k _]] [(path k :tags) ts])) x])
-                  (env-upd_split xs)))))
-
-            ;; used in checking blocks
-            ;; defined in compare section
-            eq ::unbound)
-
-        (init-top-forms check)
-
-        (_ tries
-
-           (E+ ffoo.bar {a 1 b 2}
-               (move-members nil [ffoo.bar.a ffoo.bar.b]))
-
-           (E+ ggoo.bar {a :ggoobara b :ggoobarb}
-               (move-members ggoo.bar nil [a b]))
-
-           (!! a))
-
-        )
-
-    (do :links-imports
-
-        (E+ move-members
-            {:doc
-             "a couple of updates for moving (aliasing is more accurate) members from path to path
-              It is mainly used in order to being able to define related functions in a module
-              which is handy to put documentation tests exemples and helpers
-              then make them available elsewhere (most commonly top level)"
-
-             :usage
-             '[(move-members target-path [mod1.foo mod2.bar])
-               (move-members base-path target-path [m1 m2 m3])
-               "if target-path is nil, root-path is used"]
-
-             ;; helpers
-
-             path-head
-             (fn [p]
-               (let [mk (.mkey p)
-                     ps (path-segments (ppath p))]
-                 (path (last ps) mk)))
-
-             switch-prefix
-             (fn [pref p]
-               (let [head (path-head p)]
-                 (or (path pref head) head)))
-
-             build-upd
-             (fn ([target-path xs]
-                 (let [xs ($ xs path)
-                       ks ($ xs (p switch-prefix target-path))]
-                   (zipmap ($ ks path->sym)
-                           ($ xs path->sym))))
-               ([base-path target-path xs]
-                (build-upd target-path
-                           ($ xs (p path base-path)))))
-
-             ;; update
-
-             :upd
-             (fn [_ xs]
-               (apl build-upd xs))
-
-             to-root:upd
-             (fn [_ [a b]]
-               (if-not b
-                 (build-upd nil a)
-                 (build-upd a nil b)))})
-
-        (E+ import
-            {:doc
-             "link the given paths at current location"
-
-             build-upd
-             (fn
-               ([xs]
-                (let [ps ($ xs path)]
-                  (assert (c/every? ppath? ps)
-                          "cannot only import primary paths")
-                  {:links
-                   (zipmap ($ ps (comp path->sym path-head))
-                           ps)}))
-
-               ([pref xs]
-                (if (= xs :all)
-                  (lst 'ROOT.import.all pref)
-                  (build-upd ($ xs (p path pref)))))
-
-               ([x y & ys]
-                (if (vec? x)
-                  (deep-merge (build-upd x) (apl build-upd y ys))
-                  (deep-merge (build-upd x y) (apl build-upd ys)))))
-
-             :upd
-             (fn [_ xs]
-               (apl build-upd xs))
-
-             all
-             {:upd
-              (fn [e xs]
-                (apl build-upd
-                     (interleave xs ($ xs (p all-members e)))))
-
-              all-members
-              (fn [e at]
-                (let [[_ v] (bubfind e (path at))]
-                  #_(pp (shrink+ (keys v) symbol?))
-                  (shrink+ (keys v) symbol?)))}
-
-             :tries
-             '(do
-                (E+ foo.bar {a [:doc "foobar a" (fn [] 'foobara)]}
-                    foo.qux 42
-                    (import [foo.bar foo.qux])
-                    here [(import foo [bar qux]) (add qux qux)])
-                (!! bar.a:doc)
-                (!! here:val)
-
-                (E+ foot {foota 1 footb 2 footc {n 4}})
-
-                (E+ (import foot :all))
-
-                (!! (add foota footb footc.n))
-
-                (exp @E (lst (path 'fn:mac) '[a] 'a))
-
-                )}))
-
-    #_(do :composite
-
         (E+ composite
-            [dot (symbol ".")
+            [
+             dot (symbol ".")
              dotdot (symbol "..")
              dot? (fn [x] (= dot x))
              dotdot? (fn [x] (= dotdot x))
@@ -1477,65 +1310,252 @@
 
              cxp
              (fn [e x]
-               (expand (exp e x)))
+               (expand (exp e x)))]
 
+            :links {quote composite.quote
+                    cxp composite.cxp})
 
-             ]
+        ;; temp misc
+        (E+ add c/+
+            sub c/-
+            div c//
+            mul c/*
+            eq c/= ;;will be rebound later, needed for check blocks
 
-            )
+            check
+            {:mac
+             (fn [e xs]
+               (cxp e '(p/asserts . ~xs)))
+             thunk
+             {:mac
+              (fn [e xs]
+                (cxp e '(fn [] (p/asserts . ~xs))))
+              :upd
+              (fn [e xs] {:check '(check.thunk . ~xs)})}}
 
-        (_ :tries
+            upd.mk:upd
+            (fn [e [x]] (eval e x))
 
-           (E+ qual.test:mac
-               (fn [e xs]
-                 (exp e (composite.quote (fn:mac . ~xs))))
+            group:upd
+            (fn [e [metas & xs]]
+              ($ (env-upd_split xs)
+                 ($vals #(vector metas %))))
 
-               mod1
-               {fn:mac (c/fn [e _] (error "qsym bad behavior"))
-                x (qual.test [a] a)})
+            tagged:upd
+            (fn [e [t & xs]]
+              (let [ts (if (c/keyword? t) #{t} (c/set t))]
+                (c/vec
+                 (mapcat
+                  (fn [x] [($ x (fn [[k _]] [(path k :tags) ts])) x])
+                  (env-upd_split xs))))))
 
-           (!! (mod1.x 42))
+        (init-top-forms check)
 
-           (ppenv mod1.x)
-           (ppenv qual.test)
+        (E+ import
+            {:doc
+             "link the given paths at current location"
 
-           (!! (let [xs (range 10)] (sq (x ~@xs))))
-           (!! (c/let [xs (range 10)] (composite.quote (x . ~xs))))
-           (!! '{:a a . b .. [c d]})
-           (!! (let [x 'a] '('~x . xs x)))
-           (!! (composite.seq-parts '[a b .. c d]))
-           (!! (composite.compile '[a b .. c d]))
-           (!! (composite.compile '[a b . c d (x y . z)]))
-           (!! (composite.seq-parts '[a b . c d]))))
+             build-upd
+             [:doc
+              "produce a vector of :links updates"
+
+              prefix-members
+              (fn [e pref xs]
+                (cs
+                 (= :all xs)
+                 (let [[_ v] (bubfind e (path pref))
+                       xs (shrink+ (keys v) symbol?)]
+                   (rec e pref (vec xs)))
+
+                 (holymap? xs)
+                 (let [xs (mapcat (p* rec e) xs)]
+                   (rec e pref (vec xs)))
+
+                 (vec? xs)
+                 ($ xs (p path pref))))
+
+              link-update
+              (fn [xs]
+               (let [ps ($ xs path)]
+                 (assert (c/every? ppath? ps)
+                         "cannot only import primary paths")
+                 {:links
+                  (zipmap ($ ps (comp path->sym path-head))
+                          ps)}))
+
+              (fn
+                ([e x]
+                 (link-update (prefix-members e root-path x)))
+                ([e x & xs]
+                 (rec e (if (vec? x)
+                          (apply hash-map root-path x xs)
+                          (apply hash-map x xs)))))]
+
+             :upd
+             (fn [e xs]
+               #_(pp (apl build-upd xs))
+               (apl build-upd e xs))
+
+             :tries
+             '(do
+                (E+ foo.bar {a [:doc "foobar a" (fn [] 'foobara)]}
+                    foo.qux 42
+                    (import' [foo.bar foo.qux])
+                    here [(import' foo [bar qux]) (add qux qux)]
+                    )
+                (!! bar.a:doc)
+                (!! qux:val)
+                (!! here:val)
+
+                (E+ foot {foota 1 footb 2 footc {n 4}})
+                (E+ (import foot :all))
+                (!! (add foota footb footc.n)))})
+
+        #_(E+ import
+            {:doc
+             "link the given paths at current location"
+
+             build-upd
+             (fn
+               ([xs]
+                (let [ps ($ xs path)]
+                  (assert (c/every? ppath? ps)
+                          "cannot only import primary paths")
+                  {:links
+                   (zipmap ($ ps (comp path->sym path-head))
+                           ps)}))
+
+               ([pref xs]
+                (if (= xs :all)
+                  '(import.all ~pref)
+                  (build-upd ($ xs (p path pref)))))
+
+               ([x y & ys]
+                (if (vec? x)
+                  (deep-merge (build-upd x) (apl build-upd y ys))
+                  (deep-merge (build-upd x y) (apl build-upd ys)))))
+
+             :upd
+             (fn [_ xs]
+               (pp (apl build-upd xs))
+               (apl build-upd xs))
+
+             all
+             {:upd
+              (fn [e xs]
+                (apl build-upd
+                     (interleave xs ($ xs (p all-members e)))))
+
+              all-members
+              (fn [e at]
+                (let [[_ v] (bubfind e (path at))]
+                  #_(pp (shrink+ (keys v) symbol?))
+                  (shrink+ (keys v) symbol?)))}
+
+             :tries
+             '(do
+                (E+ foo.bar {a [:doc "foobar a" (fn [] 'foobara)]}
+                    foo.qux 42
+                    (import [foo.bar foo.qux])
+                    here [(import foo [bar qux]) (add qux qux)]
+                    )
+                (!! bar.a:doc)
+                (!! qux:val)
+                (!! here:val)
+
+                (E+ foot {foota 1 footb 2 footc {n 4}})
+                (E+ (import foot :all))
+                (!! (add foota footb footc.n)))})
+
+        )
+
+    (_ :move-members
+
+        (E+ move-members
+            {:doc
+             "a couple of updates for moving (aliasing is more accurate) members from path to path
+              It is mainly used in order to being able to define related functions in a module
+              which is handy to put documentation tests exemples and helpers
+              then make them available elsewhere (most commonly top level)"
+
+             :usage
+             '[(move-members target-path [mod1.foo mod2.bar])
+               (move-members base-path target-path [m1 m2 m3])
+               "if target-path is nil, root-path is used"]
+
+             ;; helpers
+
+             path-head
+             (fn [p]
+               (let [mk (.mkey p)
+                     ps (path-segments (ppath p))]
+                 (path (last ps) mk)))
+
+             switch-prefix
+             (fn [pref p]
+               (let [head (path-head p)]
+                 (or (path pref head) head)))
+
+             build-upd
+             (fn ([target-path xs]
+                 (let [xs ($ xs path)
+                       ks ($ xs (p switch-prefix target-path))]
+                   (zipmap ($ ks path->sym)
+                           ($ xs path->sym))))
+               ([base-path target-path xs]
+                (build-upd target-path
+                           ($ xs (p path base-path)))))
+
+             ;; update
+
+             :upd
+             (fn [_ xs]
+               (apl build-upd xs))
+
+             to-root:upd
+             (fn [_ [a b]]
+               (if-not b
+                 (build-upd nil a)
+                 (build-upd a nil b)))
+
+             :tries
+             '(do
+
+                (E+ ffoo.bar {a 1 b 2}
+                    (move-members nil [ffoo.bar.a ffoo.bar.b]))
+
+                (E+ ggoo.bar {a :ggoobara b :ggoobarb}
+                    (move-members ggoo.bar nil [a b]))
+
+                (!! a))}))
 
     (E+ generic
         {:doc
          "an update to define a generic function
-           and its related inspection and extension capabilities"
+          and its related inspection and extension capabilities"
 
          :upd
          (fn [e body]
            (let [gsym (generic.symbol (loc e))
                  e (env-add-member e (path (loc e) :val) ::unbound)]
-             #_(pp 'generic-fx (generic.init e gsym body))
              (assoc (generic.module gsym)
                     :fx (generic.init e gsym body))))
 
          reduced:upd
          (fn [e [argv & decls]]
-           (generic:upd
-            e (lst '([x] x)
-                   (lst* argv decls)
-                   (lst* (conj argv '& 'xs)
-                         (c/mapcat
-                          (fn [[t i]]
-                            [t '(reduce (fn ~argv ~i) ~i xs)])
-                          (c/partition 2 decls))))))
+           (let [[arg1 varg] (p/gensyms)]
+             '(generic
+               ([~arg1] ~arg1)
+                (~argv . ~decls)
+                (~(conj argv '& varg)
+                 . ~(c/mapcat
+                     (fn [[t i]]
+                       [t '(reduce (fn ~argv ~i) ~i ~varg)])
+                     (c/partition 2 decls))))))
 
          module
          (fn [gsym]
            '{:val ~gsym
-             symbol:val '~gsym
              inspect:val
              (fn [] (@g/reg '~gsym))
              extend:upd
@@ -1551,7 +1571,7 @@
 
           exp-case
           (fn [e [argv & body]]
-            (let [[e argv] (hygienic.shadow e argv)]
+            (let [[e argv] (hygiene.shadow e argv)]
               (lst* argv (exp e body))))
 
           exp-cases
@@ -1576,11 +1596,13 @@
           (fn [e [type & body]]
             ($ (c/vec body)
                (fn [[n & xs]]
-                 (lst* (p/sym n '.extend)
-                       (g/impl-body->cases type xs)))))}
+                 '(~(p/sym n ".extend")
+                   . ~(g/impl-body->cases type xs)))))}
 
          :tries
          '(do
+
+            (exp @E '(fn [x & xs] :yop))
 
             (E+ pul+
                 (generic [a b]
@@ -1613,58 +1635,64 @@
             (E+ foo.bar.g (generic [x] :num (+ ..fortytwo x)))
             (!! (foo.bar.g 1)))})
 
-    (do :fn&
+    (E+ fn&
 
-        (E+ fn&
+        [expansion-size 5
 
-            {expansion-size 5
+         replace-ellipsis
+         [:doc
+          "turn a single ellipted body into several bodies"
 
-             set-expr
-             (fn [xs]
-               (cons `hash-set
-                     (sort-by #(= '... %) xs)))
+          ellipse (symbol "...")
+          ellipse? #(= ellipse %)
 
-             replace-ellipsis
-             (fn [expr args applied?]
-               (let [k #(rec % args applied?)]
-                 (cp expr
-                     map? ($vals expr k)
-                     set? (k (..set-expr expr))
-                     vec?
-                     (cs (= '... (last expr))
-                         (k (cons `vector expr))
-                         ($ expr k))
-                     seq?
-                     (c/map k
-                            (cs (= '... (last expr))
-                                (cs applied?
-                                    (cons 'apl (c/concat (butlast expr) args))
-                                    (c/concat (butlast expr) args))
-                                expr))
-                     expr)))
+          set-expr
+          (fn [xs]
+            (cons `hash-set
+                  (sort-by ellipse? xs)))
 
-             cases
-             (fn [[argv expr]]
-               (let [argsyms (c/take ..expansion-size (gensyms))
-                     vsym (gensym)]
-                 (c/concat
-                  ($ (range (inc ..expansion-size))
-                     (fn [x]
-                       (let [args (c/take x argsyms)]
-                         (lst (catv argv args)
-                              (replace-ellipsis expr args false)))))
-                  [(lst (catv argv argsyms ['& vsym])
-                        (replace-ellipsis
-                         expr (conj (c/vec argsyms) vsym) true))])))
-             :mac
-             (fn [e form]
-               (exp e (cons 'fn (fn&.cases form))))})
+          (fn [expr args applied?]
+            (let [k #(rec % args applied?)]
+              (cp expr
+                  map? ($vals expr k)
+                  set? (k (set-expr expr))
+                  vec?
+                  (cs (ellipse? (last expr))
+                      (k (cons `vector expr))
+                      ($ expr k))
+                  seq?
+                  (c/map k
+                         (cs (ellipse? (last expr))
+                             (cs applied?
+                                 (cons `apply (c/concat (butlast expr) args))
+                                 (c/concat (butlast expr) args))
+                             expr))
+                  expr)))]
 
-        (_ :tries
-           (exp @E '(fn& [a b]
-                         (toto (yop ...)
-                               {:a [m n o ...]
-                                :b [a b c #{foo a ...}]})))))
+         cases
+         (fn [[argv expr]]
+           (let [argsyms (c/take expansion-size (gensyms))
+                 vsym (gensym)]
+             (c/concat
+              ($ (range (inc expansion-size))
+                 (fn [x]
+                   (let [args (c/take x argsyms)]
+                     (lst (catv argv args)
+                          (replace-ellipsis expr args false)))))
+              [(lst (catv argv argsyms ['& vsym])
+                    (replace-ellipsis
+                     expr (conj (c/vec argsyms) vsym) true))])))
+
+         :mac
+         (fn [e form]
+           (exp e '(fn . ~(fn&.cases form))))
+
+         :tries
+         '(do
+            (exp @E '(fn& [a b]
+                          (toto (yop ...)
+                                {:a [m n o ...]
+                                 :b [a b c #{foo a ...}]}))))])
 
     (E+ joining
         [:doc
@@ -1845,10 +1873,9 @@
            make-upd
            (fn
              ([[n e]]
-              (let [n+ (+ n '+:val)
-                    n* (+ n '*:val)
-                    n+* (+ n '+*:val)
-                    n (+ n :val)]
+              (let [n+ (+ n "+")
+                    n* (+ n "*")
+                    n+* (+ n "+*")]
                 '[~n (fn& [] (sip ~e ...))
                   ~n+ (fn& [] (+ ~e ...))
                   ~n* (fn& [x] (apl ~n x ...))
@@ -1922,11 +1949,7 @@
            (eq (sym "iop" 'foo :bar)
                'iopfoo:bar)
            (eq (str "iop" 'foo :bar)
-               "iopfoo:bar")
-           )
-          ]
-
-         ]
+               "iopfoo:bar"))]]
 
         (import
 
@@ -2032,11 +2055,12 @@
 
          ;; type generic
          (upd.mk
-          (sq {type
-               (generic
-                [x]
-                ~@(c/interleave prims prims)
-                :any (c/type x))}))]
+          (let [arg1 (gensym)])
+          '{type
+            (generic
+             [~arg1]
+             ~@(c/interleave prims prims)
+             :any (c/type ~arg1))})]
 
         (import types [type]))
 
@@ -2052,17 +2076,17 @@
 
           template
           (fn [arity]
-            (let [syms (gensyms)
+            (let [arg1 (gensym)
                   argv
                   (if arity
-                    (vec+ (take syms arity))
+                    (vec+ (take (gensyms) arity))
                     [(gensym) '& (gensym)])
                   test
                   (if arity
-                    (lst* 'f argv)
-                    (lst 'apl 'f (car argv) (nth argv 2)))
+                    (lst* arg1 argv)
+                    (lst `apply arg1 (car argv) (nth argv 2)))
                   form
-                  '(fn [f] (fn ~argv (when ~test ~(car argv))))]
+                  '(fn [~arg1] (fn ~argv (when ~test ~(car argv))))]
               form))
 
           builder:mac
@@ -2134,12 +2158,13 @@
             (E+ (guard.imports [neg? 1]
                                [pos? 1]
                                [gt 2 >]))
-            (!! (neg? 2))
+            (!! (neg? -2))
             ((!! (guard.unary pos?)) 2)
             ((!! (guard.variadic =)) 2 (+ 1 1) (- 4 2))
             (res @E '(guard.template nil)))]
 
-        (import.all guards.builtins))
+        (import guards [guard]
+                guards.builtins :all))
 
     #_(do :guards
 
@@ -2235,7 +2260,7 @@
              ((!! (guard.variadic =)) 2 (+ 1 1) (- 4 2))
              (res @E '(guard.template nil))))
 
-    (do :composite
+    #_(do :composite
 
         (E+ composite
             {dotted?
@@ -2311,6 +2336,14 @@
            (!! (composite.compile2 '[a b . c d (x y . z)]))
            (!! (composite.seq-parts '[a b . c d]))))
 
+    (E+ test-links
+        [:links {cp composite}
+         dot? cp.dot?])
+
+    (!! 'c/keys
+         #_(c/let [s (gensym) ks [:a :b]]
+           (exp @E '(~s . ~ks))))
+
     (do :bindings
 
         (E+
@@ -2319,6 +2352,8 @@
          {:val
           (fn [xs]
             (mapcat (p* bind) (partition 2 xs)))
+
+          :links {cp composite}
 
           bind
           [(generic
@@ -2332,14 +2367,14 @@
            vec
            {:val
             (fn [x y]
-              (if (composite.single-dotted? x)
+              (if (cp.single-dotted? x)
                 (.dotted x y)
                 (.raw x y)))
 
             body
             (fn [x y]
               (mapcat
-               (fn [v i] (bind v '(nth ~y ~i nil)))
+               (fn [v i] (bind v '(c/nth ~y ~i nil)))
                x (range)))
 
             raw
@@ -2354,7 +2389,7 @@
 
             dotted
             (fn [x y]
-              (let [doti (indexof x '.)
+              (let [doti (indexof x cp.dot)
                     cars (take x doti)
                     [eli queue] (uncs (drop x (inc doti)))
                     qcnt (count queue)
@@ -2373,7 +2408,7 @@
            map
            {:val
             (fn [x y]
-              (if (composite.single-dotted? x)
+              (if (cp.single-dotted? x)
                 (.dotted x y)
                 (.raw x y)))
 
@@ -2394,14 +2429,14 @@
 
             dotted
             (fn [x y]
-              (let [rs (get x '.)
-                    m (dissoc x '.)
+              (let [rs (get x cp.dot)
+                    m (dissoc x cp.dot)
                     ks (c/keys m)
                     [checkmap msym] (gensyms)]
                 (+
                  [msym y]
                  (bind.map.keys m msym)
-                 (bind rs (sq (dissoc ~msym ~@ks))))))}
+                 (bind rs '(c/dissoc ~msym . ~ks)))))}
 
            seq
            (fn [[v & args] y]
@@ -2436,13 +2471,13 @@
                   (+
                    [ysym y
                     checkline '(line? ~ysym)
-                    countable? `(counted? ~ysym)
+                    countable? '(c/counted? ~ysym)
                     checkcount '(= ~(count xs) (count ~ysym))]
                    (bind.vec.body xs ysym))))
 
               '!
               (fn [[f & [p]] y]
-                (bind (or p (gensym)) `(~f ~y)))})
+                (bind (or p (gensym)) (lst f y)))})
 
             add
             (fn [s f]
@@ -2456,7 +2491,7 @@
                      [a b & nxt] (bindings xs)]
               (if a
                 (if (seen a)
-                  (recur (conj ret (gensym) '(= ~a ~b)) seen nxt)
+                  (recur (conj ret (gensym) '(eq ~a ~b)) seen nxt)
                   (recur (conj ret a b) (conj seen a) nxt))
                 ret)))
 
@@ -2502,7 +2537,7 @@
            (fn [e [p1 e1 & bs] expr mode]
              (if-not p1 (cxp e expr)
                      (let [step-mode (or (..sym->mode p1) mode)
-                           [e' pat] (hygienic.shadow e p1)]
+                           [e' pat] (hygiene.shadow e p1)]
                        (..step-form 
                         pat (cxp e e1)
                         (..form e' bs expr mode)
@@ -2583,7 +2618,7 @@
            (exp @E '(let [a 1] a))
            (exp @E '(let [[a b c] (range 10)] a))
            (env-inspect 'bindings.let.compile)
-           (exp @E (?let [(?> x num? pos? (gt_ 12)) 13] x))
+           (exp @E '(?let [(?> x num? pos? (gt_ 12)) 13] x))
            #_(exp @E '(let [(gt (pos? (num? x)) 12) 13] x))
            (!! (bindings.let.compile @E (bindings.let.parse '([a 1 b 2] (+ a b)))))))
 
