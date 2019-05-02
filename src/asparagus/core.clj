@@ -1443,27 +1443,32 @@
 
                    x))
 
-             quotf.wrap
-             (fn [x] (list (symbol "quote") x))
-
              quotf
-             (fn
-               "quoting function,
-                handles unquoting, does not quote dots,
-                qualifies symbols if possible"
-               [e form]
-               (cp form
-                   dot? dot
-                   dotdot? dotdot
-                   unquote? (exp e (second form))
-                   seq? (cons `list ($ form (p quotf e)))
-                   holycoll? ($ form (p quotf e))
-                   symbol?
-                   (cs [p (path form)
-                        [p _] (bubfind e p)]
-                       (.wrap p)
-                       (.wrap form))
-                   (.wrap form)))
+             {:doc
+              "quoting function,
+               handles unquoting, does not quote dots,
+               qualifies symbols if possible"
+
+              wrap
+              (fn [x] (list (symbol "quote") x))
+              rootsym
+              (fn [p] (path->sym (path (symbol "ROOT") p)))
+
+              :val
+              (fn
+                [e form]
+                (cp form
+                    dot? dot
+                    dotdot? dotdot
+                    unquote? (exp e (second form))
+                    seq? (cons `list ($ form (p quotf e)))
+                    holycoll? ($ form (p quotf e))
+                    symbol?
+                    (cs [p (path form)
+                         [p _] (bubfind e p)]
+                        (.wrap (.rootsym p))
+                        (.wrap form))
+                    (.wrap form)))}
 
              quote:mac
              (fn [e [x]]
@@ -1480,6 +1485,20 @@
             )
 
         (_ :tries
+
+           (E+ qual.test:mac
+               (fn [e xs]
+                 (exp e (composite.quote (fn:mac . ~xs))))
+
+               mod1
+               {fn:mac (c/fn [e _] (error "qsym bad behavior"))
+                x (qual.test [a] a)})
+
+           (!! (mod1.x 42))
+
+           (ppenv mod1.x)
+           (ppenv qual.test)
+
            (!! (let [xs (range 10)] (sq (x ~@xs))))
            (!! (c/let [xs (range 10)] (composite.quote (x . ~xs))))
            (!! '{:a a . b .. [c d]})
