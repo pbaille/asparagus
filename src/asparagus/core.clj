@@ -1329,6 +1329,10 @@
             mul c/*
             eq c/= ;;will be rebound later, needed for check blocks
 
+            quot:mac
+            (fn [_ [x]]
+              (lst (sym "quote") x))
+
             check
             {:mac
              (fn [e xs]
@@ -1950,12 +1954,12 @@
 
            ;; type generic
            (upd.mk
-            (let [arg1 (gensym)])
-            '{type
-              (generic
-               [~arg1]
-               ~@(c/interleave prims prims)
-               :any (c/type ~arg1))})]
+            (let [arg1 (gensym)]
+              {(quot type)
+               '(generic
+                 [~arg1]
+                 .~(c/interleave prims prims)
+                 :any (c/type ~arg1))}))]
 
           (import types [type]))
 
@@ -2074,14 +2078,13 @@
 
          assertion
          [:doc
-          "a generic to turn your datatype into an assertion expression"
+          "a generic to turn something into an assertion expression"
 
           ;; helpers
 
           message?
           (fn [x]
-            (when (or (keyword? x) (string? x))
-              x))
+            (or (keyword? x) (string? x)))
 
           message+
           (fn [m1 m2]
@@ -2097,40 +2100,33 @@
 
           mapdo:mac
           (fn [e [x f]]
-            (exp e '(lst* '~(sym "do") (c/map ~f ~x))))
+            (exp e '(lst* 'do (c/map ~f ~x))))
 
-          vector
-          [split
-           (fn [x]
-             (c/let [[[p1] :as parts] (partition-by message? x)
-                   parts (if (message? p1) parts (cons nil parts))]
-               (c/map (p* catv) (partition 2 parts))))]
+          vec-split
+          (fn [x]
+            (c/let [[[p1] :as parts] (partition-by message? x)
+                    parts (if (message? p1) parts (cons nil parts))]
+              (c/map (p* catv) (partition 2 parts))))
 
           ;; generic
 
           (generic
            [x m]
            :vec
-           (mapdo (assertion.vector.split x)
+           (mapdo (vec-split x)
                   (fn [[m' & xs]]
                     (mapdo xs (fn [a] (assertion a (message+ m m'))))))
-           #_'(do .~(c/map (fn [[m' & xs]]
-                           '(do .~(c/map (fn [a] (assertion a (message+ m m')))
-                                         xs)))
-                         (assertion.vector.split x)))
-           #_(c/let [[x1 & xs] x
-                   [m' xs] (if (message? x1) [x1 xs] [nil x])
-                   m (message+ m m')]
-             '(do .~(c/map (fn [a] (assertion a m))
-                           xs)))
+
            :map
-           '(do .~(c/map
-                   (fn [[k v]]
-                     (assertion v (message+ m k)))
-                   x) ::ok)
+           (sip (mapdo x
+                 (fn [[k v]]
+                  (assertion v (message+ m k))))
+                ::ok)
 
            :nil
            '(error ~(error-str "nil" m))
+
+           :string nil
 
            :any
            '(or ~x (error ~(error-str x m)))
@@ -2144,8 +2140,12 @@
           (fn [_ xs]
             {:fx '(assert .~xs)})}
 
-         #_(!! (testing.assertion.vector.split [:a 1 2]))
-         #_(exp @E '(testing.assertion.mapdo (range 10) inc))
+         tests:upd
+         (fn [e xs]
+           {(quot tests)
+            {:form '(quot ~(vec* (assertion.vec-split xs)))
+             :do '(fn [] (assert ~(vec* xs) ~(loc e)))}})
+
          (assert
           {:errors
            [(throws (assert (pos? -1) "not pos!"))
@@ -2171,7 +2171,9 @@
               (eq ::ok (assert {:pos (pos? x)
                                 :gt3 (c/> x 3)}
                                "map assertion fail!")))]})
-         ])
+         ]
+
+        (import testing [assert throws tests]))
 
       (do :bindings
 
@@ -2192,7 +2194,7 @@
               :vec (bind.vec x y)
               :map (bind.map x y)
               :seq (bind.seq x y)
-              [(gensym) (lst 'eq x y)])
+              [(gensym "?match") (lst 'eq x y)])
 
              vec
              {:val
@@ -2280,10 +2282,14 @@
 
               default
               (fn [[v s & args] y]
-                (cs (sym? s)
+                (cs (key? v)
+                    [s y (quot ?typecheck) '(eq (type ~s) ~v)]
+                    (sym? s)
                     [s (lst* v y args)]
-                    (error "guard binding takes a symbol as first argument: "
+                    (error "guard binding takes a symbol as first argument, or a type keyword: "
                            (lst* v s args))))
+
+              #_(!! (bindings.bind '(:vec a) 'x))
 
               table
               (atom
@@ -2477,12 +2483,47 @@
 
              (nil? (let [(pos? a) 1 (neg? ?b) 0] (div a ?b)))
 
+             ;; type guards 
+             (eq [1 2] (let [(:vec v) [1 2]] v))
+             (nil? (let [(:map v) [1 2] _ (error "never")] v))
+
+             (eq :ok (let [:yo (key "yo")] :ok))
+             (nil? (let [:yo 42] :ok))
+             (eq :ok (let [a (inc 2) 3 a] :ok))
+             (eq :ok (let [a 1 b 2 3 (add a b)] :ok))
+
              )
 
             :fx (let:check)
 
             ?let
-            (check.thunk
+            (tests
+
+             :accumulate-bindings
+             (eq (?let [a 1 b a] (add a b))
+                 2)
+
+             :guards
+             "with guards ?let make sense"
+             (nil? (?let [(pos? a) -1] (error "never touched")))
+
+             :bang-prefix
+             "in ?let ! behaves the same as in let"
+             (throws
+              (?let [!a (pos? -1)] :never))
+
+             :underscore-prefix
+             "if you want to allow some binding to be nil in a ?let form use the _ prefix"
+             (eq (?let [a 1 _b nil] (add a (or _b 0)))
+                 1)
+
+             (p/prob :done)
+
+             )
+            #_(!! bindings.let.builtins.?let.tests:form)
+            :fx (?let.tests:do)
+
+            #_(check.thunk
 
              (eq (?let [a 1 b a] (add a b))
                  2)
@@ -2501,8 +2542,7 @@
                  1)
 
              )
-
-            :fx (?let:check)
+            ;:fx (?let:check)
 
             ?lut
             (check.thunk
@@ -2563,7 +2603,15 @@
 
            bindings.let.builtins
            [clet:mac (cased.compiler)
-            clut:mac (cased.compiler :unified)]
+            clut:mac (cased.compiler :unified)
+
+            clet
+            (tests
+             (!!
+              (let [p [:point 0 2]]
+                (clet [[:point x 0] p] :y0
+                      [[:point 0 y] p] :x0
+                      [[:point x y] p] [x y]))))]
 
            (import bindings.let.builtins
                    [clet clut])
@@ -3058,20 +3106,20 @@
 
     (do :compare
 
-        (E+ 
-         ;; redefining eq
+        (E+
+
          eq
          (generic
-          ;; build a guard
+
           ([x] #(eq % x))
-          ;; intended to be extended (if needed)
+
           ([x y]
            :coll
            (c/when (c/identical? (pure x) (pure y))
              (when (c/= x y) x))
            :nil (nil? y)
            :any (when (c/= x y) x))
-          ;; variadic
+
           ([x y & xs]
            (* eq (eq x y) xs)))
 
@@ -3761,3 +3809,39 @@
     )
 
 :YEAH
+
+(E+ bindings.let
+    [case
+     {clut-form
+      (f :rec [symseed xs]
+         (if (even? (count xs))
+           '(clut .~(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
+           (rec symseed [. (butlast xs) (quot _) (last xs)])))
+      :mac
+      (f :rec [e [seed . xs]]
+         (let-syms [symseed]
+           (exp e
+                '(c/let ~[symseed seed]
+                   ~(clut-form symseed xs)))))}
+     case_:mac
+     (f [e xs]
+        (exp e '(f_ (case _ .~xs))))])
+
+(E+ (import bindings.let [case case_]))
+
+(!! (case [:point 1 "aze"]
+      [:point x 0] :y0
+      [:point 0 y] :x0
+      [:point (:num x) (:num y)] [x y]
+      :pouet))
+
+(!! (let [t (case_
+             [:point x 0] :y0
+             [:point 0 y] :x0
+             [:point (:num x) (:num y)] [x y]
+             :pouet)]
+      (assert
+       [(eq :y0 (t [:point 1 0]))
+        (eq :x0 (t [:point 0 1]))
+        (eq [1 2] (t [:point 1 2]))
+        (eq :pouet (t [:point 1 "io"]))])))
