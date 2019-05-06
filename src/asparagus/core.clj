@@ -1133,7 +1133,7 @@
                  pat))}
 
           env-add-sub
-          (fn [e submap]
+          (c/fn [e submap]
             (reduce
              (c/fn [e [s1 s2]]
                (c/let [at (path (loc e) s1)]
@@ -2387,15 +2387,65 @@
                  :short `(let [~s ~e1] (when ~s ~e2))
                  :strict `(let [~s (or ~e1 (error "nil! " (~(sym "quote") ~e1)))] ~e2)))
 
+             #_(form
+              (fn [e [p1 e1 & bs] expr mode]
+                (if-not p1 (cxp e expr)
+                        (let [step-mode (or (..sym->mode p1) mode)
+                              [e' pat] (hygiene.shadow e p1)]
+                          (..step-form
+                           pat (cxp e e1)
+                           (..form e' bs expr mode)
+                           step-mode))))
+
+              compile
+              {:val
+               (fn [e opts]
+                 (if (:name? opts)
+                   (.named e opts)
+                   (.anonymous e opts)))
+
+               anonymous
+               (fn [e opts]
+                 (bindings.let.form
+                  e (if (:unified opts)
+                      (bindings.unified (cat* (:bs opts)))
+                      (bindings (cat* (:bs opts))))
+                  (:expr opts)
+                  (cp opts
+                      :strict :strict
+                      :short :short
+                      :opt)))
+
+               named ::unbound
+               }
+
+              compiler
+              (fn [& flags]
+                (fn [e form]
+                  (..compile
+                   e (mrg (flagmap flags)
+                          (..parse form))))))
+
              form
              (fn [e [p1 e1 & bs] expr mode]
-               (if-not p1 (cxp e expr)
-                       (let [step-mode (or (..sym->mode p1) mode)
-                             [e' pat] (hygiene.shadow e p1)]
-                         (..step-form
-                          pat (cxp e e1)
-                          (..form e' bs expr mode)
-                          step-mode))))
+               (cs
+                ;; no more bindings we just expand the body expression
+                (not p1) (cxp e expr)
+                ;; if both e1 is syms we can just substitute
+                ;; instead of adding a binding
+                ;; we also check if p1 has not a different mode (have to think of this further)
+                [? (sym? e1)
+                 ? (or (not (sym->mode p1))
+                       (eq (sym->mode p1) (sym->mode e1)))
+                 e' (hygiene.env-add-sub e {p1 (exp e e1)})]
+                (form e' bs expr mode)
+                ;; else we add a binding
+                [step-mode (or (sym->mode p1) mode)
+                 [e' pat] (hygiene.shadow e p1)]
+                (step-form
+                 pat (cxp e e1)
+                 (form e' bs expr mode)
+                 step-mode)))
 
              compile
              {:val
@@ -2422,57 +2472,7 @@
              compiler
              (fn [& flags]
                (fn [e form]
-                 (..compile
-                  e (mrg (flagmap flags)
-                         (..parse form)))))
-
-             form2
-             (fn [e [p1 e1 & bs] expr mode]
-               (cs
-                ;; no more bindings we just expand the body expression
-                (not p1) (cxp e expr)
-                ;; if both p1 and e1 are syms we can just substitute
-                ;; instead of adding a binding
-                ;; we also check if p1 has not a different mode (have to think of this further)
-                [? (sym? p1) ? (sym? e1)
-                 ? (or (not (sym->mode p1))
-                       (eq (sym->mode p1) (sym->mode e1)))
-                 e' (hygiene.env-add-sub e {p1 (exp e e1)})]
-                (form2 e' bs expr mode)
-                ;; else we add a binding
-                [step-mode (or (sym->mode p1) mode)
-                 [e' pat] (hygiene.shadow e p1)]
-                (step-form
-                 pat (cxp e e1)
-                 (form2 e' bs expr mode)
-                 step-mode)))
-
-             compile2
-             {:val
-              (fn [e opts]
-                (if (:name? opts)
-                  (.named e opts)
-                  (.anonymous e opts)))
-
-              anonymous
-              (fn [e opts]
-                (bindings.let.form2
-                 e (if (:unified opts)
-                     (bindings.unified (cat* (:bs opts)))
-                     (bindings (cat* (:bs opts))))
-                 (:expr opts)
-                 (cp opts
-                     :strict :strict
-                     :short :short
-                     :opt)))
-
-              named ::unbound
-              }
-
-             compiler2
-             (fn [& flags]
-               (fn [e form]
-                 (compile2
+                 (compile
                   e (mrg (flagmap flags)
                          (parse form)))))
 
@@ -2485,11 +2485,10 @@
                (exp @E '(let2 [a 1 b a c b] (add a b c))))
 
            bindings.let.builtins
-           [let:mac  (compiler2)
-            ;let2:mac  (compiler2)
+           [let:mac  (compiler)
             ?let:mac (compiler :short)
             !let:mac (compiler :strict)
-            ?lut:mac (compiler :unified :short)
+            lut:mac (compiler :unified :short)
             !lut:mac (compiler :unified :strict)
 
             let
@@ -2594,39 +2593,17 @@
              (p/prob :done)
 
              )
-            #_(!! bindings.let.builtins.?let.tests:form)
             :fx (?let.tests:do)
 
-            #_(check.thunk
-
-             (eq (?let [a 1 b a] (add a b))
-                 2)
-
-             ;; with guards ?let make sense
-             (nil? (?let [(pos? a) -1] (error "never touched")))
-
-             ;; in ?let ! behaves the same as in let
-             (eq :catched
-                 (try (?let [!a (pos? -1)] :never)
-                      (catch Exception _ :catched)))
-
-             ;; if you want to allow some binding to be nil in a ?let form use the _ prefix
-
-             (eq (?let [a 1 _b nil] (add a (or _b 0)))
-                 1)
-
-             )
-            ;:fx (?let:check)
-
-            ?lut
+            lut
             (check.thunk
-             (eq (?lut [a 1 a 1] (add a a))
+             (eq (lut [a 1 a 1] (add a a))
                  2)
 
              ;; this shorts because the second binding of a does not unify with the previous one
-             (nil? (?lut [a 1 a (inc a)] (error "never touched"))))
+             (nil? (lut [a 1 a (inc a)] (error "never touched"))))
 
-            :fx (?lut:check)
+            :fx (lut:check)
 
             !lut
             (check.thunk
@@ -2643,7 +2620,7 @@
             ]
 
            (import bindings.let.builtins
-                   [let ?let !let ?lut !lut])
+                   [let ?let !let lut !lut])
 
            bindings.let.cased
            {parse
@@ -2657,27 +2634,30 @@
                    cases)}))
 
             compile
-            (fn [e {:keys [unified cases]}]
+            (fn [e {:keys [unified cases strict]}]
               (let [cs
                     ($ cases
                        (fn [[h e]]
                          (if (vec? h)
-                           (lst (if unified '?lut '?let)
+                           (lst (if unified 'lut '?let)
                                 h {::return e})
                            (lst `when h {::return e}))))
                     form (lst* `or cs)]
-                (lst `get (exp e form) ::return)))
+                (lst `get (exp e form) ::return
+                     (when strict '(error "clet no match!")))))
 
             compiler
             (fn [& flags]
               (fn [e form]
-                (..compile
+                (compile
                  e (mrg (flagmap flags)
-                        (..parse form)))))}
+                        (parse form)))))}
 
            bindings.let.builtins
            [clet:mac (cased.compiler)
             clut:mac (cased.compiler :unified)
+            !clet:mac (cased.compiler :strict)
+            !clut:mac (cased.compiler :unified :strict)
 
             clet
             (tests
@@ -2687,7 +2667,7 @@
                      [[:point x y] p] [x y])))]
 
            (import bindings.let.builtins
-                   [clet clut])
+                   [clet clut !clet !clut])
            )
 
           (_ :tries
@@ -2900,42 +2880,45 @@
 
           compile
           {:val
-           (fn [e {:keys [arity-map name doc meta]}]
-             (exp e (lst* 'primitives.fn 
-                          (concat (when name [name]) ;doc meta
-                                  ($ (iter arity-map) .arity)))))
+           (fn [e {:as opts :keys [arity-map name]}]
+             (exp e '(fn .~(when name [name])
+                        .~($ (iter arity-map) (p .arity opts)))))
            arity
-           {:val 
-            (fn [[n cases]]
-              (if (num? n)
-                (.fixed n cases)
-                (.variadic cases)))
+           {:val
+            (fn [opts [n cases]]
+              (let [verb (verb opts cases)]
+                (if (num? n)
+                 (.fixed verb n cases)
+                 (.variadic verb cases))))
+
+            verb
+            (fn [{:keys [unified short strict]} cases]
+              (cs (not (next cases))
+                  (cs (and unified strict) '!lut
+                      unified 'lut
+                      short '?let
+                      strict '!let
+                      'let)
+                  (cs (and unified strict) '!clut
+                      unified 'clut
+                      strict '!clet
+                      'clet)))
 
             fixed
-            (fn [n cases]
-              (let [argv (vec* (take (gensyms) n))
+            (fn [verb arity cases]
+              (let [argv (vec* (take (gensyms) arity))
                     clet-cases
                     (mapcat
                      (fn [{:keys [pat body]}]
                        [(vec* (interleave pat argv)) body])
                      cases)]
-                (lst argv (lst* (if (next cases) 'clet 'let) clet-cases)))
-              #_(if-not (next cases)
-                (let [(ks pat body) (car cases)]
-                  (lst pat body))
-                (let [argv (vec* (take (gensyms) n))
-                      clet-cases
-                      (mapcat
-                       (fn [{:keys [pat body]}]
-                         [(vec* (interleave pat argv)) body])
-                       cases)]
-                  (lst argv (lst* 'clet clet-cases)))))
+                (lst argv (lst* verb clet-cases))))
 
             variadic
-            (fn [cases]
+            (fn [verb cases]
               (let [vsym (gensym)
                     prefcnt (count (:pat-prefix (car cases)))
-                    argv-prefix (take (gensyms) prefcnt) 
+                    argv-prefix (take (gensyms) prefcnt)
                     argv (vec+ argv-prefix ['& vsym])
                     clet-cases
                     (mapcat
@@ -2943,14 +2926,14 @@
                        [(vec+ (interleave pat-prefix argv-prefix) [rest-pat vsym])
                         body])
                      cases)]
-                (lst argv (lst* 'clet clet-cases))))}}
+                (lst argv (lst* verb clet-cases))))}}
 
           compiler
           (fn [& flags]
             (fn [e form]
-              (..compile
+              (compile
                e (mrg (flagmap flags)
-                      (..parse form)))))
+                      (parse form)))))
           }}
 
         f:mac (lambda.compiler)
@@ -2972,6 +2955,10 @@
         fu_:mac (f [e xs] (cxp e (lst* 'fu1 '_ xs)))
 
         cf:mac (lambda.cased.compiler)
+        !cf:mac (lambda.cased.compiler :strict)
+        ?cf:mac (lambda.cased.compiler :short)
+        cfu:mac (lambda.cased.compiler :unified)
+        !cfu:mac (lambda.cased.compiler :unified :strict)
 
         bindings.let.compile.named
         (fn [e opts]
@@ -2983,10 +2970,12 @@
                          :name (:name opts)}))
                 (cxp e ($ (:bs opts) second)))))
 
-    (pp (exp @E '(cf [a] 1 [a [b c]] 2)))
+    #_(pp (exp @E '(cf [a] 1 [a [b c]] 2))
+        (exp @E '(cfu [a] 1 [a [b a]] 2))
+        (exp @E '(!cfu [a] 1 [a [b a]] 2 [a [b b]] 3)))
 
 
-    (exp @E '(clet [a 1] a))
+    #_(exp @E '(!clet [a 1] a [b 2] b))
 
     (do :lambda-upd-tries
 
