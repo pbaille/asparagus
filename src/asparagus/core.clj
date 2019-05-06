@@ -801,6 +801,9 @@
                        vec?
                        (mapcat #(env-upds e % from) (env-upd_split x))
 
+                       string?
+                       [[:def (path from :doc) x]]
+
                        (p env-upd_upd-expr? (mv e from))
                        (let [[_ updf] (env-upd_upd-expr? (mv e from) x)]
                          (env-upds e (updf (mv e from) (cdr x)) from))
@@ -1080,6 +1083,13 @@
             b {a 2 p (add _.a a)})
 
         (!! b.p)
+
+        (E+ documented-id
+            ["my id function"
+             (fn [x] x)])
+
+        (!! (documented-id 1))
+        (!! documented-id:doc)
 
         
 
@@ -2607,11 +2617,10 @@
 
             clet
             (tests
-             (!!
-              (let [p [:point 0 2]]
-                (clet [[:point x 0] p] :y0
-                      [[:point 0 y] p] :x0
-                      [[:point x y] p] [x y]))))]
+             (let [p [:point 0 2]]
+               (clet [[:point x 0] p] :y0
+                     [[:point 0 y] p] :x0
+                     [[:point x y] p] [x y])))]
 
            (import bindings.let.builtins
                    [clet clut])
@@ -2695,6 +2704,49 @@
               e (mrg (flagmap flags)
                      (parse form)))))
 
+         ;; redo
+
+         parse2
+         (fn [[x & xs :as form]]
+           (let [[nam (& [x . xs] body)]
+                 (if (keyword? x)
+                   [(sym x) xs]
+                   [nil form])
+
+                 [doc [pat . body]]
+                 (if (string? x)
+                   [x xs]
+                   [nil body])
+
+                 arity
+                 (when (and (vec? pat)
+                            (not (cp.dotted? pat)))
+                   (count pat))]
+
+             {:name (or nam (quot rec))
+              :doc doc
+              :pat pat
+              :arity arity
+              :body (bindings.bodify body)
+              :form form}))
+
+         compiler2
+         {:val
+          (fn [& flags]
+            (fn [e form]
+              (compile
+               e (mrg (flagmap flags)
+                      (parse2 form)))))
+          :upd
+          (fn [_ flags]
+            '{compile (apl compiler2 ~flags)
+              :mac compile
+              :upd
+              (fn [e form]
+                (let [meta (mrg ~(flagmap flags) (parse2 form))]
+                  [($vals meta (p lst 'quot))
+                   (compile e form)]))})}
+
          cased
          {parse
           {:val
@@ -2710,7 +2762,7 @@
                    [doc fst . nxt]
                    (if (str? fst)
                      (cons fst nxt)
-                     (concat ["" fst] nxt))
+                     (concat [nil fst] nxt))
 
                    [meta . cases]
                    (if (map? fst)
@@ -2856,6 +2908,20 @@
                          :body [(:expr opts)]
                          :name (:name opts)}))
                 (cxp e ($ (:bs opts) second)))))
+
+    (do :lambda-upd-tries
+
+        (E+ lam (lambda.compiler2))
+
+        (E+ gotozero (lam :rrr "gotosero doc"
+                          [x]
+                          (cs (zero? x) :done
+                              (pos? x) (rrr (p/prob (dec x)))
+                              (neg? x) (rrr (p/prob (inc x))))))
+        #_(ppenv gotozero)
+        (!! (gotozero 10))
+
+        #_(error "Stop"))
 
     (do :guard-macro
         (E+ guard:mac

@@ -242,9 +242,11 @@
 
     (defn flagmap
       ([x]
-       (if (c/or (seq? x)(vec? x)(set? x))
+       (cond
+         (c/or (seq? x)(vec? x)(set? x))
          (zipmap x (repeat true))
-         {x true}))
+         (nil? x) {}
+         :else {x true}))
       ([x & xs] (flagmap (cons x xs))))
 
     (assert
