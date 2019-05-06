@@ -1130,7 +1130,18 @@
                      (merge ($keys (dissoc pat :keys) rec)
                             (zipmap ks ($ ks keyword)))
                      ($keys pat rec))
-                 pat))}}
+                 pat))}
+
+          env-add-sub
+          (fn [e submap]
+            (reduce
+             (c/fn [e [s1 s2]]
+               (c/let [at (path (loc e) s1)]
+                 (env-merge-members
+                  e {(path at :sub) (k s2)
+                     ;; maybe should avoid when no existant macro... perf penality?
+                     (path at :mac) (c/fn [e form] ($ (cons s1 form) (p exp e)))})))
+             e submap))}
 
          primitives
          {:doc
@@ -1154,6 +1165,10 @@
                       (if (map? fst)
                         (cons fst nxt)
                         (concat [{} fst] nxt))]
+
+                #_(when name (pp "fn-name" name))
+                #_(when (seq opts) (pp "opts!" opts))
+                #_(when (seq doc) (pp "doc" doc))
 
                 [(assoc opts
                         :name name
@@ -1238,30 +1253,27 @@
                    nil))
 
              composed?
-             (fn
-               "x contains some composition operators
-                (. and/or ..)"
-               [x]
-               (cp x
-                   quote? nil
-                   map? (or (contains? x dot) (contains? x dotdot))
-                   sequential? (or (indexof x dot) (indexof x dotdot))
-                   nil))
+             ["x contains some composition operators
+               (. and/or ..)"
+              (fn [x]
+                (cp x
+                    quote? nil
+                    map? (or (contains? x dot) (contains? x dotdot))
+                    sequential? (or (indexof x dot) (indexof x dotdot))
+                    nil))]
 
              not-composed?
              (fn [x] (not (composed? x)))
 
              single-dotted?
-             (fn
-               "x has only one dot
-                (useful in bind)"
-               [x]
-               (and (dotted? x)
-                    (cp x
-                        map? (not (contains? x dotdot))
-                        sequential?
-                        (and (not (indexof x dotdot))
-                             (= 1 (count (filter dot? x)))))))
+             ["x has only one dot (useful in bind)"
+              (fn [x]
+                (and (dotted? x)
+                     (cp x
+                         map? (not (contains? x dotdot))
+                         sequential?
+                         (and (not (indexof x dotdot))
+                              (= 1 (count (filter dot? x)))))))]
 
              seq-parts
              (fn [s]
@@ -1276,7 +1288,7 @@
                               (conj ret [fs]))))))
 
              expand
-             (fn rec [x]
+             (fn [x]
                (cp x
 
                    composed?
@@ -1309,7 +1321,6 @@
                 (cp form
                     dot? dot
                     dotdot? dotdot
-                    #_rootpath-lit? #_(.wrap (.rootsym (second form)))
                     unquote? (exp e (second form))
                     seq? (cons `list ($ form (p quotf e)))
                     holycoll? ($ form (p quotf e))
@@ -1322,7 +1333,6 @@
 
              quote:mac
              (fn [e [x]]
-               #_(pp (quotf e x))
                (expand (quotf e x)))
 
              cxp
@@ -1434,14 +1444,12 @@
 
         )
 
-    
-
     (do :ported
 
       (E+ generic
           {:doc
            "an update to define a generic function
-          and its related inspection and extension capabilities"
+            and its related inspection and extension capabilities"
 
            :upd
            (fn [e body]
@@ -1498,8 +1506,8 @@
 
            type+
            {:doc
-            "lets you implement some generics for a type
-            analog to extend-type"
+            "lets you implement some generics for a type.
+             analog to extend-type"
 
             :upd
             (fn [e [type & body]]
@@ -1874,8 +1882,7 @@
             str str* key key* sym sym*]))
 
       (E+ iterables
-          [:doc
-           "some functions to manipulate iterable structures"
+          ["some functions to manipulate iterable structures"
 
            iterg
            [:doc
@@ -1921,12 +1928,11 @@
              [(butlast x) (last x)])
 
            cons
-           (fn
-             "like core.list*
-           but preserve collection type"
-             [& xs]
-             (c/let [[cars cdr] (runcs xs)]
-               (+ (pure cdr) cars cdr)))
+           ["like core.list*
+             but preserve collection type"
+            (fn [& xs]
+              (c/let [[cars cdr] (runcs xs)]
+                (+ (pure cdr) cars cdr)))]
 
            cons?
            (fn [x]
@@ -2293,7 +2299,7 @@
               default
               (fn [[v s & args] y]
                 (cs (key? v)
-                    [s y (quot ?typecheck) '(eq (type ~s) ~v)]
+                    [s y (gensym "?typecheck") '(eq (type ~s) ~v)]
                     (sym? s)
                     [s (lst* v y args)]
                     (error "guard binding takes a symbol as first argument, or a type keyword: "
@@ -2418,11 +2424,69 @@
                (fn [e form]
                  (..compile
                   e (mrg (flagmap flags)
-                         (..parse form)))))}
+                         (..parse form)))))
+
+             form2
+             (fn [e [p1 e1 & bs] expr mode]
+               (cs
+                ;; no more bindings we just expand the body expression
+                (not p1) (cxp e expr)
+                ;; if both p1 and e1 are syms we can just substitute
+                ;; instead of adding a binding
+                ;; we also check if p1 has not a different mode (have to think of this further)
+                [? (sym? p1) ? (sym? e1)
+                 ? (or (not (sym->mode p1))
+                       (eq (sym->mode p1) (sym->mode e1)))
+                 e' (hygiene.env-add-sub e {p1 (exp e e1)})]
+                (form2 e' bs expr mode)
+                ;; else we add a binding
+                [step-mode (or (sym->mode p1) mode)
+                 [e' pat] (hygiene.shadow e p1)]
+                (step-form
+                 pat (cxp e e1)
+                 (form2 e' bs expr mode)
+                 step-mode)))
+
+             compile2
+             {:val
+              (fn [e opts]
+                (if (:name? opts)
+                  (.named e opts)
+                  (.anonymous e opts)))
+
+              anonymous
+              (fn [e opts]
+                (bindings.let.form2
+                 e (if (:unified opts)
+                     (bindings.unified (cat* (:bs opts)))
+                     (bindings (cat* (:bs opts))))
+                 (:expr opts)
+                 (cp opts
+                     :strict :strict
+                     :short :short
+                     :opt)))
+
+              named ::unbound
+              }
+
+             compiler2
+             (fn [& flags]
+               (fn [e form]
+                 (compile2
+                  e (mrg (flagmap flags)
+                         (parse form)))))
+
+             }
             }
 
+           #_:tries
+           #_(do (exp @E '(let [a 1 b a c b] (add a b)))
+               (E+ (import bindings.let.builtins [let2]))
+               (exp @E '(let2 [a 1 b a c b] (add a b c))))
+
            bindings.let.builtins
-           [let:mac  (compiler)
+           [let:mac  (compiler2)
+            ;let2:mac  (compiler2)
             ?let:mac (compiler :short)
             !let:mac (compiler :strict)
             ?lut:mac (compiler :unified :short)
@@ -2650,8 +2714,8 @@
                             (not (cp.dotted? pat)))
                    (count pat))]
 
-             {:name (or nam (gensym))
-              :name? nam
+             {:name nam #_(or nam (gensym))
+              ;:name? nam
               :pat pat
               :arity arity
               :body (bindings.bodify body)
@@ -2693,8 +2757,8 @@
                    (select-keys opts [:strict :unified :short]))]
 
              (cxp e
-                  (lst 'primitives.fn (sym name) binding-form
-                       (bindings.let.compile e let-opts)))
+                  (lst 'primitives.fn . (if name [name] [])
+                       binding-form (bindings.let.compile e let-opts)))
              ))
 
          compiler
@@ -2723,7 +2787,7 @@
                             (not (cp.dotted? pat)))
                    (count pat))]
 
-             {:name (or nam (quot rec))
+             {:name nam #_(or nam (quot rec))
               :doc doc
               :pat pat
               :arity arity
@@ -2751,6 +2815,7 @@
          {parse
           {:val
            (fn [[fst & nxt :as form]]
+             #_(pp "cased-lambda-parse" form)
              (let [#_[head cases]
                    #_(primitives.fn.parse.head form)
 
@@ -2777,7 +2842,7 @@
 
                    variadic-cases (seq (filter :variadic parsed-cases))
                    variadic? (boolean variadic-cases)
-                   monadic? (and (not variadic?) (apl c/= ($ cases car count)))
+                   monadic? (and (not variadic?) (apl c/= ($ cases (comp count car))))
                    polyadic? (not monadic?)
 
                    arities
@@ -2788,13 +2853,14 @@
                         (update r :& (fnil conj []) c)))
                     {} parsed-cases)]
 
+               #_(pp "after bindings")
+
                #_(pp cases ($ cases car count))
 
                #_(assert (apl c/= ($ cases car count))
                          "different arities in case lambda")
 
-               {:name (or name (gensym))
-                :name? name
+               {:name name
                 :meta meta
                 :arity (count (car (car cases)))
                 :doc doc
@@ -2835,8 +2901,9 @@
           compile
           {:val
            (fn [e {:keys [arity-map name doc meta]}]
-             (exp e (lst* `fn name      ;doc meta
-                          ($ (iter arity-map) .arity))))
+             (exp e (lst* 'primitives.fn 
+                          (concat (when name [name]) ;doc meta
+                                  ($ (iter arity-map) .arity)))))
            arity
            {:val 
             (fn [[n cases]]
@@ -2846,7 +2913,14 @@
 
             fixed
             (fn [n cases]
-              (if-not (next cases)
+              (let [argv (vec* (take (gensyms) n))
+                    clet-cases
+                    (mapcat
+                     (fn [{:keys [pat body]}]
+                       [(vec* (interleave pat argv)) body])
+                     cases)]
+                (lst argv (lst* (if (next cases) 'clet 'let) clet-cases)))
+              #_(if-not (next cases)
                 (let [(ks pat body) (car cases)]
                   (lst pat body))
                 (let [argv (vec* (take (gensyms) n))
@@ -2908,6 +2982,11 @@
                          :body [(:expr opts)]
                          :name (:name opts)}))
                 (cxp e ($ (:bs opts) second)))))
+
+    (pp (exp @E '(cf [a] 1 [a [b c]] 2)))
+
+
+    (exp @E '(clet [a 1] a))
 
     (do :lambda-upd-tries
 
@@ -3874,17 +3953,17 @@
 
     )
 
-:YEAH
+(pp :YEAH)
 
 (E+ bindings.let
     [case
      {clut-form
-      (f :rec [symseed xs]
+      (f [symseed xs]
          (if (even? (count xs))
            '(clut .~(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
            (rec symseed [. (butlast xs) (quot _) (last xs)])))
       :mac
-      (f :rec [e [seed . xs]]
+      (f [e [seed . xs]]
          (let-syms [symseed]
            (exp e
                 '(c/let ~[symseed seed]
