@@ -939,7 +939,7 @@
        #_(car (env-history @E)))
 
     (defn top-form-decl [s]
-      (p/assert (env-access @E (path s))
+      (p/assert (env-find @E (path s))
                 "unknown path")
       `(defmacro ~s [~'& xs#]
          (res @E (list* '~s xs#))))
@@ -3567,246 +3567,296 @@
            (!! (at {:a 1 :b 2 :c 2} (ks :a :b)))
            (!! ((at_ (ks :a :b)) {:a 1 :b 2 :c 2}))))
 
-    #_(init-top-forms
-       let lut ?let !let !lut
-       ?f !f f fu !fu
-       f1 !f1 ?f1 !fu1 fu1
-       f_ !f_ ?f_ !fu_ fu_)
+    (E+ bindings.case
+        [form
+         (f [verb symseed xs]
+            (if (even? (count xs))
+              (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
+              (rec verb symseed [.(butlast xs) (quot _) (last xs)])))
 
-    (_ :tries
+         verb
+         (f1 (ks strict unified)
+             (cs (and strict unified) '!clut
+                 strict '!clet
+                 unified 'clut
+                 'clet))
 
-       (!! (let [(pos? x) 1] x))
-       (!! (?let [[x y . (cons? z)] [1 2 3]] [x y z]))
-       (!! (?let [(tup x y z) [1 2 3]] [x y]))
-       (!! (?let [(tup x y) (range)] [x y]))
-       (!! (let [[x y] (range)] [x y]))
+         compile
+         (f [e [seed . xs] opts]
+            (let-syms [symseed]
+              (exp e
+                   '(c/let ~[symseed seed]
+                      ~(form (verb opts) symseed xs)))))
 
-       #_(let [(& a b) 1] (c/+ a b))
-       )
+         def:upd
+         (f [_e [name . flags]]
+            (let [mac-sym (sym name :mac)
+                  smac-sym (sym name "_" :mac)]
+              {mac-sym
+               '(f [e bod]
+                   (compile e bod ~(flagmap . flags)))
+               smac-sym
+               '(f [e xs]
+                   (exp e (lst 'f_ (lst* '~name '_ xs))))
+               }))
 
-    (defmacro qbench [& xs]
-      `(do ~@(c/map (fn [x]
-                      `(do (println) (println "benching:" '~x) (println)
-                           (cr/quick-bench ~x)))
-                    xs)))
+         builtins
+         [(case.def case)
+          (case.def casu :unified)
+          (case.def !case :strict)
+          (case.def !casu :unified :strict)]]
 
-    (_ :scratch
+        (import bindings.case.builtins
+                [case casu !case !casu
+                 case_ casu_ !case_ !casu_])
 
-       (env-inspect '§)
-       (!! ((§ inc) 1))
-       (!! ($ (range 10) inc))
+        (assert
 
-       (let [(& a b) 1] (c/+ a b))
-       ((f_ (+ _ _)) [1 2 3])
+         [(let [t (case_
+                   [:point x 0] :y0
+                   [:point 0 y] :x0
+                   [:point (:num x) (:num y)] [x y]
+                   :pouet)]
+            (and
+             (eq :y0 (t [:point 1 0]))
+             (eq :x0 (t [:point 0 1]))
+             (eq [1 2] (t [:point 1 2]))
+             (eq :pouet (t [:point 1 "io"]))))
 
-       (env-inspect 'take_)
-       (env-inspect 'subjectify)
-       (E+ take_ (subjectify:val take))
+          (let [t (casu_
+                   [:point x 0] :y0
+                   [:point 0 y] :x0
+                   [:point (:num x) (:num x)] :twin
+                   [:point (:num x) (:num y)] [x y]
+                   :pouet)]
+            (and
+             (eq :y0 (t [:point 1 0]))
+             (eq :x0 (t [:point 0 1]))
+             (eq :twin (t [:point 1 1]))
+             (eq [1 2] (t [:point 1 2]))
+             (eq :pouet (t [:point 1 "io"]))))
 
-       (!! (($_ inc dec) (range 10)) )
+          (let [t (!casu_
+                   [:point x 0] :y0
+                   [:point 0 y] :x0
+                   [:point (:num x) (:num x)] :twin
+                   [:point (:num x) (:num y)] [x y])]
+            (and
+             (eq :y0 (t [:point 1 0]))
+             (eq :x0 (t [:point 0 1]))
+             (eq :twin (t [:point 1 1]))
+             (eq [1 2] (t [:point 1 2]))
+             (throws (t [:point 1 "io"]))))
+          ]))
 
-       (E+ (subjectify.definitions take drop section))
-
-       (!! ((drop_ 3) (range 10)))
-       (!! (((subjectify section) 3 6) (range 10)))
-
-       (_ :benchs
-
-          (_ :vecbench
-             (require '[modules.benchs :as bs])
-             (let [r (vec (range 1000))]
-               (bs/benchrace 10000
-                             (doall (map inc r))
-                             (mapv inc r)
-                             (loop [v r cnt (count r) i 0]
-                               (if (= i cnt) v
-                                   (recur (update v i inc) cnt (inc i)))))
-               )
-
-             (let [r (vec (range 1000))]
-
-               #_(time (dotimes [_ 100000] (c/vec (drop 10 r))))
-               #_(time (dotimes [_ 100000] (!! (drop r 10)))))
-             )
-
-          (_
-           '(destr [a b . c])
-           [a #(get % 0)
-            b #(get % 1)
-            c #(drop % 2)]
-
-           '(destr [[a1 . as al] b . c])
-           [[a1 . as al] #(get % 0)
-            b #(get % 1)
-            c #(drop % 2)]
-
-           '[inc [dec pos?] . butlast zero?]
-           '[[0 inc]
-             [1 [0 dec] [1 pos?]]
-             [(section 2 -1) sum]
-             [-1 zero?]])
-
-          (_
-           #_(env-inspect 'bindings.let.compile)
-           #_(!! (bindings '[[a [x y] . c] y]))
-
-           (!! (let [a 1 b 2] (c/+ a b)))
-
-           (!! (let [[a [b c . popo] . d e] [8 [9 10 11] 24 67 56 999]]
-                 #_[a b c d e]
-                 [(inc a) [(dec b) (pos? c) . (id popo)] . (butlast d) (zero? e)]))
-
-           #_(pp @E))
-
-          (_
-           (exp @E '(?let [a 1] (c/+ a 1 2)))
-           (!! (?let [(pos? x) 1 (gt y x) 2] (c/+ x y)))
-           (!! ((?f [(pos? x) (gt y x)] (c/+ x y)) 1 2))
-
-           (res @E '(f1 :rec a a)))
-
-          (_
-           (res @E '(df [inc [dec {:a pos? . _}] . _]))
-
-           (!! ((df [inc [dec {:a pos? . _}] . _])
-                [1 [0 {:a 2 :b 'io}] 'po :mo])))
-
-          (_
-           #_(!! ((f_ (c/+ _ _)) 1))
-
-           #_(exp @E '(invocation.template invocation 5))
-
-           #_(env-inspect '*')
-
-           #_(!! (let [xs (range)] (take xs 3)))
-
-           #_(!! (invocation c/+))
-
-           (!! (§ c/+ 1 2 3))
-
-           (require '[modules.benchs :as bs])
-
-           (def add c/+)
-
-           (bs/benchrace 1000000
-                         (add 1 2 3)
-                         (!! (§ add 1 2 3)))
-
-           #_(!! (*' add))
-           #_(!! (*' add [4 5 6]))
-
-           (!! (application2.inspect))
-
-           (!! (* c/+ 1 2 3 [4 5 6]))
-
-           (bs/benchrace 1000000
-                         (apl add 1 2 3 [4 5 6])
-                         #_(!! (*' add 1 2 3 [4 5 6]))
-                         (!! (* add 1 2 3 [4 5 6])))
-
-           
-
-           (qbench (c/vec (range 10))
-                   (!! (vec+ (range 10))))
-
-           (let [f0 (!! (applied-lambda [a] (c/+ a)))
-                 f1 (fn [& xs] (apl c/+ xs))]
-             (qbench (f0 1 2 3 4)
-                     (f1 1 2 3 4)))
-
-           (!! (sip [] 1 2 3))
-
-           (let [a [1 2 3] b [4 5 6]
-                 f (fn [x & xs] (reduce conj x xs))]
-             (qbench
-              (f a 1 2 3)
-              (!! (sip a 1 2 3))))
-
-           (let [a [1 2 3] b [4 5 6]
-                 f (fn [x & xs] (reduce conj x xs))]
-             (qbench
-              (vector 1 2 3)
-              (!! (vec 1 2 3))))
-
-           (qbench (c/vec (c/map inc (range 10)))
-                   #_(c/mapv inc (range 10))
-                   (!! (c/vec ($ (range 10) inc))))
-
-           (cr/with-progress-reporting (cr/quick-bench (add 1 2 3) :verbose))
-           (cr/with-progress-reporting (cr/quick-bench (!! (§ add 1 2 3)) :verbose))
-
-           (cr/with-progress-reporting (cr/quick-bench (apl add 1 2 3 [4 5 6]) :verbose))
-           (cr/with-progress-reporting (cr/quick-bench (!! (apl (invocation add) 1 2 3 [4 5 6])) :verbose))
-           (cr/with-progress-reporting (cr/quick-bench (!! ((p apl (invocation add)) 1 2 3 [4 5 6])) :verbose))
-           (cr/with-progress-reporting (cr/quick-bench (!! (* add 1 2 3 [4 5 6])) :verbose))
-
-           )
-
-          (_ :rt-mac-call
-             (!! (let' [a 1] (c/+ a a)))
-             (!! (let':mac @E '([a 1] (c/+ a a)))))))
-
-    #_(_ :move-members
-
-        (E+ move-members
-            {:doc
-             "a couple of updates for moving (aliasing is more accurate) members from path to path
+    #_(E+ move-members
+        {:doc
+         "a couple of updates for moving (aliasing is more accurate) members from path to path
               It is mainly used in order to being able to define related functions in a module
               which is handy to put documentation tests exemples and helpers
               then make them available elsewhere (most commonly top level)"
 
-             :usage
-             '[(move-members target-path [mod1.foo mod2.bar])
-               (move-members base-path target-path [m1 m2 m3])
-               "if target-path is nil, root-path is used"]
+         :usage
+         '[(move-members target-path [mod1.foo mod2.bar])
+           (move-members base-path target-path [m1 m2 m3])
+           "if target-path is nil, root-path is used"]
 
-             ;; helpers
+         ;; helpers
 
-             path-head
-             (fn [p]
-               (let [mk (.mkey p)
-                     ps (path-segments (ppath p))]
-                 (path (last ps) mk)))
+         path-head
+         (fn [p]
+           (let [mk (.mkey p)
+                 ps (path-segments (ppath p))]
+             (path (last ps) mk)))
 
-             switch-prefix
-             (fn [pref p]
-               (let [head (path-head p)]
-                 (or (path pref head) head)))
+         switch-prefix
+         (fn [pref p]
+           (let [head (path-head p)]
+             (or (path pref head) head)))
 
-             build-upd
-             (fn ([target-path xs]
-                 (let [xs ($ xs path)
-                       ks ($ xs (p switch-prefix target-path))]
-                   (zipmap ($ ks path->sym)
-                           ($ xs path->sym))))
-               ([base-path target-path xs]
-                (build-upd target-path
-                           ($ xs (p path base-path)))))
+         build-upd
+         (fn ([target-path xs]
+             (let [xs ($ xs path)
+                   ks ($ xs (p switch-prefix target-path))]
+               (zipmap ($ ks path->sym)
+                       ($ xs path->sym))))
+           ([base-path target-path xs]
+            (build-upd target-path
+                       ($ xs (p path base-path)))))
 
-             ;; update
+         ;; update
 
-             :upd
-             (fn [_ xs]
-               (apl build-upd xs))
+         :upd
+         (fn [_ xs]
+           (apl build-upd xs))
 
-             to-root:upd
-             (fn [_ [a b]]
-               (if-not b
-                 (build-upd nil a)
-                 (build-upd a nil b)))
+         to-root:upd
+         (fn [_ [a b]]
+           (if-not b
+             (build-upd nil a)
+             (build-upd a nil b)))
 
-             :tries
-             '(do
+         :tries
+         '(do
 
-                (E+ ffoo.bar {a 1 b 2}
-                    (move-members nil [ffoo.bar.a ffoo.bar.b]))
+            (E+ ffoo.bar {a 1 b 2}
+                (move-members nil [ffoo.bar.a ffoo.bar.b]))
 
-                (E+ ggoo.bar {a :ggoobara b :ggoobarb}
-                    (move-members ggoo.bar nil [a b]))
+            (E+ ggoo.bar {a :ggoobara b :ggoobarb}
+                (move-members ggoo.bar nil [a b]))
 
-                (!! a))}))
+            (!! a))})
+
+    (pp :will-declare-topforms)
+
+    (init-top-forms
+     let lut ?let !let !lut
+     ?f !f f fu !fu
+     f1 !f1 ?f1 !fu1 fu1
+     f_ !f_ ?f_ !fu_ fu_
+     clet clut !clet !clut
+     case casu !case !casu)
+)
+
+(defmacro qbench [& xs]
+  `(do ~@(c/map (fn [x]
+                  `(do (println) (println "benching:" '~x) (println)
+                       (cr/quick-bench ~x)))
+                xs)))
+
+(_ :scratch
+
+   (_ :vecbench
+      (require '[modules.benchs :as bs])
+      (let [r (vec (range 1000))]
+        (bs/benchrace 10000
+                      (doall (map inc r))
+                      (mapv inc r)
+                      (loop [v r cnt (count r) i 0]
+                        (if (= i cnt) v
+                            (recur (update v i inc) cnt (inc i)))))
+        )
+
+      (let [r (vec (range 1000))]
+
+        #_(time (dotimes [_ 100000] (c/vec (drop 10 r))))
+        #_(time (dotimes [_ 100000] (!! (drop r 10)))))
+      )
+
+   (_
+    '(destr [a b . c])
+    [a #(get % 0)
+     b #(get % 1)
+     c #(drop % 2)]
+
+    '(destr [[a1 . as al] b . c])
+    [[a1 . as al] #(get % 0)
+     b #(get % 1)
+     c #(drop % 2)]
+
+    '[inc [dec pos?] . butlast zero?]
+    '[[0 inc]
+      [1 [0 dec] [1 pos?]]
+      [(section 2 -1) sum]
+      [-1 zero?]])
+
+   (_
+    #_(env-inspect 'bindings.let.compile)
+    #_(!! (bindings '[[a [x y] . c] y]))
+
+    (!! (let [a 1 b 2] (c/+ a b)))
+
+    (!! (let [[a [b c . popo] . d e] [8 [9 10 11] 24 67 56 999]]
+          #_[a b c d e]
+          [(inc a) [(dec b) (pos? c) . (id popo)] . (butlast d) (zero? e)]))
+
+    #_(pp @E))
+
+   (_
+    (exp @E '(?let [a 1] (c/+ a 1 2)))
+    (!! (?let [(pos? x) 1 (gt y x) 2] (c/+ x y)))
+    (!! ((?f [(pos? x) (gt y x)] (c/+ x y)) 1 2))
+
+    (res @E '(f1 :rec a a)))
+
+   (_
+    (res @E '(df [inc [dec {:a pos? . _}] . _]))
+
+    (!! ((df [inc [dec {:a pos? . _}] . _])
+         [1 [0 {:a 2 :b 'io}] 'po :mo])))
+
+   (_
+    #_(!! ((f_ (c/+ _ _)) 1))
+
+    #_(exp @E '(invocation.template invocation 5))
+
+    #_(env-inspect '*')
+
+    #_(!! (let [xs (range)] (take xs 3)))
+
+    #_(!! (invocation c/+))
+
+    (!! (§ c/+ 1 2 3))
+
+    (require '[modules.benchs :as bs])
+
+    (def add c/+)
+
+    (bs/benchrace 1000000
+                  (add 1 2 3)
+                  (!! (§ add 1 2 3)))
+
+    #_(!! (*' add))
+    #_(!! (*' add [4 5 6]))
+
+    (!! (application2.inspect))
+
+    (!! (* c/+ 1 2 3 [4 5 6]))
+
+    (bs/benchrace 1000000
+                  (apl add 1 2 3 [4 5 6])
+                  #_(!! (*' add 1 2 3 [4 5 6]))
+                  (!! (* add 1 2 3 [4 5 6])))
+
+    (qbench (c/vec (range 10))
+            (!! (vec+ (range 10))))
+
+    (let [f0 (!! (applied-lambda [a] (c/+ a)))
+          f1 (fn [& xs] (apl c/+ xs))]
+      (qbench (f0 1 2 3 4)
+              (f1 1 2 3 4)))
+
+    (!! (sip [] 1 2 3))
+
+    (let [a [1 2 3] b [4 5 6]
+          f (fn [x & xs] (reduce conj x xs))]
+      (qbench
+       (f a 1 2 3)
+       (!! (sip a 1 2 3))))
+
+    (let [a [1 2 3] b [4 5 6]
+          f (fn [x & xs] (reduce conj x xs))]
+      (qbench
+       (vector 1 2 3)
+       (!! (vec 1 2 3))))
+
+    (qbench (c/vec (c/map inc (range 10)))
+            #_(c/mapv inc (range 10))
+            (!! (c/vec ($ (range 10) inc))))
+
+    (cr/with-progress-reporting (cr/quick-bench (add 1 2 3) :verbose))
+    (cr/with-progress-reporting (cr/quick-bench (!! (§ add 1 2 3)) :verbose))
+
+    (cr/with-progress-reporting (cr/quick-bench (apl add 1 2 3 [4 5 6]) :verbose))
+    (cr/with-progress-reporting (cr/quick-bench (!! (apl (invocation add) 1 2 3 [4 5 6])) :verbose))
+    (cr/with-progress-reporting (cr/quick-bench (!! ((p apl (invocation add)) 1 2 3 [4 5 6])) :verbose))
+    (cr/with-progress-reporting (cr/quick-bench (!! (* add 1 2 3 [4 5 6])) :verbose))
 
     )
+
+   (_ :rt-mac-call
+      (!! (let' [a 1] (c/+ a a)))
+      (!! (let':mac @E '([a 1] (c/+ a a))))))
 
 (_ :benchs
 
@@ -3910,125 +3960,4 @@
 
     )
 
-(pp :YEAH)
-
-(_ :case-initial-impl
-   (E+ bindings.let
-       [case
-        {clut-form
-         (f [symseed xs]
-            (if (even? (count xs))
-              '(clut .~(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
-              (rec symseed [. (butlast xs) (quot _) (last xs)])))
-         :mac
-         (f [e [seed . xs]]
-            (let-syms [symseed]
-              (exp e
-                   '(c/let ~[symseed seed]
-                      ~(clut-form symseed xs)))))}
-        case_:mac
-        (f [e xs]
-           (exp e '(f_ (case _ .~xs))))])
-
-   (E+ (import bindings.let [case case_]))
-
-   (!! (case [:point 1 "aze"]
-         [:point x 0] :y0
-         [:point 0 y] :x0
-         [:point (:num x) (:num y)] [x y]
-         :pouet))
-
-   (!! (let [t (case_
-                [:point x 0] :y0
-                [:point 0 y] :x0
-                [:point (:num x) (:num y)] [x y]
-                :pouet)]
-         (assert
-          [(eq :y0 (t [:point 1 0]))
-           (eq :x0 (t [:point 0 1]))
-           (eq [1 2] (t [:point 1 2]))
-           (eq :pouet (t [:point 1 "io"]))]))))
-
-(E+ bindings.case
-    [form
-     (f [verb symseed xs]
-        (if (even? (count xs))
-          (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
-          (rec verb symseed [.(butlast xs) (quot _) (last xs)])))
-
-     verb
-     (f1 (ks strict unified)
-         (cs (and strict unified) '!clut
-             strict '!clet
-             unified 'clut
-             'clet))
-
-     compile
-     (f [e [seed . xs] opts]
-        (let-syms [symseed]
-          (exp e
-               '(c/let ~[symseed seed]
-                  ~(form (verb opts) symseed xs)))))
-
-     def:upd
-     (f [_e [name . flags]]
-        (let [mac-sym (sym name :mac)
-              smac-sym (sym name "_" :mac)]
-          {mac-sym
-           '(f [e bod]
-               (compile e bod ~(flagmap . flags)))
-           smac-sym
-           '(f [e xs]
-               (exp e (lst 'f_ (lst* '~name '_ xs))))
-           }))
-
-     builtins
-     [(case.def case)
-      (case.def casu :unified)
-      (case.def !case :strict)
-      (case.def !casu :unified :strict)]]
-
-    (import bindings.case.builtins
-            [case casu !case !casu
-             case_ casu_ !case_ !casu_])
-
-    (assert
-
-     [(let [t (case_
-               [:point x 0] :y0
-               [:point 0 y] :x0
-               [:point (:num x) (:num y)] [x y]
-               :pouet)]
-        (and
-         (eq :y0 (t [:point 1 0]))
-         (eq :x0 (t [:point 0 1]))
-         (eq [1 2] (t [:point 1 2]))
-         (eq :pouet (t [:point 1 "io"]))))
-
-      (let [t (casu_
-               [:point x 0] :y0
-               [:point 0 y] :x0
-               [:point (:num x) (:num x)] :twin
-               [:point (:num x) (:num y)] [x y]
-               :pouet)]
-        (and
-         (eq :y0 (t [:point 1 0]))
-         (eq :x0 (t [:point 0 1]))
-         (eq :twin (t [:point 1 1]))
-         (eq [1 2] (t [:point 1 2]))
-         (eq :pouet (t [:point 1 "io"]))))
-
-      (let [t (!casu_
-               [:point x 0] :y0
-               [:point 0 y] :x0
-               [:point (:num x) (:num x)] :twin
-               [:point (:num x) (:num y)] [x y])]
-        (and
-         (eq :y0 (t [:point 1 0]))
-         (eq :x0 (t [:point 0 1]))
-         (eq :twin (t [:point 1 1]))
-         (eq [1 2] (t [:point 1 2]))
-         (throws (t [:point 1 "io"]))))
-      ]))
-
-
+(pp :DONE)
