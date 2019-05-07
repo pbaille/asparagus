@@ -241,6 +241,7 @@
     (def runcs (juxt butlast last))
 
     (defn flagmap
+      ([] {})
       ([x]
        (cond
          (c/or (seq? x)(vec? x)(set? x))

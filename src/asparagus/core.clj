@@ -2642,9 +2642,13 @@
                            (lst (if unified 'lut '?let)
                                 h {::return e})
                            (lst `when h {::return e}))))
-                    form (lst* `or cs)]
-                (lst `get (exp e form) ::return
-                     (when strict '(error "clet no match!")))))
+
+                    retform
+                    '(get ~(exp e (lst* `or cs)) ::return)]
+
+                (if strict
+                  '(or ~retform (error "clet no match!"))
+                  retform)))
 
             compiler
             (fn [& flags]
@@ -2661,10 +2665,53 @@
 
             clet
             (tests
+
+             :simple
+             (eq (clet [x (pos? -1)] {:pos x}
+                       [x (neg? -1)] {:neg x})
+                 {:neg -1})
+
+             :simple2
+             "each binding block can have several cases"
+             (let [f (fn [seed]
+                      (clet [x (num? seed) x++ (inc x)] x++
+                            [x (str? seed) xbang (+ x "!")] xbang))]
+               (and (eq 2 (f 1))
+                    (eq "yo!" (f "yo"))
+                    (nil? (f :pop))))
+
+             :default-case
+             (eq (clet [x (pos? 0) n (error "never touched")] :pos
+                       [x (neg? 0) n (error "never touched")] :neg
+                       :nomatch)
+                 :nomatch)
+
+             :strict-throws
+             (throws
+              (!clet [x (pos? 0)] :pos
+                     [x (neg? 0)] :neg))
+
+
+             :clut-simple
+             "unfied version of clet"
+             (let [f (fn [seed]
+                       (clut [[a a] seed] :eq
+                             [[a b] seed] :neq))]
+               (and (eq :eq (f [1 1]))
+                    (eq :neq (f [1 2]))))
+
+             :!clut-throws
+             (let [x [:tup [1 2]]]
+               (throws
+                (!clut [[:wat a] x] :nop
+                       [(:vec vx) x [:tup [a a]] vx] :yep)))
+
              (let [p [:point 0 2]]
                (clet [[:point x 0] p] :y0
                      [[:point 0 y] p] :x0
-                     [[:point x y] p] [x y])))]
+                     [[:point x y] p] [x y])))
+
+            :fx (clet.tests:do)]
 
            (import bindings.let.builtins
                    [clet clut !clet !clut])
@@ -3944,38 +3991,122 @@
 
 (pp :YEAH)
 
+(_ :case-initial-impl
+   (E+ bindings.let
+       [case
+        {clut-form
+         (f [symseed xs]
+            (if (even? (count xs))
+              '(clut .~(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
+              (rec symseed [. (butlast xs) (quot _) (last xs)])))
+         :mac
+         (f [e [seed . xs]]
+            (let-syms [symseed]
+              (exp e
+                   '(c/let ~[symseed seed]
+                      ~(clut-form symseed xs)))))}
+        case_:mac
+        (f [e xs]
+           (exp e '(f_ (case _ .~xs))))])
+
+   (E+ (import bindings.let [case case_]))
+
+   (!! (case [:point 1 "aze"]
+         [:point x 0] :y0
+         [:point 0 y] :x0
+         [:point (:num x) (:num y)] [x y]
+         :pouet))
+
+   (!! (let [t (case_
+                [:point x 0] :y0
+                [:point 0 y] :x0
+                [:point (:num x) (:num y)] [x y]
+                :pouet)]
+         (assert
+          [(eq :y0 (t [:point 1 0]))
+           (eq :x0 (t [:point 0 1]))
+           (eq [1 2] (t [:point 1 2]))
+           (eq :pouet (t [:point 1 "io"]))]))))
+
 (E+ bindings.let
     [case
-     {clut-form
-      (f [symseed xs]
+     [form
+      (f [verb symseed xs]
          (if (even? (count xs))
-           '(clut .~(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
-           (rec symseed [. (butlast xs) (quot _) (last xs)])))
-      :mac
-      (f [e [seed . xs]]
+           (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
+           (rec verb symseed [. (butlast xs) (quot _) (last xs)])))
+
+      verb
+      (f1 (ks strict unified)
+          (cs (and strict unified) '!clut
+              strict '!clet
+              unified 'clut
+              'clet))
+
+      compile
+      (f [e [seed . xs] opts]
          (let-syms [symseed]
            (exp e
                 '(c/let ~[symseed seed]
-                   ~(clut-form symseed xs)))))}
-     case_:mac
-     (f [e xs]
-        (exp e '(f_ (case _ .~xs))))])
+                   ~(form (verb opts) symseed xs)))))
 
-(E+ (import bindings.let [case case_]))
+      def:upd
+      (f [_e [name . flags]]
+         (let [mac-sym (sym name :mac)
+               smac-sym (sym name "_" :mac)]
+           {mac-sym
+            '(f [e bod]
+                (compile e bod ~(flagmap . flags)))
+            smac-sym
+            '(f [e xs]
+                (exp e (lst 'f_ (lst* '~name '_ xs))))
+            }))
 
-(!! (case [:point 1 "aze"]
-      [:point x 0] :y0
-      [:point 0 y] :x0
-      [:point (:num x) (:num y)] [x y]
-      :pouet))
+      builtins
+      [(case.def case)
+       (case.def casu :unified)
+       (case.def !case :strict)
+       (case.def !casu :unified :strict)]]]
 
-(!! (let [t (case_
-             [:point x 0] :y0
-             [:point 0 y] :x0
-             [:point (:num x) (:num y)] [x y]
-             :pouet)]
-      (assert
-       [(eq :y0 (t [:point 1 0]))
-        (eq :x0 (t [:point 0 1]))
-        (eq [1 2] (t [:point 1 2]))
-        (eq :pouet (t [:point 1 "io"]))])))
+    (import bindings.let.case.builtins
+            [case casu !case !casu
+             case_ casu_ !case_ !casu_])
+
+    (assert
+
+     [(let [t (case_
+               [:point x 0] :y0
+               [:point 0 y] :x0
+               [:point (:num x) (:num y)] [x y]
+               :pouet)]
+        (and
+         (eq :y0 (t [:point 1 0]))
+         (eq :x0 (t [:point 0 1]))
+         (eq [1 2] (t [:point 1 2]))
+         (eq :pouet (t [:point 1 "io"]))))
+
+      (let [t (casu_
+               [:point x 0] :y0
+               [:point 0 y] :x0
+               [:point (:num x) (:num x)] :twin
+               [:point (:num x) (:num y)] [x y]
+               :pouet)]
+        (and
+         (eq :y0 (t [:point 1 0]))
+         (eq :x0 (t [:point 0 1]))
+         (eq :twin (t [:point 1 1]))
+         (eq [1 2] (t [:point 1 2]))
+         (eq :pouet (t [:point 1 "io"]))))
+
+      (let [t (!casu_
+               [:point x 0] :y0
+               [:point 0 y] :x0
+               [:point (:num x) (:num x)] :twin
+               [:point (:num x) (:num y)] [x y])]
+        (and
+         (eq :y0 (t [:point 1 0]))
+         (eq :x0 (t [:point 0 1]))
+         (eq :twin (t [:point 1 1]))
+         (eq [1 2] (t [:point 1 2]))
+         (throws (t [:point 1 "io"]))))
+      ]))
