@@ -553,11 +553,29 @@
                 [1 2 [3 5 {:a nil :b 2}]]
                 :yo))))
 
+    (re-matches #"^((aze)|(foo))+$" "fooazefoof")
+    (re-matches #"^((aze)|(foo))$" "foo")
+
+    
     (do :cs
+
+        (defn generated-binding-sym? [x]
+          (re-matches #"^((vec)|(seq)|(first)|(map))__[0-9]+$"
+                      (name x)))
+
+        (asserts
+         (nil? (generated-binding-sym? 'aze))
+         (nil? (generated-binding-sym? (gensym "yop")))
+         (generated-binding-sym? 'vec__1234)
+         (generated-binding-sym? 'seq__1234)
+         (generated-binding-sym? 'map__1234)
+         (generated-binding-sym? 'first__1234))
 
         (defn cs-case
           [[b1 b2 & bs] e]
-          `(~(if (= \_ (first (name b1))) `let `when-let)
+          `(~(if (or (generated-binding-sym? b1)
+                     (= \_ (first (name b1))))
+               `let `when-let)
             [~b1 ~b2]
             ~(if bs (cs-case bs e)
                  ;; this wrapping is nescessary for the case e eval to nil
@@ -572,7 +590,11 @@
               :else `(c/or ~form ~(cs-form xs)))))
 
         (defmacro cs [& xs]
-          `(first ~(cs-form xs))))
+          `(first ~(cs-form xs)))
+
+        (destructure '[[x y z & xs] y])
+        #_(mx*' (cs [[x & xs] (range 1)] [x xs] :nop))
+        )
 
     (_ :nsub
 

@@ -28,8 +28,7 @@
      ;;misc
      call*]]))
 
-(when (c/resolve 'rEset!)
-  (rEset!))
+(when-let [! (c/resolve 'rEset!)] (!))
 
 ;; env --------------
 
@@ -371,6 +370,8 @@
                xs (.xs p)
                pref (car xs)
                _xs (rest xs)
+
+               #_[pref & _xs] #_(.xs p)
                target (get (env-get e (path (loc e) :links)) pref)]
               (path (path* target _xs) (.mkey p))))
 
@@ -564,7 +565,11 @@
           (vary-meta x assoc :expansion true))
 
         (defn mcall? [x]
-          (some-> x meta :expansion)))
+          (some-> x meta :expansion))
+
+        (defn gensym? [x]
+          (and (symbol? x)
+               (re-matches #"^.*_[0-9]+$" (name x)))))
 
     (defne qualify
 
@@ -1193,12 +1198,80 @@
            :mac
            (c/fn [e form]
              (.expand
-              e (.parse form)))}]
+              e (.parse form)))}
+
+          cs'
+          [generated-binding-sym?
+           (fn [x]
+             (re-matches #"^((vec)|(seq)|(first)|(map))__[0-9]+$"
+                         (name x)))
+
+           ?let:mac
+           (fn [e [[s x] r]]
+             (let [s' (gensym)]
+               (exp e (lst 'primitives.let [s' x]
+                           (lst `when s' (lst 'primitives.let [s s'] r))))))
+
+           case
+           (fn
+             [[b1 b2 & bs] e]
+             (lst (if (or (generated-binding-sym? b1)
+                          (= \_ (first (name b1))))
+                    'primitives.let 'primitives.cs'.?let)
+                  [b1 b2]
+                  (if bs (case bs e)
+                      ;; this wrapping is nescessary for the case e eval to nil
+                      [e])))
+
+           form
+           (fn [[x e & xs]]
+             (let [bs (if (vector? x) x [(gensym) x])
+                   frm (case (destructure bs) e)]
+               (cond
+                 (not (seq xs)) frm
+                 (not (next xs)) (lst `c/or frm [(first xs)]) ;; same thing here
+                 :else (lst `c/or frm (form xs)))))
+
+           :mac
+           (fn [e xs]
+             (exp e (lst `first (.form xs))))]]
 
          :links {fn primitives.fn
-                 let primitives.let}
+                 let primitives.let
+                 cs primitives.cs'
+                 }
 
          ))
+
+    #_(!! (cs' [[x y & _xs] (range 2)] [x _xs] :nop))
+    #_(!! (primitives.cs'.form '[[[x & xs] y] :iop :nop]))
+
+    #_(defne qualify
+
+      [e x]
+
+      (cp x
+
+          sym?
+          (or (qualsym e x)
+              (when (gensym? x) x)
+              (when-let [r (c/resolve x)] (do "resolvesym" (ns-resolve-sym x)) (ns-resolve-sym x))
+              (do #_(pp "notresolvable" x) x))
+
+          seq?
+          (cs [p (-> x car path)
+               ? (or (ppath? p) (macpath? p))
+               p (qualsym e (path p :mac))]
+              (mark-exp (cons p (cdr x)))
+              ($ x (p qualify e)))
+
+          holycoll?
+          ($ x (p qualify e))
+
+          x))
+
+    #_(-> (qualify @E '(pos? 1 (hygiene.shadow.pat->submap x)))
+        next next first first type)
 
     (E+ composite
         [
@@ -1383,15 +1456,15 @@
 
          :upd
          (fn [e xs]
-           #_(pp (apl build-upd xs))
+           #_(pp "import.upd" (apl build-upd xs))
            (apl build-upd e xs))
 
          :tries
          '(do
             (E+ foo.bar {a [:doc "foobar a" (fn [] 'foobara)]}
                 foo.qux 42
-                (import' [foo.bar foo.qux])
-                here [(import' foo [bar qux]) (add qux qux)]
+                (import foo [bar qux])
+                here [(import foo [bar qux]) (add qux qux)]
                 )
             (!! bar.a:doc)
             (!! qux:val)
@@ -1400,6 +1473,9 @@
             (E+ foot {foota 1 footb 2 footc {n 4}})
             (E+ (import foot :all))
             (!! (add foota footb footc.n)))})
+
+    #_(ppenv import.build-upd.prefix-members)
+    #_(error "_")
 
     (E+ generic
         {:doc
