@@ -28,6 +28,9 @@
      ;;misc
      call*]]))
 
+(when (c/resolve 'rEset!)
+  (rEset!))
+
 ;; env --------------
 
 (do :path
@@ -561,20 +564,7 @@
           (vary-meta x assoc :expansion true))
 
         (defn mcall? [x]
-          (some-> x meta :expansion))
-
-        #_(defn rootpath-lit->path [[_ s]]
-          (let [[_ & cs] (name s)]
-            (path 'ROOT
-                  (symbol (c/apply c/str cs)))))
-
-        #_(defn rootpath-lit? [x]
-          (cs [? (unquote? x)
-               s (second x)
-               ? (symbol? s)
-               [fc & cs] (c/str s)
-               ? (= \. fc)]
-              (rootpath-lit->path x))))
+          (some-> x meta :expansion)))
 
     (defne qualify
 
@@ -582,13 +572,8 @@
 
       (cp x
 
-          ;path? x
-
           sym?
           (or (qualsym e x) x)
-
-          #_rootpath-lit?
-          #_(rootpath-lit->path x)
 
           seq?
           (cs [p (-> x car path)
@@ -1091,150 +1076,129 @@
         (!! (documented-id 1))
         (!! documented-id:doc)
 
-        
-
         )
 
     (rEset!)
 
-    (E+
+    (do :base
 
-     hygiene
-     {shadow
-      {:val
-       (c/fn [e pat]
-         (c/let [pat (.expand-keys-pattern pat)
-                 syms (shrink- (p/findeep pat symbol?) (p = '&))
-                 shadenv (.env e syms)]
-           [shadenv (exp shadenv pat)]))
+        (rEset!)
 
-       env
-       (c/fn [e syms]
-         (reduce
-          (c/fn [e s]
-            (c/let [at (path (loc e) s)]
-              (env-merge-members
-               e {(path at :sub) (k (gensym (sym s '_)))
-                  ;; maybe should avoid when no existant macro... perf penality?
-                  (path at :mac) (c/fn [e form] ($ (cons s form) (p exp e)))})))
-          e (set syms)))
+        (E+
 
-       expand-keys-pattern
-       (c/fn rec [pat]
-         (cp pat
-             vec? ($ pat rec)
-             map?
-             (cs [ks (:keys pat)]
-                 (merge ($keys (dissoc pat :keys) rec)
-                        (zipmap ks ($ ks keyword)))
-                 ($keys pat rec))
-             pat))}
+         env
+         [add-sub
+          ["add a substitution to an environment at current location
+            it is used for shadowing bindings in let and lambda"
+           (c/fn [e [s1 s2]]
+             (c/let [at (path (loc e) s1)]
+               (env-merge-members
+                e {(path at :sub) (k s2)
+                   ;; maybe should avoid when no existant macro... perf penality?
+                   (path at :mac) (c/fn [e form] ($ (cons s1 form) (p exp e)))})))]
 
-      env-add-sub
-      (c/fn [e submap]
-        (reduce
-         (c/fn [e [s1 s2]]
-           (c/let [at (path (loc e) s1)]
-             (env-merge-members
-              e {(path at :sub) (k s2)
-                 ;; maybe should avoid when no existant macro... perf penality?
-                 (path at :mac) (c/fn [e form] ($ (cons s1 form) (p exp e)))})))
-         e submap))}
+          add-subs
+          (c/fn [e submap]
+            (c/reduce add-sub e submap))]
 
-     primitives
-     {:doc
-      "hygienic versions of lambda and let"
+         hygiene
+         {shadow
+          [;; helpers
+           expand-keys-pattern
+           ["transform the clojure :keys syntax into regular map pattern
+             because all symbol will be made uniq and it will no longer work as is"
+            (c/fn rec [pat]
+              (cp pat
+                  vec? ($ pat rec)
+                  map?
+                  (cs [ks (:keys pat)]
+                      (merge ($keys (dissoc pat :keys) rec)
+                             (zipmap ks ($ ks keyword)))
+                      ($keys pat rec))
+                  pat))]
 
-      fn
-      {parse
-       [head
-        (c/fn [[fst & nxt :as all]]
-          (c/let [[name fst & nxt]
-                  (if (symbol? fst)
-                    (cons fst nxt)
-                    (concat [nil fst] nxt))
+           pat->submap
+           ["turn a clojure binding pattern into a substitution map
+             from symbol to uniq symbol"
+            (c/fn [pat]
+              (c/let [syms (shrink- (p/findeep pat symbol?) (p = '&))]
+                (->> (set syms)
+                     (c/map (fn [s] [s (gensym (sym s '_))]))
+                     (into {}))))]
 
-                  [doc fst & nxt]
-                  (if (string? fst)
-                    (cons fst nxt)
-                    (concat [nil fst] nxt))
+           ;;main
+           "takes an environment and a binding pattern
+            return a new environment with uniq symbols substitutions
+            and the pattern with all syms made uniq"
+           (c/fn [e pat]
+             (c/let [pat (.expand-keys-pattern pat)
+                     shadenv (env.add-subs e (.pat->submap pat))]
+               [shadenv (exp shadenv pat)]))]}
 
-                  [opts & body]
-                  (if (map? fst)
-                    (cons fst nxt)
-                    (concat [{} fst] nxt))]
+         primitives
+         ["hygienic versions of lambda and let"
 
-            #_(when name (pp "fn-name" name))
-            #_(when (seq opts) (pp "opts!" opts))
-            #_(when (seq doc) (pp "doc" doc))
+          fn
+          {parse
+           (c/fn [[fst & nxt :as all]]
+             (c/let [[name b1 & bs]
+                     (if (word? fst)
+                       (cons (sym fst) nxt)
+                       (concat [nil fst] nxt))
 
-            [(assoc opts
-                    :name name
-                    :doc doc)
-             body]))
+                     impls
+                     (if (vector? b1)
+                       {b1 (c/vec bs)}
+                       (into {}
+                             (c/map
+                              (c/fn [[args & body]]
+                                [args (c/vec body)])
+                              (cons b1 bs))))]
 
-        (c/fn [xs]
-          (c/let [[opts [b1 & bs]] (parse.head xs)
+               {:name name
+                :impls impls}))
 
-                  impls
-                  (if (vector? b1)
-                    {b1 (c/vec bs)}
-                    (into {}
-                          (c/map
-                           (c/fn [[args & body]]
-                             [args (c/vec body)])
-                           (cons b1 bs))))]
+           expand-case
+           (c/fn [e [argv body]]
+             (c/let [[e argv] (hygiene.shadow e argv)]
+               (cons argv (exp e body))))
 
-            (assoc (dissoc opts :body)
-                   :impls impls)))]
+           expand
+           (c/fn [e {:keys [name impls]}]
+             (c/let [name (or name 'rec)
+                     [e n] (hygiene.shadow e name)]
+               (lst* `fn n
+                     ($ (seq impls)
+                        (p ..expand-case e)))))
 
-       expand-case
-       (c/fn [e [argv body]]
-         (c/let [[e argv] (hygiene.shadow e argv)]
-           (cons argv (exp e body))))
+           :mac
+           (c/fn [e form]
+             (.expand
+              e (.parse form)))}
 
-       expand
-       (c/fn [e {:keys [name impls]}]
-         (c/let [name (or name 'rec)
-                 [e n] (hygiene.shadow e name)]
-           (lst* `fn n
-                 ($ (seq impls)
-                    (p ..expand-case e)))))
+          let
+          {parse
+           (c/fn [[bs & body]]
+             {:bindings (partition 2 bs)
+              :body body
+              :monobody (= 1 (count body))})
 
-       :mac
-       (c/fn [e form]
-         (.expand
-          e (.parse form)))
+           expand
+           (c/fn [e {:keys [bindings body monobody]}]
+             (c/loop [e e ret [] [[p1 e1] & pes] bindings]
+               (if p1
+                 (c/let [[e' pat] (hygiene.shadow e p1)]
+                   (recur e' (conj ret pat (exp e e1)) pes))
+                 (lst `let ret (exp e (if monobody (car body) (cons 'do body)))))))
+           :mac
+           (c/fn [e form]
+             (.expand
+              e (.parse form)))}]
 
-       :upd
-       (c/fn [e form]
-         (c/let [parsed (shrink+ (.parse form) val)]
-           (assoc (dissoc parsed :impls :name)
-                  :val (lst* 'primitives.fn form))))}
+         :links {fn primitives.fn
+                 let primitives.let}
 
-      let
-      {parse
-       (c/fn [[bs & body]]
-         {:bindings (partition 2 bs)
-          :body body
-          :monobody (= 1 (count body))})
-
-       expand
-       (c/fn [e {:keys [bindings body monobody]}]
-         (c/loop [e e ret [] [[p1 e1] & pes] bindings]
-           (if p1
-             (c/let [[e' pat] (hygiene.shadow e p1)]
-               (recur e' (conj ret pat (exp e e1)) pes))
-             (lst `let ret (exp e (if monobody (car body) (cons 'do body)))))))
-       :mac
-       (c/fn [e form]
-         (.expand
-          e (.parse form)))}}
-
-     :links {fn primitives.fn
-             let primitives.let}
-
-     )
+         ))
 
     (E+ composite
         [
@@ -1303,17 +1267,15 @@
                x))
 
          quotf
-         {:doc
-          "quoting function,
-               handles unquoting, does not quote dots,
-               qualifies symbols if possible"
+         ["quoting function,
+           handles unquoting, does not quote dots,
+           qualifies symbols if possible"
 
           wrap
           (fn [x] (list (symbol "quote") x))
           rootsym
           (fn [p] (path->sym (path (symbol "_") p)))
 
-          :val
           (fn
             [e form]
             (cp form
@@ -1327,7 +1289,7 @@
                      [p _] (bubfind e p)]
                     (.wrap (.rootsym p))
                     (.wrap form))
-                (.wrap form)))}
+                (.wrap form)))]
 
          quote:mac
          (fn [e [x]]
@@ -1385,8 +1347,7 @@
          "link the given paths at current location"
 
          build-upd
-         [:doc
-          "produce a vector of :links updates"
+         ["produce a vector of :links updates"
 
           prefix-members
           (fn [e pref xs]
@@ -1501,7 +1462,7 @@
          type+
          {:doc
           "lets you implement some generics for a type.
-             analog to extend-type"
+           analog to extend-type"
 
           :upd
           (fn [e [type & body]]
@@ -1551,11 +1512,10 @@
         [expansion-size 5
 
          replace-ellipsis
-         [:doc
-          "turn a single ellipted body into several bodies"
+         ["turn a single ellipted body into several bodies"
 
           ellipse (symbol "...")
-          ellipse? #(= ellipse %)
+          ellipse? (p = ellipse)
 
           set-expr
           (fn [xs]
@@ -1606,12 +1566,10 @@
                                  :b [a b c #{foo a ...}]}))))])
 
     (E+ joining
-        [:doc
-         "a bunch of function for handling monoidish things"
+        ["a bunch of function for handling monoidish things"
 
          pure
-         [:doc
-          "a generic function that return the identity value from a given value"
+         ["a generic function that return the identity value from a given value"
 
           (generic
            [_]
@@ -1632,8 +1590,7 @@
            (eq "" (pure "hello")))]
 
          sip
-         [:doc
-          "add elements to a collection, similar to core.conj"
+         ["add elements to a collection, similar to core.conj"
 
           (generic.reduced
            [a b]
@@ -1654,8 +1611,7 @@
            (eq ((sip add 1) 1) 2))]
 
          iter
-         [:doc
-          "return a seq from something"
+         ["return a seq from something"
 
           (generic
            [a]
@@ -1673,8 +1629,7 @@
            (eq '(\f \o \o) (iter "foo") (iter 'foo) (iter :foo)))]
 
          +
-         [:doc
-          "join two things together
+         ["join two things together
            similar to concat, merge..."
 
           (generic.reduced
@@ -1705,8 +1660,7 @@
                3))]
 
          vals
-         [:doc
-          "return the values of a collection"
+         ["return the values of a collection"
 
           (generic [x]
                    :map (c/or (c/vals x) ())
@@ -1721,8 +1675,7 @@
                (sort (vals #{1 2 3}))))]
 
          idxs
-         [:doc
-          "return the idxs or keys of a collection"
+         ["return the idxs or keys of a collection"
 
           (generic [x]
                    :map (c/or (c/keys x) ())
@@ -1739,8 +1692,7 @@
                (sort (idxs #{:a :b :c}))))]
 
          pure?
-         [:doc
-          "test if something is equal to its pure value"
+         ["test if something is equal to its pure value"
 
           (generic [x]
                    :seq (when-not (seq x) ())
@@ -1762,13 +1714,12 @@
            (not (pure? "iop")))]
 
          wrap
-         [:doc
-          "use its first argument to determine which type of structure to build
-               and build it using given extra args,
-               'wrap uses sip
-               'wrap+ uses +
-               'wrap* uses sip applied (iterable last argument)
-               'wrap+* uses + applied (iterable last argument)"
+         ["use its first argument to determine which type of structure to build
+           and build it using given extra args,
+           'wrap uses sip
+           'wrap+ uses +
+           'wrap* uses sip applied (iterable last argument)
+           'wrap+* uses + applied (iterable last argument)"
 
           wrap (fn& [x] (sip (pure x) ...))
           wrap+ (fn& [x] (+ (pure x) ...))
@@ -1776,8 +1727,7 @@
           wrap+* (p apl wrap+)
 
           derive
-          {:doc
-           "an update to derive wrap operations from your type
+          ["an update to derive wrap operations from your type
             given a name and and a pure value returns a sequential update
             that defines the four wrap variants for your type"
 
@@ -1796,7 +1746,7 @@
 
            :upd
            (fn [_ xs]
-             (apl make-upd xs))}
+             (apl make-upd xs))]
 
           (check.thunk
            (eq (wrap [1 2 3] 4 5 6)
@@ -1807,8 +1757,7 @@
                '(1 2 3 4 5 6)))]
 
          builtins
-         [:doc
-          "wrap declinations for builtin holy types"
+         ["wrap declinations for builtin holy types"
 
           (wrap.derive
            [lst ()]
@@ -1879,9 +1828,9 @@
         ["some functions to manipulate iterable structures"
 
          iterg
-         [:doc
-          "an update to define generic functions for iterables
-          hiding the iter/wrap boilerplate"
+         ["an update to define generic functions for iterables
+           hiding the iter/wrap boilerplate"
+
           :upd
           (fn [e [[a1 :as argv] expr]]
             '(generic
@@ -1904,26 +1853,30 @@
          rev (iterg [x] (c/reverse x))
 
          section
-         (iterg [x from to]
-                (-> x
-                    (take to)
-                    (drop from)))
+         ["selection from index to index"
+          (iterg [x from to]
+                 (-> x
+                     (take to)
+                     (drop from)))]
 
          splat
-         (fn [x n]
-           [(take x n) (drop x n)])
+         ["split at"
+          (fn [x n]
+            [(take x n) (drop x n)])]
 
          uncs
-         (fn [x]
-           [(car x) (cdr x)])
+         ["uncons"
+          (fn [x]
+            [(car x) (cdr x)])]
 
          runcs
-         (fn [x]
-           [(butlast x) (last x)])
+         ["reverse uncons"
+          (fn [x]
+            [(butlast x) (last x)])]
 
          cons
          ["like core.list*
-             but preserve collection type"
+           but preserve collection type"
           (fn [& xs]
             (c/let [[cars cdr] (runcs xs)]
               (+ (pure cdr) cars cdr)))]
@@ -1974,14 +1927,12 @@
         (import types [type]))
 
     (E+ guards
-        [:doc
-         "guards are like predicates
+        ["guards are like predicates
           but returns their first argument for success
           otherwise nil"
 
          guard
-         [:doc
-          "building guards utilities"
+         ["building guards utilities"
 
           template
           (fn [arity]
@@ -2087,8 +2038,7 @@
                       ":\n" ~expr))))
 
          assertion
-         [:doc
-          "a generic to turn something into an assertion expression"
+         ["a generic to turn something into an assertion expression"
 
           ;; helpers
 
@@ -2114,8 +2064,8 @@
 
           vec-split
           (fn [x]
-            (c/let [[[p1] :as parts] (partition-by message? x)
-                    parts (if (message? p1) parts (cons nil parts))]
+            (let [[[p1] :as parts] (partition-by message? x)
+                  parts (if (message? p1) parts (cons nil parts))]
               (c/map (p* catv) (partition 2 parts))))
 
           ;; generic
@@ -2128,18 +2078,18 @@
                     (mapdo xs (fn [a] (assertion a (message+ m m'))))))
 
            :map
-           (sip (mapdo x
-                       (fn [[k v]]
-                         (assertion v (message+ m k))))
+           (sip (mapdo
+                 x (fn [[k v]]
+                     (assertion v (message+ m k))))
                 ::ok)
 
            :nil
-           '(error ~(error-str "nil" m))
+           '(error (error-str "nil" ~m))
 
            :string nil
 
            :any
-           '(or ~x (error ~(error-str x m)))
+           '(or ~x (error (error-str '~x ~m)))
            )]
 
          assert
@@ -2150,11 +2100,15 @@
           (fn [_ xs]
             {:fx '(assert .~xs)})}
 
+         eq!:mac
+         (fn [e xs]
+           (exp e '(assert (eq .~xs) "must be equal")))
+
          tests:upd
          (fn [e xs]
            {(quot tests)
             {:form '(quot ~(vec* (assertion.vec-split xs)))
-             :do '(fn [] (assert ~(vec* xs) ~(loc e)))}})
+             :do '(fn [] (assert ~(vec* xs) ~(path->str (loc e))))}})
 
          (assert
           {:errors
@@ -2183,7 +2137,10 @@
                                "map assertion fail!")))]})
          ]
 
-        (import testing [assert throws tests]))
+        (import testing [assert throws tests eq!]))
+
+    #_(exp @E '(assert (not nil) (str "iop")))
+    #_(!! (assert nil (str "iop")))
 
     (E+ bindings
         {:val
@@ -2288,11 +2245,11 @@
 
            default
            (fn [[v s & args] y]
-             (cs (key? v)
-                 [s y (gensym "?typecheck") '(eq (type ~s) ~v)]
-                 (sym? s)
-                 [s (lst* v y args)]
-                 (error "guard binding takes a symbol as first argument, or a type keyword: "
+             (cs (sym? s)
+                 (cs (key? v)
+                     [s y (gensym "?typecheck") '(eq (type ~s) ~v)]
+                     [s (lst* v y args)])
+                 (error "guard binding takes a symbol as first argument"
                         (lst* v s args))))
 
            #_(!! (bindings.bind '(:vec a) 'x))
@@ -2377,45 +2334,6 @@
               :short `(let [~s ~e1] (when ~s ~e2))
               :strict `(let [~s (or ~e1 (error "nil! " (~(sym "quote") ~e1)))] ~e2)))
 
-          #_(form
-             (fn [e [p1 e1 & bs] expr mode]
-               (if-not p1 (cxp e expr)
-                       (let [step-mode (or (..sym->mode p1) mode)
-                             [e' pat] (hygiene.shadow e p1)]
-                         (..step-form
-                          pat (cxp e e1)
-                          (..form e' bs expr mode)
-                          step-mode))))
-
-             compile
-             {:val
-              (fn [e opts]
-                (if (:name? opts)
-                  (.named e opts)
-                  (.anonymous e opts)))
-
-              anonymous
-              (fn [e opts]
-                (bindings.let.form
-                 e (if (:unified opts)
-                     (bindings.unified (cat* (:bs opts)))
-                     (bindings (cat* (:bs opts))))
-                 (:expr opts)
-                 (cp opts
-                     :strict :strict
-                     :short :short
-                     :opt)))
-
-              named ::unbound
-              }
-
-             compiler
-             (fn [& flags]
-               (fn [e form]
-                 (..compile
-                  e (mrg (flagmap flags)
-                         (..parse form))))))
-
           form
           (fn [e [p1 e1 & bs] expr mode]
             (cs
@@ -2427,7 +2345,7 @@
              [? (sym? e1)
               ? (or (not (sym->mode p1))
                     (eq (sym->mode p1) (sym->mode e1)))
-              e' (hygiene.env-add-sub e {p1 (exp e e1)})]
+              e' (env.add-sub e [p1 (exp e e1)])]
              (form e' bs expr mode)
              ;; else we add a binding
              [step-mode (or (sym->mode p1) mode)
@@ -2468,11 +2386,6 @@
 
           }
          }
-
-        #_:tries
-        #_(do (exp @E '(let [a 1 b a c b] (add a b)))
-              (E+ (import bindings.let.builtins [let2]))
-              (exp @E '(let2 [a 1 b a c b] (add a b c))))
 
         bindings.let.builtins
         [let:mac  (compiler)
@@ -2637,6 +2550,7 @@
                  '(get ~(exp e (lst* `or cs)) ::return)]
 
              (if strict
+               #_'(assert ~retform "clet no match!")
                '(or ~retform (error "clet no match!"))
                retform)))
 
@@ -2783,90 +2697,130 @@
 
          cased
          {parse
-          {:val
-           (fn [[fst & nxt :as form]]
-             #_(pp "cased-lambda-parse" form)
-             (let [#_[head cases]
-                   #_(primitives.fn.parse.head form)
-
-                   [name fst . nxt]
-                   (if (sym? fst)
-                     (cons fst nxt)
-                     (concat [nil fst] nxt))
-
-                   [doc fst . nxt]
-                   (if (str? fst)
-                     (cons fst nxt)
-                     (concat [nil fst] nxt))
-
-                   [meta . cases]
-                   (if (map? fst)
-                     (cons fst nxt)
-                     (concat [{} fst] nxt))
-
-                   cases
-                   (partition 2 cases)
-
-                   parsed-cases
-                   ($ cases parse.case)
-
-                   variadic-cases (seq (filter :variadic parsed-cases))
-                   variadic? (boolean variadic-cases)
-                   monadic? (and (not variadic?) (apl c/= ($ cases (comp count car))))
-                   polyadic? (not monadic?)
-
-                   arities
-                   (reduce
-                    (fn [r {:keys [arity min-arity] :as c}]
-                      (if arity
-                        (update r arity (fnil conj []) c)
-                        (update r :& (fnil conj []) c)))
-                    {} parsed-cases)]
-
-               #_(pp "after bindings")
-
-               #_(pp cases ($ cases car count))
-
-               #_(assert (apl c/= ($ cases car count))
-                         "different arities in case lambda")
-
-               {:name name
-                :meta meta
-                :arity (count (car (car cases)))
-                :doc doc
-                :monadic? monadic?
-                :variadic? variadic?
-                :polyadic? polyadic?
-                :arity-map arities
-                :cases cases}))
+          ["cased lambda parser"
 
            case
-           (fn [[pat & body]]
-             (let [arity
-                   (when (not (cp.dotted? pat))
-                     (count pat))
+           ["parse one case"
+            (fn [[pat & body]]
+              (let [arity
+                    (when (not (cp.dotted? pat))
+                      (count pat))
 
-                   [pat-prefix rest-pat]
-                   (split-with (complement #{cp.dot cp.dotdot}) pat)
+                    [pat-prefix rest-pat]
+                    (split-with (complement #{cp.dot cp.dotdot}) pat)
 
-                   rest-pat
-                   (if (= 2 (count rest-pat))
-                     (second rest-pat) (vec* rest-pat))
+                    rest-pat
+                    (if (= 2 (count rest-pat))
+                      (second rest-pat) (vec* rest-pat))]
 
-                   min-arity
-                   (count pat-prefix)]
+                (merge
+                 {:pat pat
+                  :body (bindings.bodify body)}
+                 (if arity
+                   {:arity arity}
+                   {:variadic true
+                    :pat-prefix (vec* pat-prefix)
+                    :rest-pat rest-pat
+                    :min-arity (count pat-prefix)}))
 
-               (merge
-                {:pat pat
-                 :body (bindings.bodify body)}
-                (if arity
-                  {:arity arity}
-                  {:variadic? true
-                   :pat-prefix (vec* pat-prefix)
-                   :rest-pat rest-pat
-                   :min-arity min-arity}))
+                ))]
 
-               ))}
+           check-variadic-sigs
+           ["ensure that all variadic cases have the same min arity"
+            (fn [xs]
+              (assert (apl eq ($ xs #(:min-arity %)))
+                      (str* "variadic arities count mismatch\n"
+                            (interleave ($ xs #(:pat %)) (repeat "\n")))))]
+
+           (fn [[fst & nxt :as form]]
+            #_(pp "cased-lambda-parse" form)
+            (let [[name . cases]
+                  (if (word? fst)
+                    (cons fst nxt)
+                    (concat [nil fst] nxt))
+
+                  cases
+                  (partition 2 cases)
+
+                  parsed-cases
+                  ($ cases parse.case)
+
+                  variadic-cases (seq (filter :variadic parsed-cases))
+                  variadic (boolean variadic-cases)
+                  monadic (and (not variadic) (apl c/= ($ cases (comp count car))))
+                  polyadic (not monadic)
+
+                  arities
+                  (reduce
+                   (fn [r {:keys [arity min-arity] :as c}]
+                     (if arity
+                       (update r arity (fnil conj []) c)
+                       (update r :& (fnil conj []) c)))
+                   {} parsed-cases)]
+
+
+              (when variadic
+                (parse.check-variadic-sigs (:& arities)))
+
+              {:name name
+               :monadic monadic
+               :variadic variadic
+               :polyadic polyadic
+               :arity-map arities
+               :cases cases}))
+
+           #_(fn [[fst & nxt :as form]]
+            #_(pp "cased-lambda-parse" form)
+            (let [[name fst . nxt]
+                  (if (sym? fst)
+                    (cons fst nxt)
+                    (concat [nil fst] nxt))
+
+                  [doc fst . nxt]
+                  (if (str? fst)
+                    (cons fst nxt)
+                    (concat [nil fst] nxt))
+
+                  [meta . cases]
+                  (if (map? fst)
+                    (cons fst nxt)
+                    (concat [{} fst] nxt))
+
+                  cases
+                  (partition 2 cases)
+
+                  parsed-cases
+                  ($ cases parse.case)
+
+                  variadic-cases (seq (filter :variadic parsed-cases))
+                  variadic? (boolean variadic-cases)
+                  monadic? (and (not variadic?) (apl c/= ($ cases (comp count car))))
+                  polyadic? (not monadic?)
+
+                  arities
+                  (reduce
+                   (fn [r {:keys [arity min-arity] :as c}]
+                     (if arity
+                       (update r arity (fnil conj []) c)
+                       (update r :& (fnil conj []) c)))
+                   {} parsed-cases)]
+
+              #_(pp "after bindings")
+
+              #_(pp cases ($ cases car count))
+
+              #_(assert (apl c/= ($ cases car count))
+                        "different arities in case lambda")
+
+              {:name name
+               :meta meta
+               :arity (count (car (car cases)))
+               :doc doc
+               :monadic? monadic?
+               :variadic? variadic?
+               :polyadic? polyadic?
+               :arity-map arities
+               :cases cases}))]
 
           compile
           {:val
@@ -2907,7 +2861,7 @@
             variadic
             (fn [verb cases]
               (let [vsym (gensym)
-                    prefcnt (count (:pat-prefix (car cases)))
+                    prefcnt (:min-arity (car cases))
                     argv-prefix (take (gensyms) prefcnt)
                     argv (vec+ argv-prefix ['& vsym])
                     clet-cases
@@ -2924,31 +2878,34 @@
               (compile
                e (mrg (flagmap flags)
                       (parse form)))))
-          }}
+          }
 
-        f:mac (lambda.compiler)
-        !f:mac (lambda.compiler :strict)
-        ?f:mac (lambda.compiler :short)
-        !fu:mac (lambda.compiler :unified :strict)
-        fu:mac (lambda.compiler :unified :short)
+         builtins
+        [f:mac   (compiler)
+         !f:mac  (compiler :strict)
+         ?f:mac  (compiler :short)
+         !fu:mac (compiler :unified :strict)
+         fu:mac  (compiler :unified :short)
 
-        f1:mac (lambda.compiler :unary)
-        !f1:mac (lambda.compiler :unary :strict)
-        ?f1:mac (lambda.compiler :unary :short)
-        !fu1:mac (lambda.compiler :unary :unified :strict)
-        fu1:mac (lambda.compiler :unary :unified :short)
+         f1:mac   (compiler :unary)
+         !f1:mac  (compiler :unary :strict)
+         ?f1:mac  (compiler :unary :short)
+         !fu1:mac (compiler :unary :unified :strict)
+         fu1:mac  (compiler :unary :unified :short)
 
-        f_:mac (f [e xs] (cxp e (lst* 'f1 '_ xs)))
-        ?f_:mac (f [e xs] (cxp e (lst* '?f1 '_ xs)))
-        !f_:mac (f [e xs] (cxp e (lst* '!f1 '_ xs)))
-        !fu_:mac (f [e xs] (cxp e (lst* '!fu1 '_ xs)))
-        fu_:mac (f [e xs] (cxp e (lst* 'fu1 '_ xs)))
+         f_:mac   (f [e xs] (cxp e (lst* 'f1 '_ xs)))
+         ?f_:mac  (f [e xs] (cxp e (lst* '?f1 '_ xs)))
+         !f_:mac  (f [e xs] (cxp e (lst* '!f1 '_ xs)))
+         !fu_:mac (f [e xs] (cxp e (lst* '!fu1 '_ xs)))
+         fu_:mac  (f [e xs] (cxp e (lst* 'fu1 '_ xs)))
 
-        cf:mac (lambda.cased.compiler)
-        !cf:mac (lambda.cased.compiler :strict)
-        ?cf:mac (lambda.cased.compiler :short)
-        cfu:mac (lambda.cased.compiler :unified)
-        !cfu:mac (lambda.cased.compiler :unified :strict)
+         cf:mac   (cased.compiler)
+         !cf:mac  (cased.compiler :strict)
+         ?cf:mac  (cased.compiler :short)
+         cfu:mac  (cased.compiler :unified)
+         !cfu:mac (cased.compiler :unified :strict)]}
+
+        (import lambda.builtins :all)
 
         bindings.let.compile.named
         (fn [e opts]
@@ -2959,6 +2916,10 @@
                          :body [(:expr opts)]
                          :name (:name opts)}))
                 (cxp e ($ (:bs opts) second)))))
+
+    #_( 1 2)
+    #_(exp @E '(cf :io [a] 1 [a b] 2 [(:num a) b c . xs] :var1 [a b . d] :var2))
+    #_(exp @E '(cf :io [a] 1 [(:num a) b] 2 [(:str a) b] 3))
 
     (do :guard-macro
         (E+ guard:mac
@@ -3714,6 +3675,7 @@
      ?f !f f fu !fu
      f1 !f1 ?f1 !fu1 fu1
      f_ !f_ ?f_ !fu_ fu_
+     cf ?cf !cf cfu !cfu 
      clet clut !clet !clut
      case casu !case !casu)
 )
