@@ -1237,7 +1237,8 @@
              (exp e (lst `first (.form xs))))
 
            optimized
-           ["try to collapse cs emitted form into a more compact and performant one"
+           ["try to collapse cs emitted form into a more compact one
+             grouping let levels when possible and substituting instead of binding sym to sym"
 
             let-expr?
             (fn [x]
@@ -1255,10 +1256,7 @@
 
             substitute
             (fn [e x]
-              (cs [? (seq? x)
-                   [v & bod] x
-                   ? (= `let v)
-                   [[b1 b2] expr] bod
+              (cs [[_ [b1 b2] expr] (let-expr? x)
                    ? (and (sym? b1) (sym? b2))]
                   (rec e (exp (env.add-sub e [b1 b2]) expr))
 
@@ -1274,7 +1272,11 @@
 
             :mac
             (fn [e xs]
-              (optimize e (lst `first (form xs))))]]]
+              (optimize e (lst `first (form xs))))
+
+            :tries
+            '(do (exp @E '(cs [[x & _xs] y] y :nop)) 
+                 )]]]
 
          :links {fn primitives.fn
                  let primitives.let
@@ -1282,16 +1284,6 @@
                  }
 
          ))
-
-    
-    #_(!! (cs.optimize2.substitute @E (lst 'primitives.let '[a b] '(add a a))))
-
-    #_(exp @E '(cs [[x y & _xs] (range 2)] [x y _xs] :nop))
-    #_(exp @E '(cs.optimized [[x y & _xs] (range 2)] [x _xs] :nop))
-    #_(pp (exp @E '(cs.optimized [[x] (range 2)] x :nop)))
-    
-
-    #_(error "stop")
 
     (defne qualify
 
