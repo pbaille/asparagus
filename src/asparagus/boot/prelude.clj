@@ -54,7 +54,7 @@
       (repeatedly gensym))
 
     (defn argv-litt [n & [prefix]]
-      (vec (repeatedly n #(gensym (c/or prefix "a")))))
+      (vec (repeatedly n #(gensym (c/or prefix "a_")))))
 
     (defmacro _ [& _] nil)
 
@@ -553,10 +553,6 @@
                 [1 2 [3 5 {:a nil :b 2}]]
                 :yo))))
 
-    (re-matches #"^((aze)|(foo))+$" "fooazefoof")
-    (re-matches #"^((aze)|(foo))$" "foo")
-
-    
     (do :cs
 
         (defn generated-binding-sym? [x]
@@ -592,7 +588,7 @@
         (defmacro cs [& xs]
           `(first ~(cs-form xs)))
 
-        (destructure '[[x y z & xs] y])
+        #_(destructure '[[x y z & xs] y])
         #_(mx*' (cs [[x & xs] (range 1)] [x xs] :nop))
         )
 

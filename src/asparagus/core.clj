@@ -1183,24 +1183,24 @@
 
           let
           {parse
-           (c/fn [[bs & body]]
+           (fn [[bs & body]]
              {:bindings (partition 2 bs)
               :body body
               :monobody (= 1 (count body))})
 
            expand
-           (c/fn [e {:keys [bindings body monobody]}]
+           (fn [e {:keys [bindings body monobody]}]
              (c/loop [e e ret [] [[p1 e1] & pes] bindings]
                (if p1
                  (c/let [[e' pat] (hygiene.shadow e p1)]
                    (recur e' (conj ret pat (exp e e1)) pes))
                  (lst `let ret (exp e (if monobody (car body) (cons 'do body)))))))
            :mac
-           (c/fn [e form]
+           (fn [e form]
              (.expand
               e (.parse form)))}
 
-          cs'
+          cs
           [generated-binding-sym?
            (fn [x]
              (re-matches #"^((vec)|(seq)|(first)|(map))__[0-9]+$"
@@ -1217,7 +1217,7 @@
              [[b1 b2 & bs] e]
              (lst (if (or (generated-binding-sym? b1)
                           (= \_ (first (name b1))))
-                    'primitives.let 'primitives.cs'.?let)
+                    'primitives.let 'primitives.cs.?let)
                   [b1 b2]
                   (if bs (case bs e)
                       ;; this wrapping is nescessary for the case e eval to nil
@@ -1234,19 +1234,66 @@
 
            :mac
            (fn [e xs]
-             (exp e (lst `first (.form xs))))]]
+             (exp e (lst `first (.form xs))))
+
+           optimized
+           ["try to collapse cs emitted form into a more compact and performant one"
+
+            let-expr?
+            (fn [x]
+              (when (and (seq? x) (= `let (car x)))
+                x))
+
+            collapse
+            (fn [x]
+              (cs [[_ bs expr] (let-expr? x)
+                   [_ bs' expr'] (let-expr? expr)]
+                  (rec `(let ~(catv bs bs') ~expr'))
+                  (seq? x)
+                  ($ x rec)
+                  x))
+
+            substitute
+            (fn [e x]
+              (cs [? (seq? x)
+                   [v & bod] x
+                   ? (= `let v)
+                   [[b1 b2] expr] bod
+                   ? (and (sym? b1) (sym? b2))]
+                  (rec e (exp (env.add-sub e [b1 b2]) expr))
+
+                  (seq? x)
+                  ($ x (p rec e))
+
+                  x))
+
+            optimize
+            (fn [e x]
+              (collapse
+               (substitute e (exp e x))))
+
+            :mac
+            (fn [e xs]
+              (optimize e (lst `first (form xs))))]]]
 
          :links {fn primitives.fn
                  let primitives.let
-                 cs primitives.cs'
+                 cs primitives.cs.optimized
                  }
 
          ))
 
-    #_(!! (cs' [[x y & _xs] (range 2)] [x _xs] :nop))
-    #_(!! (primitives.cs'.form '[[[x & xs] y] :iop :nop]))
+    
+    #_(!! (cs.optimize2.substitute @E (lst 'primitives.let '[a b] '(add a a))))
 
-    #_(defne qualify
+    #_(exp @E '(cs [[x y & _xs] (range 2)] [x y _xs] :nop))
+    #_(exp @E '(cs.optimized [[x y & _xs] (range 2)] [x _xs] :nop))
+    #_(pp (exp @E '(cs.optimized [[x] (range 2)] x :nop)))
+    
+
+    #_(error "stop")
+
+    (defne qualify
 
       [e x]
 
@@ -1255,7 +1302,8 @@
           sym?
           (or (qualsym e x)
               (when (gensym? x) x)
-              (when-let [r (c/resolve x)] (do "resolvesym" (ns-resolve-sym x)) (ns-resolve-sym x))
+              (when (= '_ x) x)
+              (when-let [r (c/resolve x)] #_(pp "resolvesym" (ns-resolve-sym x)) (ns-resolve-sym x))
               (do #_(pp "notresolvable" x) x))
 
           seq?
@@ -1954,7 +2002,7 @@
          ["like core.list*
            but preserve collection type"
           (fn [& xs]
-            (c/let [[cars cdr] (runcs xs)]
+            (let [[cars cdr] (runcs xs)]
               (+ (pure cdr) cars cdr)))]
 
          cons?
@@ -3059,7 +3107,7 @@
          $
          (generic.reduced
           [x f]
-          :map (c/into {} (c/map (c/fn [[k v]] [k (§ f v)]) x))
+          :map (c/into {} (c/map (fn [[k v]] [k (§ f v)]) x))
           :set (c/set (c/map (§ f) x))
           :vec (c/mapv (§ f) x)
           :seq (c/map (§ f) x)
@@ -3069,7 +3117,7 @@
          $i
          (generic.reduced
           [x f]
-          :map (c/into {} (c/map (c/fn [[k v]] [k (§ f k v)]) x))
+          :map (c/into {} (c/map (fn [[k v]] [k (§ f k v)]) x))
           :set (c/set (c/vals ($i (c/zipmap x x) f)))
           :vec (c/vec (c/map-indexed (§ f) x))
           :seq (c/map-indexed (§ f) x)
@@ -3094,7 +3142,7 @@
          walk?
          (f
           [x ? f]
-          (c/if-let [nxt (? x)]
+          (cs [nxt (? x)]
             ($ nxt #(walk? % ? f))
             (f x))) )
 
@@ -3112,17 +3160,17 @@
                           (c/map vector ...)))
              :map
              (fn& []
-                  (c/let [yks (c/set (c/mapcat c/keys [...]))
-                          y0 (c/zipmap yks (c/repeat []))
-                          y (c/merge-with c/conj y0 ...)
-                          x (c/merge (c/zipmap yks (c/repeat #(c/last %&))) x)]
+                  (let [yks (c/set (c/mapcat c/keys [...]))
+                        y0 (c/zipmap yks (c/repeat []))
+                        y (c/merge-with c/conj y0 ...)
+                        x (c/merge (c/zipmap yks (c/repeat #(c/last %&))) x)]
                     (c/merge-with * x y)))))
 
         (_ :tries
 
            (qbench (!! (§ {:a add :b sub} {:a 2 :b 1 :c 56} {:a 3 :b 5})))
            (qbench (!! (§ [add sub add] [1 2 3] [1 2 3] [1 2 3])))
-           (qbench (!! (c/mapv (c/fn [f args] (apl f args))
+           (qbench (!! (c/mapv (fn [f args] (apl f args))
                                [add sub add]
                                (mapv list [1 2 3] [1 2 3] [1 2 3]))))
            (qbench (!! (* [add sub add] (list [1 2 3] [1 2 3] [1 2 3]))))))
@@ -3180,13 +3228,13 @@
          zip+
          (f                            ;core/mapcat(ish)
           [f . xs]
-          (c/if-let [ret (c/seq (* zip f xs))]
+          (cs [ret (c/seq (* zip f xs))]
             (* + ret) ()))
 
          scan
          (f                            ;similar to core/partition
           [x size step]
-          (c/let [[pre post] (splat x size)]
+          (let [[pre post] (splat x size)]
             (if (cons? post)
               (cons pre (scan (drop x step) size step))
               (if (cons? pre)
