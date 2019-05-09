@@ -567,9 +567,7 @@
         (defn mcall? [x]
           (some-> x meta :expansion))
 
-        (defn gensym? [x]
-          (and (symbol? x)
-               (re-matches #"^.*_[0-9]+$" (name x)))))
+        )
 
     (defne qualify
 
@@ -763,7 +761,7 @@
         (do :new-impl
 
             "the reason is to allow upds to be defined in sequential
-             updates (vecs) and available imediately after"
+             updates (vecs) and available immediately after"
 
             (defn env-upd_split [[x1 x2 & rs :as xs]]
               (cs (not (seq xs)) []
@@ -836,6 +834,7 @@
             )
 
         (defn env-upd_exe [e u]
+          #_(pp u "-----------------------------")
           (doseq [[verb at x] u]
             (swap! E
                    (fn [e]
@@ -1285,33 +1284,52 @@
 
          ))
 
-    (defne qualify
+    (do :qualify-redo
 
-      [e x]
+        (defn gensym? [x]
+          (and (symbol? x)
+               (re-matches #"^.*_[0-9]+#*$" (name x))))
 
-      (cp x
+        (defn generic-symbol? [x]
+          (and (symbol? x)
+               (re-matches #"^.*__generic$" (name x))))
 
-          sym?
-          (or (qualsym e x)
-              (when (gensym? x) x)
-              (when (= '_ x) x)
-              (when-let [r (c/resolve x)] #_(pp "resolvesym" (ns-resolve-sym x)) (ns-resolve-sym x))
-              (do #_(pp "notresolvable" x) x))
+        (def unqualifiable-symbols
+          '#{if do recur fn* let* try catch quote _ . .. &})
 
-          seq?
-          (cs [p (-> x car path)
-               ? (or (ppath? p) (macpath? p))
-               p (qualsym e (path p :mac))]
-              (mark-exp (cons p (cdr x)))
-              ($ x (p qualify e)))
+        (def unqualifiable?
+          unqualifiable-symbols)
 
-          holycoll?
-          ($ x (p qualify e))
+        (defne qualify
 
-          x))
+          [e x]
 
-    #_(-> (qualify @E '(pos? 1 (hygiene.shadow.pat->submap x)))
-        next next first first type)
+          (cp x
+
+              sym?
+              (cs [qs (qualsym e x)] qs
+                  (or (gensym? x)
+                      (unqualifiable? x)
+                      (generic-symbol? x)) x
+                  (c/resolve x) (ns-resolve-sym x)
+                  (namespace x) (do (pp "unresolvensed" x) x)
+                  (do (pp "notresolvable" x) x))
+
+              seq?
+              (cs [p (-> x car path)
+                   ? (or (ppath? p) (macpath? p))
+                   p (qualsym e (path p :mac))]
+                  (mark-exp (cons p (cdr x)))
+                  ($ x (p qualify e)))
+
+              holycoll?
+              ($ x (p qualify e))
+
+              x))
+
+        #_(-> (qualify @E '(pos? 1 (hygiene.shadow.pat->submap x)))
+              next next first first type)
+        )
 
     (E+ composite
         [
@@ -1520,14 +1538,14 @@
     (E+ generic
         {:doc
          "an update to define a generic function
-            and its related inspection and extension capabilities"
+          and its related inspection and extension capabilities"
 
          :upd
          (fn [e body]
            (let [gsym (generic.symbol (loc e))
                  e (env-add-member e (path (loc e) :val) ::unbound)]
              (assoc (generic.module gsym)
-                    :fx (generic.init e gsym body))))
+                    :fx '(generic.init ~gsym ~body) #_(generic.init e gsym body))))
 
          reduced:upd
          (fn [e [argv & decls]]
@@ -1570,8 +1588,13 @@
          (fn [n]
            (path->varsym (path n :generic)))
 
-         init
-         (fn [e n body]
+         #_init
+         #_(fn [e n body]
+           (g/declaration-form
+            (..spec e n body)))
+
+         init:mac
+         (fn [e [n body]]
            (g/declaration-form
             (..spec e n body)))
 
@@ -2737,6 +2760,8 @@
                 [clet clut !clet !clut])
         )
 
+    #_(error "after bindings")
+
     (E+ lambda
         {:links {cp composite}
 
@@ -2764,6 +2789,15 @@
               :body (bindings.bodify body)
               :form form}))
 
+         binding-verb
+         (fn [{:keys [unified strict short]}]
+           ({[nil nil nil] 'let
+             [nil true nil] '?let
+             [true nil nil] '!let
+             [nil nil true] 'lut
+             [true nil true] '!lut}
+            [strict short unified]))
+
          compile
          (fn [e opts]
            (let
@@ -2786,7 +2820,8 @@
 
                 ;; prepare the argument given to bindings or ubindings
                 ;; [pat seed pat2 seed2 ...]
-                bs (c/map vector pats seeds)
+                ;; bs (c/map vector pats seeds)
+                bs (vec* (interleave pats seeds))
 
                 ;; the binding form of the emitted lambda
                 binding-form
@@ -2795,13 +2830,26 @@
                       :else ['& fs])
 
                 ;; the compilation options of the let wrapper
-                let-opts
-                (+ {:bs bs :expr body}
-                   (select-keys opts [:strict :unified :short]))]
+                #_let-opts
+                #_(+ {:bs bs :expr body}
+                   (select-keys opts [:strict :unified :short]))
+
+                #_let-verb
+                #_({[nil nil nil] 'let
+                  [nil true nil] '?let
+                  [true nil nil] '!let
+                  [nil nil true] 'lut
+                  [true nil true] '!lut}
+                 (let [(ks strict unified short) opts]
+                   [strict short unified]))]
+
+             #_(pp "letverb "
+                 (lst let-verb (vec+* bs) body))
 
              (cxp e
                   (lst 'primitives.fn . (if name [name] [])
-                       binding-form (bindings.let.compile e let-opts)))
+                       binding-form
+                       (lst (binding-verb opts) bs body) #_(bindings.let.compile e let-opts)))
              ))
 
          compiler
@@ -3644,13 +3692,22 @@
            (!! (at {:a 1 :b 2 :c 2} (ks :a :b)))
            (!! ((at_ (ks :a :b)) {:a 1 :b 2 :c 2}))))
 
+    #_(expand @E (qualify @E '(fn [verb symseed xs]
+                       (if (even? (count xs))
+                         (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
+                         (rec verb symseed [.(butlast xs) (quot _) (last xs)])))))
+
     (E+ bindings.case
-        [form
+        [;:fx (pp "suspect unresolvable rec bindings case 3673")
+
+         form
          (f [verb symseed xs]
             (if (even? (count xs))
               (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
               (rec verb symseed [.(butlast xs) (quot _) (last xs)])))
 
+         ;:fx (pp "after suspect unresolvable rec bindings case 3673")
+         
          verb
          (f1 (ks strict unified)
              (cs (and strict unified) '!clut
