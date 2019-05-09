@@ -1199,6 +1199,10 @@
              (.expand
               e (.parse form)))}
 
+          loop:mac
+          (fn [e xs]
+            `(loop ~@(cdr (exp e (lst* 'primitives.let xs)))))
+
           cs
           [generated-binding-sym?
            (fn [x]
@@ -1279,6 +1283,7 @@
 
          :links {fn primitives.fn
                  let primitives.let
+                 loop primitives.loop
                  cs primitives.cs.optimized
                  }
 
@@ -1290,15 +1295,12 @@
           (and (symbol? x)
                (re-matches #"^.*_[0-9]+#*$" (name x))))
 
-        (defn generic-symbol? [x]
-          (and (symbol? x)
-               (re-matches #"^.*__generic$" (name x))))
-
         (def unqualifiable-symbols
           '#{if do recur fn* let* try catch quote _ . .. &})
 
-        (def unqualifiable?
-          unqualifiable-symbols)
+        (defn unqualifiable? [x]
+          (or (unqualifiable-symbols x)
+              (gensym? x)))
 
         (defne qualify
 
@@ -1308,12 +1310,9 @@
 
               sym?
               (cs [qs (qualsym e x)] qs
-                  (or (gensym? x)
-                      (unqualifiable? x)
-                      (generic-symbol? x)) x
+                  (unqualifiable? x) x
                   (c/resolve x) (ns-resolve-sym x)
-                  (namespace x) (do (pp "unresolvensed" x) x)
-                  (do (pp "notresolvable" x) x))
+                  (error "not resolvable: " x))
 
               seq?
               (cs [p (-> x car path)
@@ -1775,8 +1774,8 @@
            [a b]
            :fun (c/comp b a)
            :seq (c/concat a (iter b))
-           :str (c/str a (.toString b))
-           :sym (c/symbol (c/str (c/name a) (.toString b)))
+           :str (c/str a b #_(.toString b))
+           :sym (c/symbol (c/str (c/name a) b #_(.toString b)))
            :key (c/keyword (c/str (c/name a) (c/name b)))
            :any (c/reduce sip a (iter b)))
 
@@ -2427,8 +2426,8 @@
 
          unified
          (fn [xs]
-           (c/loop [ret [] seen #{}
-                    [a b & nxt] (bindings xs)]
+           (loop [ret [] seen #{}
+                  [a b & nxt] (bindings xs)]
              (if a
                (if (seen a)
                  (recur (conj ret (gensym) '(eq ~a ~b)) seen nxt)
@@ -2790,13 +2789,14 @@
               :form form}))
 
          binding-verb
-         (fn [{:keys [unified strict short]}]
-           ({[nil nil nil] 'let
-             [nil true nil] '?let
-             [true nil nil] '!let
-             [nil nil true] 'lut
-             [true nil true] '!lut}
-            [strict short unified]))
+         ["given compile opts, determine the needed verb for inner bindings"
+          (fn [{:keys [unified strict short]}]
+            ({[nil nil nil] 'let
+              [nil true nil] '?let
+              [true nil nil] '!let
+              [nil nil true] 'lut
+              [true nil true] '!lut}
+             [strict short unified]))]
 
          compile
          (fn [e opts]
@@ -2818,38 +2818,20 @@
                   [pat (take ss fixed-arity)]
                   [[pat] [(car ss)]])
 
-                ;; prepare the argument given to bindings or ubindings
+                ;; inner binding form
                 ;; [pat seed pat2 seed2 ...]
-                ;; bs (c/map vector pats seeds)
                 bs (vec* (interleave pats seeds))
 
                 ;; the binding form of the emitted lambda
                 binding-form
                 (cond unary [fs]
                       fixed-arity (vec* seeds)
-                      :else ['& fs])
-
-                ;; the compilation options of the let wrapper
-                #_let-opts
-                #_(+ {:bs bs :expr body}
-                   (select-keys opts [:strict :unified :short]))
-
-                #_let-verb
-                #_({[nil nil nil] 'let
-                  [nil true nil] '?let
-                  [true nil nil] '!let
-                  [nil nil true] 'lut
-                  [true nil true] '!lut}
-                 (let [(ks strict unified short) opts]
-                   [strict short unified]))]
-
-             #_(pp "letverb "
-                 (lst let-verb (vec+* bs) body))
+                      :else ['& fs])]
 
              (cxp e
                   (lst 'primitives.fn . (if name [name] [])
                        binding-form
-                       (lst (binding-verb opts) bs body) #_(bindings.let.compile e let-opts)))
+                       (lst (binding-verb opts) bs body)))
              ))
 
          compiler
@@ -2930,59 +2912,6 @@
                :monadic monadic
                :variadic variadic
                :polyadic polyadic
-               :arity-map arities
-               :cases cases}))
-
-           #_(fn [[fst & nxt :as form]]
-            #_(pp "cased-lambda-parse" form)
-            (let [[name fst . nxt]
-                  (if (sym? fst)
-                    (cons fst nxt)
-                    (concat [nil fst] nxt))
-
-                  [doc fst . nxt]
-                  (if (str? fst)
-                    (cons fst nxt)
-                    (concat [nil fst] nxt))
-
-                  [meta . cases]
-                  (if (map? fst)
-                    (cons fst nxt)
-                    (concat [{} fst] nxt))
-
-                  cases
-                  (partition 2 cases)
-
-                  parsed-cases
-                  ($ cases parse.case)
-
-                  variadic-cases (seq (filter :variadic parsed-cases))
-                  variadic? (boolean variadic-cases)
-                  monadic? (and (not variadic?) (apl c/= ($ cases (comp count car))))
-                  polyadic? (not monadic?)
-
-                  arities
-                  (reduce
-                   (fn [r {:keys [arity min-arity] :as c}]
-                     (if arity
-                       (update r arity (fnil conj []) c)
-                       (update r :& (fnil conj []) c)))
-                   {} parsed-cases)]
-
-              #_(pp "after bindings")
-
-              #_(pp cases ($ cases car count))
-
-              #_(assert (apl c/= ($ cases car count))
-                        "different arities in case lambda")
-
-              {:name name
-               :meta meta
-               :arity (count (car (car cases)))
-               :doc doc
-               :monadic? monadic?
-               :variadic? variadic?
-               :polyadic? polyadic?
                :arity-map arities
                :cases cases}))]
 
@@ -3084,6 +3013,13 @@
     #_( 1 2)
     #_(exp @E '(cf :io [a] 1 [a b] 2 [(:num a) b c . xs] :var1 [a b . d] :var2))
     #_(exp @E '(cf :io [a] 1 [(:num a) b] 2 [(:str a) b] 3))
+    #_ (exp @E '(primitives.let [s size ret [['a 'd]]]
+                                (if (eq 1 s)
+                                  (* + (cdr ret))
+                                  (recur (dec s)
+                                         (sip ret
+                                              ($+ (last ret)
+                                                  #($ ['a 'd] (p + %))))))))
 
     (do :guard-macro
         (E+ guard:mac
@@ -3372,7 +3308,7 @@
         (E+ linear-accesses
             {mk
              (f1 size
-                 (c/loop [s size ret [['a 'd]]]
+                 (loop [s size ret [['a 'd]]]
                    (if (eq 1 s)
                      (* + (cdr ret))
                      (recur (dec s)
