@@ -6,8 +6,8 @@
    [clojure.string :as str]
    [clojure.set :as set]
    [criterium.core :as cr]
-   [asparagus.boot.types :as t]
-   [asparagus.boot.generics :as g]
+   [asparagus.boot.types2 :as t]
+   [asparagus.boot.generics2 :as g]
    [asparagus.boot.prelude :as p
     :refer
     [;; macros
@@ -567,6 +567,19 @@
         (defn mcall? [x]
           (some-> x meta :expansion))
 
+        (defmacro defexpansion [name [esym xsym] expr]
+          `(defn ~name ~[esym xsym]
+             (try ~expr
+                  (catch Exception err#
+                    (error "--- Expansion error ---\n\n"
+                           (pretty-str ~xsym)
+                           "\nctx:\n"
+                           (str* ($ (:exp-ctx ~esym) pretty-str))
+                           "\nerror:\n"
+                           (.getMessage err#))))))
+
+        (defexpansion expand-mcall [e x] ((env-access e (car x)) e (cdr x)))
+        (defexpansion expand-subpath [e x] ((env-access e x) e))
         )
 
     (defne qualify
@@ -589,8 +602,7 @@
           ($ x (p qualify e))
 
           x))
-
-    (defne expand
+    #_(defne expand
       [e x]
       #_(pp 'expand x)
       (cp x
@@ -598,6 +610,14 @@
           subpath? ((env-access e x) e)
           ;path? x
           mcall? ((env-access e (car x)) e (cdr x))
+          holycoll? ($ x (p expand e))
+          x))
+    (defne expand
+      [e x]
+      #_(pp 'expand x)
+      (cp x
+          subpath? (expand-subpath e x)
+          mcall? (expand-mcall e x)
           holycoll? ($ x (p expand e))
           x))
 
@@ -612,7 +632,8 @@
 
     (defne exp
       [e x]
-      (->> x (qualify e) (expand e)))
+      (let [e (update e :exp-ctx (fnil conj []) x)]
+        (->> x (qualify e) (expand e))))
 
     (defne res
       [e x]
@@ -669,7 +690,8 @@
         (defn env-detailed-steps [e expr]
           (let [at (loc e)
                 qualified (qualify e expr)
-                expanded (expand e qualified)
+                ;expanded (expand e qualified)
+                expanded (exp e expr)
                 resolved (resolve e expanded)]
             {:at at
              :expr expr
@@ -766,10 +788,10 @@
             (defn env-upd_split [[x1 x2 & rs :as xs]]
               (cs (not (seq xs)) []
                   (word? x1)
-                  (cs (vec? x2)
+                  (cs (and (vec? x2) (ppath? (path x1)))
                       (concat ($ (env-upd_split x2) (p hash-map x1))
                               (env-upd_split rs))
-                      (cons {x1 x2} (env-upd_split rs))) 
+                      (cons {x1 x2} (env-upd_split rs)))
                   (holymap? x1) (cons x1 (env-upd_split (rest xs)))
                   (cons {root-path x1} (env-upd_split (rest xs)))))
 
@@ -834,7 +856,6 @@
             )
 
         (defn env-upd_exe [e u]
-          #_(pp u "-----------------------------")
           (doseq [[verb at x] u]
             (swap! E
                    (fn [e]
@@ -844,8 +865,10 @@
                          :declare (env-declare-member e at)
                          :fx (do (eval (mv e at) x) e)
                          :def (env-member-add-compiled e at x))
-                       (catch Exception e
-                         (error "\nenv-upd error compiling:\n" (pretty-str [verb at x]) "\n" e))))))
+                       (catch Exception err
+                         (error "\nenv-upd error compiling:\n"
+                                (pretty-str [verb at x])
+                                "\n" (.getMessage err)))))))
           @E)
 
         )
@@ -855,9 +878,10 @@
 (do :API
 
     (defmacro E+ [& xs]
-      `(do ~@(map (fn [u]
-                    `(env-upd_exe @E (env-upds @E '~u)))
-                  (env-upd_split xs))))
+      `(do #_(pp '~(first xs))
+           ~@(map (fn [u]
+                      `(env-upd_exe @E (env-upds @E '~u)))
+                    (env-upd_split xs))))
 
     (defmacro !! [x]
       (res @E x))
@@ -1165,7 +1189,7 @@
            expand-case
            (c/fn [e [argv body]]
              (c/let [[e argv] (hygiene.shadow e argv)]
-               (cons argv (exp e body))))
+               (cons argv ($ body (p exp e)))))
 
            expand
            (c/fn [e {:keys [name impls]}]
@@ -1287,9 +1311,21 @@
                  cs primitives.cs.optimized
                  }
 
-         ))
+         error:mac
+         (fn [e xs]
+           (lst* `p/error
+                 "at: " (path->str (loc e))
+                 "\nctx:\n"
+                 (pretty-str (first (:exp-ctx e)))
+                 "\n"
+                 (exp e xs)))))
 
-    (do :qualify-redo
+    #_(E+ a.b.c
+        (fn [a] (error "iop iop: " a)))
+
+    #_(!! (a.b.c 42))
+
+    (do :strict-qualify
 
         (defn gensym? [x]
           (and (symbol? x)
@@ -1469,6 +1505,9 @@
              (mapcat
               (fn [x] [($ x (fn [[k _]] [(path k :tags) ts])) x])
               (env-upd_split xs))))))
+
+    #_(E+ num!:mac (fn [e [x]] (when-not (number? x) (error "no num")) x)
+        testsum (fn [a] (add 1 2 3 (add 6 7 (num! a)))))
 
     (init-top-forms check)
 
@@ -2172,8 +2211,8 @@
                (::catched
                 (try ~(exp e x)
                      (catch Exception err {::catched err})))
-               (error ~(or m "this should throws")
-                      ":\n" ~expr))))
+               (p/error ~(or m "this should throws")
+                        ":\n" ~expr))))
 
          assertion
          ["a generic to turn something into an assertion expression"
@@ -2222,12 +2261,12 @@
                 ::ok)
 
            :nil
-           '(error (error-str "nil" ~m))
+           '(p/error (error-str "nil" ~m))
 
            :string nil
 
            :any
-           '(or ~x (error (error-str '~x ~m)))
+           '(or ~x (p/error (error-str '~x ~m)))
            )]
 
          assert
@@ -2629,11 +2668,8 @@
           :underscore-prefix
           "if you want to allow some binding to be nil in a ?let form use the _ prefix"
           (eq (?let [a 1 _b nil] (add a (or _b 0)))
-              1)
+              1))
 
-          (p/prob :done)
-
-          )
          :fx (?let.tests:do)
 
          lut
@@ -2686,10 +2722,9 @@
 
                  retform
                  '(get ~(exp e (lst* `or cs)) ::return)]
-
              (if strict
                #_'(assert ~retform "clet no match!")
-               '(or ~retform (error "clet no match!"))
+               '(or ~retform ~(exp e '(error "clet no match!")))
                retform)))
 
          compiler
@@ -2974,7 +3009,7 @@
           }
 
          builtins
-        [f:mac   (compiler)
+        [f:mac (compiler)
          !f:mac  (compiler :strict)
          ?f:mac  (compiler :short)
          !fu:mac (compiler :unified :strict)
@@ -3013,7 +3048,7 @@
     #_( 1 2)
     #_(exp @E '(cf :io [a] 1 [a b] 2 [(:num a) b c . xs] :var1 [a b . d] :var2))
     #_(exp @E '(cf :io [a] 1 [(:num a) b] 2 [(:str a) b] 3))
-    #_ (exp @E '(primitives.let [s size ret [['a 'd]]]
+    #_(exp @E '(primitives.let [s size ret [['a 'd]]]
                                 (if (eq 1 s)
                                   (* + (cdr ret))
                                   (recur (dec s)
@@ -3278,8 +3313,7 @@
 
           ([x y]
            :coll
-           (c/when (c/identical? (pure x) (pure y))
-             (when (c/= x y) x))
+           (when (and (c/= x y) (c/= (type x) (type y))) x)
            :nil (nil? y)
            :any (when (c/= x y) x))
 
@@ -3643,7 +3677,7 @@
               (rec verb symseed [.(butlast xs) (quot _) (last xs)])))
 
          ;:fx (pp "after suspect unresolvable rec bindings case 3673")
-         
+
          verb
          (f1 (ks strict unified)
              (cs (and strict unified) '!clut
@@ -4027,8 +4061,63 @@
 
     #_(attr-shrink #(contains? (:tags %) :wrappable))
 
-    
-
     )
 
 (pp :DONE)
+
+(_ :scratch
+
+   (let [f (fn [a b]
+             (cond
+               (and (c/number? a) (c/number? b)) (add a b)
+               (and (c/number? a) (c/= [] b)) a
+               (and (c/number? a) (c/vector? b)) (rec (add a (c/first b)) (c/vec (c/rest b)))))]
+     (qbench (f 1 [1 2 3])))
+
+   (exp @E '(!cf [(:num a) (:num b)] (add a b)
+                 [(:num a) (pure? b)] a
+                 [(:num a) [b1 . bs]] (rec (add a b1) bs)))
+
+   (let [f (!cf [(:num a) (:num b)] (add a b)
+                [(:num a) (pure? b)] a
+                [(:num a) [b1 . bs]] (rec (rec a b1) bs))]
+     (f 1 [1 2 3 :io]))
+
+   (?let [[] [1]] :iop)
+
+   (?let [[a . as] :iop] [a as])
+
+   (_ :qual-with-ctx
+
+      (defne qualify
+
+        [e x]
+
+        (c/let [e (update e :qual-ctx (fnil conj []) x)]
+
+          #_(pp 'ctx= (:qual-ctx e))
+
+          (cp x
+
+              sym?
+              (cs [qs (qualsym e x)] qs
+                  (unqualifiable? x) x
+                  (c/resolve x) (ns-resolve-sym x)
+                  (error "not resolvable: " x))
+
+              seq?
+              (cs [p (-> x car path)
+                   ? (or (ppath? p) (macpath? p))
+                   p (qualsym e (path p :mac))]
+                  (mark-exp (cons p (cdr x)))
+                  ($ x (p qualify e)))
+
+              holycoll?
+              ($ x (p qualify e))
+
+              x)))
+
+      #_(c/let [r (doall (qualify @E '(add 1 2 (add 2 3))))]
+          r)
+
+      ))
