@@ -6,8 +6,8 @@
    [clojure.string :as str]
    [clojure.set :as set]
    [criterium.core :as cr]
-   [asparagus.boot.types2 :as t]
-   [asparagus.boot.generics2 :as g]
+   [asparagus.boot.types :as t]
+   [asparagus.boot.generics :as g]
    [asparagus.boot.prelude :as p
     :refer
     [;; macros

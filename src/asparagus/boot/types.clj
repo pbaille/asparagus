@@ -115,10 +115,7 @@
 
     (class? t) [t]
 
-    (= :any t)
-    (cons Object
-      (-> (vals prims)
-        flatten p/remnil))
+    (= :any t) (list Object)
 
     (set? t)
     (mapcat classes t)

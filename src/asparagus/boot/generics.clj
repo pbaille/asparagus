@@ -16,7 +16,7 @@
 (do :state
 
     ;; hold generics implementations
-    (defonce reg (atom {}))
+    (def reg (atom {}))
 
     (defn get-spec! [name]
       (p/assert (get @reg name)
@@ -35,6 +35,9 @@
      :pname (sym 'I n)
      :mname (sym 'p_ n)
      :ns (str *ns*)})
+
+  (defn arify-name [n a]
+    (sym n '_ (str a)))
 
   (defn variadic-argv? [x]
     ((set x) '&))
@@ -69,7 +72,19 @@
             a (exprmap decls))))
       cases))
 
-  #_(casemap (:cases (@reg '+)))
+  #_(casemap (:cases (@reg 'g2)))
+
+  (defn type-extensions
+    [{:keys [cases ns pname mname name]}]
+    (map (fn [[c arities]]
+           `(extend-type ~c
+              ~@(mapcat (fn [[arity impl]]
+                          [(with-ns ns (arify-name pname arity))
+                           (cons (arify-name mname arity) impl)])
+                  arities)))
+         (casemap cases)))
+
+  #_(type-extensions (@reg 'g2))
 
   (defn emit-impls [name cases]
     (mapcat
@@ -116,7 +131,6 @@
       (merge
         (derive-name name)
         {:variadic? (boolean variadic)
-         ;:form (cons name body)
          :arities arities
          :sigs (map p/argv-litt arities)
          :cases cases
@@ -133,13 +147,16 @@
             concat (:cases extension-spec)))
 
   (defn protocol-declaration-form
-    [{:keys [pname mname sigs]}]
-    `(defprotocol ~pname (~mname ~@sigs)))
+    [{:keys [pname mname sigs ns]}]
+    `(do ~@(map (fn [argv]
+                  (let [arity (count argv)]
+                    `(defprotocol ~(with-ns ns (arify-name pname arity))
+                       (~(arify-name mname arity) ~argv))))
+                sigs)))
 
   (defn protocol-extension-form
-    [{:keys [ns pname mname cases]}]
-    `(extend-protocol ~(with-ns ns pname)
-       ~@(emit-impls (with-ns ns mname) cases)))
+    [{:keys [ns pname mname cases] :as spec}]
+    `(do ~@(type-extensions spec)))
 
   (defn function-definition-form
     [{:keys [name pname mname
@@ -149,10 +166,10 @@
           vsig (last sigs)
           vsig-argv (variadify-argv vsig)]
       `(defn ~name
-         ~@(map (fn [sig] `(~sig (~mname ~@sig)))
+         ~@(map (fn [sig] `(~sig (~(arify-name mname (count sig)) ~@sig)))
                 fixed-sigs)
          ~@(when variadic?
-             [`(~vsig-argv (~mname ~@vsig))]))))
+             [`(~vsig-argv (~(arify-name mname (count vsig)) ~@vsig))]))))
 
   (defn protocol-initialisation-form [spec]
     `(do ~(protocol-declaration-form spec)
@@ -247,16 +264,16 @@
 
   ;; poly arity exemple
   (generic g2
-    ([x y]
-      :vec [:g2vec x y]
-      :coll [:g2coll x y]
-      :num [:g2num x y]
-      :any [:g2any x y])
-    ([x y z]
-      :coll [:coll x y z])
-    ;; variadic arity
-    ([x y z & more]
-     [:variadic x y z more]))
+           ([x y]
+            :vec [:g2vec x y]
+            :coll [:g2coll x y]
+            :num [:g2num x y]
+            :any [:g2any x y])
+           ([x y z]
+            :coll [:coll x y z])
+           ;; variadic arity
+           ([x y z & more]
+            [:variadic x y z more]))
 
   (p/asserts
     (= (g2 [] 1)
@@ -266,7 +283,11 @@
     (= (g2 #{} 1 2)
       [:coll #{} 1 2])
     (= (g2 "me" 1 2 3 4)
-      [:variadic "me" 1 2 '(3 4)]))
+       [:variadic "me" 1 2 '(3 4)])
+    (= (g2 :iop 1 2 3 4)
+       [:variadic :iop 1 2 '(3 4)]))
+
+  #_(p/error "stop")
 
   (generic+ g2
             ([a b] :vec [:g2vec2 a b])
@@ -307,19 +328,19 @@
    (= :g1fun (g1 (fn [a]))))
 
   (generic sip'
-    ([a b]
-      :vec (conj a b)
-      :map (apply assoc a b)
-      :set (conj a b)
-      :seq (concat a [b])
-      :str (str a (.toString b))
-      :sym (symbol (sip' (name a) (.toString b)))
-      :key (keyword (sip' (name a) (.toString b))))
-    ([a b & xs]
-      (apply sip' (sip' a b) xs)))
+           ([a b]
+            :vec (conj a b)
+            :map (apply assoc a b)
+            :set (conj a b)
+            :seq (concat a [b])
+            :str (str a (.toString b))
+            :sym (symbol (sip' (name a) (.toString b)))
+            :key (keyword (sip' (name a) (.toString b))))
+           ([a b & xs]
+            (apply sip' (sip' a b) xs)))
 
   (p/asserts
-    (= (sip' [] 1 2 3)
+   (= (sip' [] 1 2 3)
       [1 2 3])
     (= (sip' #{} 1 2 3)
       #{1 2 3}))
@@ -349,7 +370,7 @@
 
   )
 
-(do :xp
+#_(do :xp
 
     ;; build a map :: type -> fn-form
     ;; for a given generic (for each defined type)
@@ -402,5 +423,4 @@
 
                                         ; tada !
     (p/mx' (defsubcases g2)))
-
 
