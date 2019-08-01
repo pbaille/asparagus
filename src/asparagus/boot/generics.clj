@@ -11,7 +11,7 @@
 ;; even if a parent class already implement those...)
 ;; there is some shortcuts when 2 or more types share an implementation
 ;; via the set syntax litteral e.g #{:type1 :type2}
-;; it works with mud.boot.types
+;; it works with asparagus.boot.types (which is a thin layer on top of clojure class hierarchy)
 
 (do :state
 
@@ -191,6 +191,8 @@
 
 (do :api
 
+    ;; user API, see concrete usage in tests below
+
     (defmacro generic
       "create a generic function"
       [name & cases]
@@ -205,6 +207,8 @@
        (generic-spec name cases)))
 
     (defmacro fork
+      "create a new generic from an existing one
+       does not alter the original"
       [parent-name name & cases]
       (let [names (derive-name name)
             parent-spec (get-spec! parent-name)
@@ -289,6 +293,7 @@
 
   #_(p/error "stop")
 
+  ;; extension of an existing generic 
   (generic+ g2
             ([a b] :vec [:g2vec2 a b])
             ([a b c & ds] :str [:variadstr a b c ds]))
@@ -299,6 +304,8 @@
     (= (g2 "me" 1 2 3 4)
        [:variadstr "me" 1 2 '(3 4)]))
 
+  ;; fork is creating a new generic from an existing one
+  ;; it inherit all impls and extend/overide it with given implementations
   (fork g2 g2+
         ([a b] :seq [:g2+seq2 a b])
         ([a b c & ds] :str [:g2+variadstr a b c ds]))
@@ -319,6 +326,9 @@
 
   (fork g2+ g2+clone)
 
+
+  ;; type+ is like deftype
+  ;; implement several generics at a time for a given type
   (type+ :fun
          (g1 [x] :g1fun)
          (g2 [x y] [:g2fun2 x y]))
@@ -375,10 +385,11 @@
     ;; build a map :: type -> fn-form
     ;; for a given generic (for each defined type)
 
+    ;; the goal is to provide a way to use specific implementations manually in code, for performance/precision
+
     ;; the impl is not so pretty but it works
-    ;; it can serve to automatically defining specific cases
-    ;; for instance if my-gen has an implement for :vec
-    ;; in some cases we could want to call my-gen-vec or my-gen_vec directly for performance/precision
+    ;; for instance if my-generic has an implementation for :vec
+    ;; in some cases we could want to call my-generic-vec or my-generic_vec directly for performance/precision
 
     (defn tfnmap_t->expr [xs]
       (p/redh

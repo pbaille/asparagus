@@ -3,9 +3,9 @@
   (:require [asparagus.boot.prelude :as p
              :refer [$ $vals]]))
 
-;; here is an attempt to hide direct interop
-;; the goal is ultimatly to provide a more readable and powerful
-;; way to create generic functions, see asparagus.boot.generics
+;; this is a thin layer over clojure class hierarchy
+;; the need for this comes from asparagus.boot.generics
+;; which is a collection of tools to define generic functions
 
 (defn- cmap [& xs]
   ($vals (apply hash-map xs)
@@ -49,14 +49,19 @@
      :groups groups}))
 
 (defn group+
-  "add a group to the type registry"
+  "add a group to the type registry
+   k: the name of the group (a keyword)
+   members: the list of types that belongs to this group"
   [k members]
   (swap! reg update-in
     [:groups k]
     (fn [x#] (into (or x# #{}) members))))
 
 (defn prim+
-  "add a prim to type registry"
+  "add a prim to type registry
+   k: the name of the type (a keyword)
+   classes: the clojure classes that correspond to the type
+   groups: the groups your type belongs to"
   [k classes groups]
   (swap! reg assoc-in [:prims k] classes)
   (doseq [g groups] (group+ g k)))
@@ -132,7 +137,9 @@
        c ($ (groups t) classes))])
 
 (defn isa
-  "test if something belongs to a type"
+  "test if something belongs to a type
+   in practice, this function is quite slow
+   for fast typechecks see 'type preds' section below"
   ([k] (partial isa k))
   ([k x] (isa @reg k x))
   ([reg k x]
@@ -175,7 +182,11 @@
   (parents @reg :vec)
   (childs :coll))
 
-;; fast-isa -----------------------------------------
+;; type preds -----------------------------------------
+
+;; in this section, we will compile a fast predicate for each type (prims and groups)
+;; and store all those predicates in #'builtin-preds
+;; I'm thinking about user defined types, maybe the predicate compilation should be somehow automated or at least eased
 
 (def preds-symbols
   {:fun `fn?
@@ -202,7 +213,7 @@
 (defn compile-pred-map
   ([] (compile-pred-map @reg))
   ([reg]
-   (let [gsym (gensym)
+   (let [gsym (gensym) 
 
          prim?
          (set (keys (:prims reg)))

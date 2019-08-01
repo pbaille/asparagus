@@ -588,6 +588,105 @@
         (defmacro cs [& xs]
           `(first ~(cs-form xs)))
 
+        (_ :cs-tuto
+
+            ;; like a normal let
+            (cs [a 1 b 2] (+ a b))
+
+            ;; but shorts on nil bindings
+            (cs [a (pos? -1) ;; this line binds 'a to nil,
+                 ;; this will shortcircuit the rest of the binding form
+                 ;; and jump to the second expression of the body
+                 _ (println "never printed")]
+
+                ;; evaluated only in case of successful bindings
+                (println "never evaluated")
+
+                ;; evaluated when binding form has been shortcircuited
+                (do (println "failure branch taken")
+                    :pouet))
+
+            ;; you can bind symbols starting with an underscore to nil without failing
+            (cs [a 1 b 2
+                 _neg-a (neg? a) ;; this bind _neg-a to nil without shortcirsuiting
+                 a (if _neg-a (- a) a)]
+                (+ a b)) ;;=> 3
+
+            ;; you can chain several couples of binding-form expression
+            (defn cs_1 [a]
+              ;; the ? symbol has no special meaning here
+              (cs [? (number? a)] {:number a}
+                  [? (string? a)] {:string a}
+                  [? (coll? a)]
+                  (cs [? (empty? a)] :empty
+                      [? (seq? a)] {:seq a}
+                      {:coll a})))
+
+            (cs_1 1)
+            (cs_1 "a")
+            (cs_1 ())
+            (cs_1 '(1 2))
+            (cs_1 [1 2])
+
+            ;; cs_1 works as intended but clearly can be done more concisely with a good old cond
+            ;; but wait, cs macro can also be used like cond!
+
+            ;; if you need only to check something but do not need the return value
+            ;; like we seen in cs_1,  e.g [? (test? ...)]
+            ;; it seems kind of tiring to do so, so we've introduce a shorthand for this case
+
+            (let [a -42]
+
+              (=
+               ;; normal syntax
+               (cs [? (pos? a)] a :negative)
+               ;; shorthand syntax (condishpatible)
+               (cs (pos? a) a :negative)))
+
+            ;; as we see it can be use like 'if
+            (cs (pos? -1) :pos :not-pos)
+
+            ;; or when (with only one expression body)
+            (cs (pos? 1) :pos)
+
+            ;; or cond (without the need for the :else thing)
+            (let [a 0] ;; feel free to change the value and reevaluate
+              (cs
+               (pos? a) :pos
+               (neg? a) :neg
+               :zero))
+
+            ;; this kind of unification of if and cond came from arc-lisp,
+            ;; i cannot find a solid argument against it
+
+            ;; we can redefine cs_1 in a more clean way
+            (defn cs_2 [a]
+              (cs (number? a) {:number a}
+                  (string? a) {:string a}
+                  (coll? a)
+                  (cs (empty? a) :empty
+                      (seq? a) {:seq a}
+                      {:coll a})))
+
+            ;; the thing is that now you can mix condish syntax and condletish syntax
+
+            (defn cs_3 [a]
+              (cs (number? a) [:num a]
+                  (symbol? a) [:sym a]
+                  (string? a) [:str a]
+                  [? (sequential? a)
+                   sa (seq a)]
+                  (into
+                   [(cs (vector? a) :vec
+                        (list? a) :lst
+                        :seq)]
+                   (map cs_3 sa))
+                  [(type a) a]))
+
+            (cs_3 [1 2 "aze" 'rt '(42 :iop a) {:a 1}])
+
+            )
+
         #_(destructure '[[x y z & xs] y])
         #_(mx*' (cs [[x & xs] (range 1)] [x xs] :nop))
         )

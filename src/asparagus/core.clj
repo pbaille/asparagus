@@ -28,11 +28,55 @@
      ;;misc
      call*]]))
 
+;; there is some uncommon code practice in this file that may surprise the reader
+;; I'm heavily using 'do blocks to group related peace of functionality, which i usually prepend with a descriptive keyword
+;; it has no incidence on execution (as far as i know) but let you fold code in a meaningful and convenient way
+;; this practice has led me to increase the average size of my namespaces (I don't really like to constantly jump to other files...)
+;; so for a better experience, the reader should use an editor that can fold groups easily and possibly gradually
+
+;; I also heavily use two macros that i like a lot,
+;; cs: is like a fusion of if when cond cond-let (see the little tutorial at asparagus.boot.prelude:591)
+;; cp: a shortcut for (condp #(%1 %2) ...)
+
+;; I also use some collection type preserving versions of map and filter e.g: $, $keys, $vals,shrink+, shrink-
+
+;; all those really basic building blocks that i tend to use everywhere are defined in asparagus.boot.prelude
+
+;; ------------------
+
+;; this form is a dev convenience that will reset the asparagus global environment and do some cleaning when the file is reloaded
 (when-let [! (c/resolve 'rEset!)] (!))
 
 ;; env --------------
 
 (do :path
+
+    ;; the Path abstraction will serve to represent a position in an environment
+    ;; it consist of three parts
+    ;; rel: nil in case an absolute path | an integer indicating parent level (0 for current location, 1 for direct parent, 2 for grandparent etc...)
+    ;; xs: a sequence of symbol representing a nested path in the environment (exemple: '[foo bar baz])
+    ;; mkey: (short for meta-key) for instance :doc or :val (more on this later)
+
+    ;; this will not be used directly, for building paths, we will use further defined functions (see build section)
+    ;; typically, we will use the 'path function:
+
+    ;; simple path
+    ;; (path 'foo) <=> (Path. nil ['foo] nil)
+
+    ;; we use dots to indicate nested path
+    ;; (path 'foo.bar) <=> (Path. nil ['foo 'bar] nil)
+
+    ;; a path can be prepended with any number of dots indicating its relative position
+    ;; in this case, 2 dots indicates the parent level
+    ;; (path '..foo.bar) <=> (Path. 1 ['foo 'bar] nil)
+    ;; here the path is relative to the current position
+    ;; (path '.foo.bar) <=> (Path. 0 ['foo 'bar] nil)
+
+    ;; a keyword can be appended to a path symbol to indicate its mkey (meta-key)
+    ;; (path '.foo:val) <=> (Path. 0 ['foo] :val)
+
+    ;; a path will be used in conjonction with a positioned environment
+    ;; relative path will be resolved relativelly to the current position of the evaluating environment
 
     (defrecord Path [rel xs mkey])
 
@@ -279,6 +323,12 @@
 
     (def echeck? (atom true))
 
+    ;; the Env record represent a positioned environment
+    ;; at: a Path representing current position
+    ;; members: a nested map holding environment bindings
+
+    ;; this will not be used directly 
+
     (defrecord Env [at members])
 
     (do :base
@@ -315,7 +365,7 @@
 
         ;; a lambda that takes an env as first argument
         ;; and throw if @echeck? is true and first arg is not a thing
-        ;; maybe just a dev purpose device, if @tcheck? is false it compile to regular clojure lambda
+        ;; maybe just a dev purpose device, if @echeck? is false it compile to regular clojure lambda
 
         (defn arg1-sym [[a1 & _]]
           (cp a1
@@ -334,6 +384,8 @@
 
     (do :setters
 
+        ;; position related setters and updates
+
         (defne root
           [x] (assoc x :at root-path))
 
@@ -346,6 +398,8 @@
           (update x :at #(path* % xs))))
 
     (do :getters
+
+        ;; inspection and resolution
 
         (defne loc
           [e] (.at e))
@@ -471,6 +525,8 @@
 
 (do :state
 
+    ;; the global envirnoment atom
+    ;; will not be used directly by the user
     (def E (atom env0))
 
     ;; if this flag is on
@@ -508,6 +564,8 @@
 
     (do :clean
 
+        ;; if we are using vars, we need to keep things clean
+
         (defn clean-pathvars! []
           (doseq [s (shrink+ (keys (ns-publics *ns*)) pathvar-sym?)]
             (ns-unmap *ns* s)))
@@ -519,41 +577,52 @@
 
         (defn clean-Evars! []
           (clean-pathvars!)
-          (clean-top-forms!))))
+          (clean-top-forms!))
 
-(do :global-env
+        (defn rEset!
+          "will clear the global env and clean all vars that have been defined by it"
+          []
+          (reset! E env0)
+          (clean-Evars!)))
 
-    (defn rEset! []
-      (reset! E env0)
-      (clean-Evars!))
+    (do :access
 
-    (defn unbound-error [p]
-      (throw (ex-info (str "Unbound path: " p)
-                      {:type :unbound
-                       :path p})))
+        (defn unbound-error [p]
+          (throw (ex-info (str "Unbound path: " p)
+                          {:type :unbound
+                           :path p})))
 
-    (defn unfound-error [p]
-      (throw (ex-info (str "Unfound path: " (path->str p))
-                      {:type :unfound
-                       :path p})))
+        (defn unfound-error [p]
+          (throw (ex-info (str "Unfound path: " (path->str p))
+                          {:type :unfound
+                           :path p})))
 
-    (defn env-access
-      ([p] (env-access @E p))
-      ([e p]
-       (cs [found (env-get e p)]
-           (cs (= ::unbound found)
-               (unbound-error p)
-               found)
-           (unfound-error p))))
+        (defn env-access
+          "arity1 : getting the value at the given path p inside the global env
+           arity 2 : getting the value at the given path p inside the given environment e"
+          ([p] (env-access @E p))
+          ([e p]
+           (cs [found (env-get e p)]
+               (cs (= ::unbound found)
+                   (unbound-error p)
+                   found)
+               (unfound-error p))))
 
-    (defn env-access? [x]
-      (and (seq? x)
-           (or (indexof x '`env-access)
-               (indexof x `env-access))))
+        (defn env-access?
+          "is x an env-access form ?"
+          [x]
+          (and (seq? x)
+               (or (indexof x '`env-access) ;; this handles quoted env-access forms
+                   (indexof x `env-access))))
 
-    )
+        ))
 
 (do :steps
+
+    ;; in asparagus, compilation occurs in 3 main steps
+    ;; qualify : will replace all resolvable symbols by their concrete Path representation
+    ;; expand : will execute compile time behaviors sush as macros and symbolic substitutions
+    ;; resolve : will replace all Path with their corresponding vars
 
     (do :help
 
@@ -602,6 +671,7 @@
           ($ x (p qualify e))
 
           x))
+
     #_(defne expand
       [e x]
       #_(pp 'expand x)
@@ -646,6 +716,10 @@
 
 (do :extension
 
+    ;; this section will define helper functions related to environment extension
+    ;; those functions should not be used directly
+    ;; but will be used by the next section (API)
+
     (do :transformations
 
         (defn env-member-path [p]
@@ -687,7 +761,14 @@
               (env-add-member e p ::unbound)
               e)))
 
-        (defn env-detailed-steps [e expr]
+        (defn env-detailed-steps
+
+          "given an environment and an expr,
+           perform the 3 asparagus compilation steps,
+           and return a map holding all intermediate values,
+           the expression and the environment location"
+
+          [e expr]
           (let [at (loc e)
                 qualified (qualify e expr)
                 ;expanded (expand e qualified)
@@ -699,7 +780,15 @@
              :expanded expanded
              :resolved resolved}))
 
-        (defn env-member-add-compiled [e p x]
+        (defn env-member-add-compiled
+
+          "add a member to the given environment e, at the given path p, compiling the given expression x,
+           holding intermediate compilation steps in environment metadatas
+           returns the updated environment
+
+           if varmode is on, do the bad things ;)"
+
+          [e p x]
           (let [{:as m r :resolved at :at}
                 (env-detailed-steps (mv e p) x)
                 evaluated (c/eval r)]
@@ -711,6 +800,9 @@
                 (env-add-meta at m)))))
 
     (do :updates
+
+        ;; an asparagus update is a description of an environment mutation
+        ;; i've written a gentle introduction to asparagus updates in ./tut.clj
 
         (defn env-upd_prepend-declarations [u]
           #_(pp 'will-prep-decl u)
@@ -731,7 +823,7 @@
                p (path (car x) :upd)]
               (bubfind e (path (car x) :upd))))
 
-        (_ :old-impl
+        (_ :old-impl-DEPRECATED
 
            (defn env-upd_split [[x1 x2 & rs :as xs]]
              (cs (not (seq xs)) []
@@ -851,12 +943,13 @@
                   (E+2 op [yupd:upd (fn [_ xs] {'pouet:val (c/vec xs)})
                            baba (op.yupd 1 2 3)])
 
-                  (!! op.baba.pouet)))
+                  (!! op.baba.pouet))))
 
-            )
-
-        (defn env-upd_exe [e u]
+        (defn env-upd_exe
+          "performs a sequence of updates on the global environment"
+          [e u]
           (doseq [[verb at x] u]
+            #_(pp [verb at x])
             (swap! E
                    (fn [e]
                      (try
@@ -869,21 +962,21 @@
                          (error "\nenv-upd error compiling:\n"
                                 (pretty-str [verb at x])
                                 "\n" (.getMessage err)))))))
-          @E)
-
-        )
-
-    )
+          @E)))
 
 (do :API
 
-    (defmacro E+ [& xs]
-      `(do #_(pp '~(first xs))
-           ~@(map (fn [u]
-                      `(env-upd_exe @E (env-upds @E '~u)))
-                    (env-upd_split xs))))
+    (defmacro E+
+      "the main way to extend and update the asparagus environment"
+      [& xs]
+      `(do ~@(map (fn [u]
+                    `(env-upd_exe @E (env-upds @E '~u)))
+                  (env-upd_split xs))))
 
-    (defmacro !! [x]
+    (defmacro !!
+      "a little convenience, that is mainly useful for development
+       takes an expression and compile it at macro expansion time, resulting in an evaluable clojure form"
+      [x]
       (res @E x))
 
     (defn env-inspect [s]
@@ -951,21 +1044,30 @@
 
        #_(car (env-history @E)))
 
-    (defn top-form-decl [s]
+    (defn top-form-decl
+      "bring an asparagus macro into the top level,
+       making it available as a regular clojure macro in the current ns"
+      [s]
       (p/assert (env-find @E (path s))
                 "unknown path")
       `(defmacro ~s [~'& xs#]
          (res @E (list* '~s xs#))))
 
-    (defmacro init-top-forms [& xs]
+    (defmacro init-top-forms
+      "bring several asparagus macros into the top level,
+       making them available as regular clojure macros in the current ns"
+      [& xs]
       (swap! top-forms into xs)
       `(do ~@($ xs top-form-decl))))
 
 (do :quoting
 
+    ;; asparagus has its own quoting mecanism, those simple quoting functions, inspired by bbloom/backtic
+    ;; will be used by the main implementation of quoting at a later point
+
     (defn simple-quotf
       "simple quote function,
-       unquote only"
+       supports unquote only"
       [form]
       (cp form
           unquote? (second form)
@@ -974,7 +1076,7 @@
           (list 'quote form)))
 
     (defn env-simple-quotf
-      "env aware version of simplest-quote"
+      "env aware version of simple-quotf"
       [e form]
       (cp form
           unquote? (exp e (second form))
@@ -1015,9 +1117,7 @@
                 set? `(set ~cat)
                 seq? `(list* ~cat)
                 (error "Unknown collection type")))
-          (list 'quote form)))
-
-    (env-quotf @E '(1 2 3)))
+          (list 'quote form))))
 
 (do :reboot
 
@@ -2287,6 +2387,8 @@
             {:form '(quot ~(vec* (assertion.vec-split xs)))
              :do '(fn [] (assert ~(vec* xs) ~(path->str (loc e))))}})
 
+         ;; testing this module with itself
+
          (assert
           {:errors
            [(throws (assert (pos? -1) "not pos!"))
@@ -2425,7 +2527,9 @@
              (cs (sym? s)
                  (cs (key? v)
                      [s y (gensym "?typecheck") '(eq (type ~s) ~v)]
-                     [s (lst* v y args)])
+                     [s (lst* v y args)]
+                     ;(bind s (lst* v y args))
+                     )
                  (error "guard binding takes a symbol as first argument"
                         (lst* v s args))))
 
@@ -2793,7 +2897,6 @@
         (import bindings.let.builtins
                 [clet clut !clet !clut])
         )
-
     #_(error "after bindings")
 
     (E+ lambda
@@ -2829,7 +2932,7 @@
             ({[nil nil nil] 'let
               [nil true nil] '?let
               [true nil nil] '!let
-              [nil nil true] 'lut
+              [nil true true] 'lut
               [true nil true] '!lut}
              [strict short unified]))]
 
