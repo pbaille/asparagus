@@ -53,8 +53,8 @@
 
     ;; the Path abstraction will serve to represent a position in an environment
     ;; it consist of three parts
-    ;; rel: nil in case an absolute path | an integer indicating parent level (0 for current location, 1 for direct parent, 2 for grandparent etc...)
-    ;; xs: a sequence of symbol representing a nested path in the environment (exemple: '[foo bar baz])
+    ;; rel: nil for an absolute path | an integer indicating parent level (0 for current location, 1 for direct parent, 2 for grandparent etc...)
+    ;; xs: a sequence of symbols representing a nested path in the environment (exemple: '[foo bar baz])
     ;; mkey: (short for meta-key) for instance :doc or :val (more on this later)
 
     ;; this will not be used directly, for building paths, we will use further defined functions (see build section)
@@ -169,7 +169,7 @@
               (assoc p :rel nil)))
 
         (defn ppath
-          "make a path primary"
+          "make a path primary (without mkey)"
           [p]
           (cs [p (path p)]
               (assoc p :mkey nil)))
@@ -303,8 +303,6 @@
                      (-> p2 :xs count
                          (drop (:xs p1)) vec))))
 
-        (path-diff (path 'a.b.c) (path 'a))
-
         (defn pure-mpath? [p]
           (and (mpath? p)
                (not (rpath? p))
@@ -316,6 +314,7 @@
          (bubbling-paths (path '..a.b.c:val))
          (parent-path? (path 'a.b) (path 'a.b:val))
          (parent-path? (path 'a.b) (path 'a.b.c))
+         (path-diff (path 'a.b.c) (path 'a))
          (nil? (parent-path? (path 'a.b) (path 'a.b)))
          (nil? (parent-path? (path 'a.b) (path 'a:val))))))
 
@@ -407,26 +406,46 @@
         (defne root?
           [e] (= root-path (loc e)))
 
-        (defne env-get [e p]
+        ;; getting environment members
+
+        ;; in each of those functions
+        ;; e is an environment
+        ;; p is a path
+
+        (defne env-get
+          "find what is at path p in environment e"
+          [e p]
           (cs (apath? p)
               (get-in (.members e)
                       (path-segments p))))
 
-        (defne env-absfind [e p]
+        ;; the following find operations are inspired by core/find
+        ;; given an env and a path
+        ;; if it find something, returns a tuple containing the path and the found value
+        ;; else return nil
+
+        (defne env-absfind
+          "absolute find"
+          [e p]
           (cs [found (env-get e p)]
               [p found]))
 
-        (defne env-relfind [e p]
+        (defne env-relfind
+          "relative find"
+          [e p]
           (env-absfind e (path (loc e) p)))
 
-        (defne linked-path [e p]
-          (cs [? (apath? p)
-               xs (.xs p)
-               pref (car xs)
-               _xs (rest xs)
-
-               #_[pref & _xs] #_(.xs p)
-               target (get (env-get e (path (loc e) :links)) pref)]
+        (defne linked-path
+          "if the given path's prefix is linked "
+          [e p]
+          (cs [? (apath? p) ;; only absolute paths can be linked
+               ;;xs (.xs p)
+               ;;pref (car xs)
+               ;;_xs (rest xs)
+               [prefix & _xs] (.xs p)
+               ;; we check if a link exists for this prefix
+               target (get (env-get e (path (loc e) :links)) prefix)]
+              ;; if yes we replace the prefix by it
               (path (path* target _xs) (.mkey p))))
 
         #_(linked-path2 e1' (path 'ab))
@@ -442,24 +461,40 @@
         #_(defn root-pathsym? [p]
           (= ROOT_PREFIX (path-prefix p)))
 
-        (defne bubfind [e p]
+        (defne bubfind
+          "bubbling find, the main resolution function
+           which is used by the compilation process"
+          [e p]
           (cs
 
+           ;; if path consists only of a dot, we ignore it
            (dotpath? p) nil
 
            #_(root-pathsym? p)
            #_(env-absfind e (path-unprefix p))
 
-           [plvl (.rel p) ;; p is relative
+           ;; p is relative
+           [plvl (.rel p) 
             loc' (nth-parent-path (ppath (loc e)) plvl)]
            (env-find (cd e loc') (apath p))
 
+           ;; p is absolute, potentially linked 
            [ret (env-find e p)] ret
 
+           ;; if nothing was found, we bubble up one level, if not already at root
            (not (root? e))
            (bubfind (mv e '..) p)))
 
-        (defne qualsym [e s]
+        (defne bubget
+          "behaves like bubfind, but returns only the found value
+           more permissive that bubfind it accept symbols as well as paths"
+          [e p]
+          (cs (sym? p) (bubget e (path p))
+              [[_ v] (bubfind e p)] v))
+
+        (defne qualsym
+          "try to turn a symbol into its corresponding path"
+          [e s]
           (cs [p (path s)]
               (cs (mpath? p)
                   (car (bubfind e p))
@@ -620,7 +655,7 @@
 (do :steps
 
     ;; in asparagus, compilation occurs in 3 main steps
-    ;; qualify : will replace all resolvable symbols by their concrete Path representation
+    ;; qualify : will replace all resolvable symbols by their concrete Path representation (using 'qualsym (see [:env :getters] section
     ;; expand : will execute compile time behaviors sush as macros and symbolic substitutions
     ;; resolve : will replace all Path with their corresponding vars
 
@@ -702,7 +737,9 @@
 
     (defne exp
       [e x]
-      (let [e (update e :exp-ctx (fnil conj []) x)]
+      (let [;; this expansion context thing is an attempt to provide better error messages on expansion failure
+            ;; used by expand-mcall and expand-subpath via defexpansion
+            e (update e :exp-ctx (fnil conj []) x)] 
         (->> x (qualify e) (expand e))))
 
     (defne res
@@ -753,8 +790,6 @@
 
         (defn env-declare-member [e p]
           (let [known? (c/resolve (path->varsym p))]
-            #_(ns-publics *ns*) #_(rEset!)
-            #_(c/resolve (path->varsym (path 'bindings.bind:val)))
             #_(pp 'declaring p (path->varsym p) (not known?) (mpath? p))
             (when @varmode (init-pathvar! p))
             (if (and (not known?) (mpath? p))
@@ -766,7 +801,7 @@
           "given an environment and an expr,
            perform the 3 asparagus compilation steps,
            and return a map holding all intermediate values,
-           the expression and the environment location"
+           the expression and the environment position"
 
           [e expr]
           (let [at (loc e)
@@ -874,10 +909,10 @@
 
         (do :new-impl
 
-            "the reason is to allow upds to be defined in sequential
-             updates (vecs) and available immediately after"
-
-            (defn env-upd_split [[x1 x2 & rs :as xs]]
+            (defn env-upd_split
+              "handle vectors and map literals semantics of the E+ macro
+               one level only, the recursion will be eventually done by env-upds"
+              [[x1 x2 & rs :as xs]]
               (cs (not (seq xs)) []
                   (word? x1)
                   (cs (and (vec? x2) (ppath? (path x1)))
@@ -887,7 +922,22 @@
                   (holymap? x1) (cons x1 (env-upd_split (rest xs)))
                   (cons {root-path x1} (env-upd_split (rest xs)))))
 
+            (asserts
+             (= (env-upd_split '[a 1 b 2]) (list '{a 1} '{b 2}))
+             (= (env-upd_split '[42 foo "iop"]) (list {root-path 42} '{foo "iop"})))
+
             (defn env-upds
+
+              "destructure an update as taken by the E+ macro into a serie of base operations
+               (not intended to be used directly)
+
+               there is 4 base operations:
+               :declare : declare a member, in order make it available eventually before it is bound (analog to clojure's declare semantics) [:declare path]
+               :def : evaluate the given expression and  put the result at the given path. [:def path expression]
+               :link : define a link from a path to another [:link path1 path2]
+               :fx : a side effect [:fx path expression]
+              "
+
               ([e x]
                (env-upds e x root-path))
               ([e x from]
@@ -920,7 +970,7 @@
 
             (_ :tries
 
-               (env-upds2
+               (env-upds
                 @E '[iop (generic [x] :vec 'veciop)
                      a 1
                      b [c 1 {d 3 b:op 56}]])
@@ -946,7 +996,8 @@
                   (!! op.baba.pouet))))
 
         (defn env-upd_exe
-          "performs a sequence of updates on the global environment"
+          "takes a serie of base operation litterals (as returned by env-upds, refer to its docstring for details)
+           and performs them sequencially on the global environment"
           [e u]
           (doseq [[verb at x] u]
             #_(pp [verb at x])
@@ -967,7 +1018,8 @@
 (do :API
 
     (defmacro E+
-      "the main way to extend and update the asparagus environment"
+      "the main way to extend and update the asparagus environment
+       for implementation details refer to the previous section (:extension)"
       [& xs]
       `(do ~@(map (fn [u]
                     `(env-upd_exe @E (env-upds @E '~u)))
@@ -979,7 +1031,10 @@
       [x]
       (res @E x))
 
-    (defn env-inspect [s]
+    (defn env-inspect
+      "resolve the given symbol in the global env
+       and print a detailed description of it (compilation intermediate values included)"
+      [s]
       (let [[p x] (bubfind @E (path s))]
         (println "at: " p)
         (println "\ndata:")
@@ -988,7 +1043,9 @@
         (pp (meta x))
         (println)))
 
-    (defmacro ppenv [s]
+    (defmacro ppenv
+      "a thin wrapper around env-inspect, lets you pass an unquoted symbol"
+      [s]
       `(env-inspect '~s))
 
     (_ :tries
@@ -1427,6 +1484,9 @@
 
     (do :strict-qualify
 
+        "redefine qualify in a strict way, it will throw on unqualifiable symbols
+         excepting gensyms and some unavoidable ones like 'do 'if etc... (listed in #'unqualified-symbols)"
+
         (defn gensym? [x]
           (and (symbol? x)
                (re-matches #"^.*_[0-9]+#*$" (name x))))
@@ -1467,7 +1527,10 @@
         )
 
     (E+ composite
-        [
+
+        ["the composite module contains some utily to handle composite litterals
+          e.g: datastructures litterals with dot notation, for instance [a b . c] or {:a 1 . x}"
+
          dot (symbol ".")
          dotdot (symbol "..")
          dot? (fn [x] (= dot x))
@@ -1482,7 +1545,7 @@
 
          composed?
          ["x contains some composition operators
-               (. and/or ..)"
+           (. and/or ..)"
           (fn [x]
             (cp x
                 quote? nil
@@ -1532,8 +1595,8 @@
 
                x))
 
-         quotf
-         ["quoting function,
+         ;; quotf
+         #_["quoting function,
            handles unquoting, does not quote dots,
            qualifies symbols if possible"
 
@@ -1557,23 +1620,70 @@
                     (.wrap form))
                 (.wrap form)))]
 
-         quote:mac
-         (fn [e [x]]
+         ;; quote:mac
+         #_(fn [e [x]]
            (expand (quotf e x)))
 
          cxp
          (fn [e x]
            (expand (exp e x)))]
 
-        :links {quote composite.quote
+        :links {;; quote composite.quote
                 cxp composite.cxp})
+
+    (E+ quote
+
+        ["the quoting marco
+          behave like clojure's quasiquote, qualify symbols if possible,
+          supports unquoting and splicing (via composite.expand)"
+
+         :links {cp composite}
+
+         fun
+         ["quoting function,
+           handles unquoting, does not quote dots,
+           qualifies symbols if possible"
+
+          wrap
+          (fn [x] (list (symbol "quote") x))
+          rootsym
+          (fn [p] (path->sym (path (symbol "_") p)))
+
+          (fn
+            [e form]
+            (cp form
+                ;; we do not touch dots
+                ;; they will be handled via composite.expand after quoting
+                cp.dot? cp.dot
+                cp.dotdot? cp.dotdot
+                ;; if unquote we perform expansion with e
+                unquote? (exp e (second form))
+                ;; handle collections 
+                seq? (cons `list ($ form (p fun e)))
+                holycoll? ($ form (p fun e))
+                ;; if a symbol can be resolved via bubfind in e
+                ;; we qualify it and quote it
+                ;; if not we just quote it
+                symbol?
+                (cs [p (path form)
+                     [p _] (bubfind e p)]
+                    (.wrap (.rootsym p))
+                    (.wrap form))
+                ;; else we quote wathever it is
+                (.wrap form)))]
+
+         :mac
+         (fn [e [x]]
+           (cp.expand (fun e x)))]
+
+        )
 
     ;; temp misc
     (E+ add c/+
         sub c/-
         div c//
         mul c/*
-        eq c/= ;;will be rebound later, needed for check blocks
+        eq c/= ;; will be rebound later, needed for check blocks
 
         quot:mac
         (fn [_ [x]]
@@ -1604,7 +1714,9 @@
             (c/vec
              (mapcat
               (fn [x] [($ x (fn [[k _]] [(path k :tags) ts])) x])
-              (env-upd_split xs))))))
+              (env-upd_split xs)))))
+
+        )
 
     #_(E+ num!:mac (fn [e [x]] (when-not (number? x) (error "no num")) x)
         testsum (fn [a] (add 1 2 3 (add 6 7 (num! a)))))
@@ -1680,10 +1792,9 @@
 
          :upd
          (fn [e body]
-           (let [gsym (generic.symbol (loc e))
-                 e (env-add-member e (path (loc e) :val) ::unbound)]
+           (let [gsym (generic.symbol (loc e))]
              (assoc (generic.module gsym)
-                    :fx '(generic.init ~gsym ~body) #_(generic.init e gsym body))))
+                    :fx '(generic.init ~gsym ~body))))
 
          reduced:upd
          (fn [e [argv & decls]]
@@ -1786,7 +1897,27 @@
 
     (E+ fn&
 
-        [expansion-size 5
+        ["the idea is to be able to declare concisely variadic functions, while mitigating the performance cost
+          exemple:
+          (fn& [a b] (add a b ...))
+          a and b are mandatory arguments, the minimum arity is therefore 2
+          but if we feed it more arguments, they will take place where the ... appears in the code.
+          ... (which we call ellipsis) can appears several times in the function body.
+
+          with fn&.expansion-size set to 3, the compiled function looks roughly like this
+          (fn
+           ([a b] (add a b))
+           ([a b G__1] (add a b G__1))
+           ([a b G__1 G__2] (add a b G__1 G__2))
+           ([a b G__1 G__2 G__3] (add a b G__1 G__2 G__3))
+           ([a b G__1 G__2 G__3 & G__4]
+            (apply add a b G__1 G__2 G__3 G__4)))
+
+          it would be absolutly painful to write such things by hand, and we gain performance on arity 1..5, and use apply only for larger ones
+          this should looks like a minimal gain, because apply is quite permormant, but for core functions this gain is valuable
+"
+
+         expansion-size 5
 
          replace-ellipsis
          ["turn a single ellipted body into several bodies"
@@ -2259,7 +2390,7 @@
                ($ ts #(lst 'types.preds %)))))}
 
          builtins
-         [(import
+         [(guards.import
            [neg? 1]
            [pos? 1]
            [zero? 1]
@@ -2271,7 +2402,7 @@
            [eq 2 c/=]
            [neq 2 c/not=])
 
-          (import.types)]
+          (guards.import.types)]
 
          :tries
          '(do
@@ -3187,7 +3318,7 @@
                 dot? x
                 (g x)))})
 
-    (do :§*$
+    (do :invocation-application-mapping-walking
 
         (E+
 
@@ -3215,8 +3346,11 @@
 
          * (callables.wrapper application)
 
-         > (f [x . fs]
-              ((* + ($ fs §)) x))
+         >
+         ["thread the first argument thru the given functions
+           (> 1 inc inc inc) ;=> 4"
+          (f [x . fs]
+             ((* + ($ fs §)) x))]
 
          $
          (generic.reduced
@@ -3237,6 +3371,8 @@
           :seq (c/map-indexed (§ f) x)
           :any (error "not mappable" x))
 
+         ;; the following walking function are highly inspired by clojure.walk
+
          walk
          (f [x in out]
             (if (coll? x)
@@ -3244,21 +3380,23 @@
               (out x)))
 
          dfwalk
-         (f
-          [x f]
-          (walk x #(dfwalk % f) f))
+         ["depth first walk"
+          (f
+           [x f]
+           (walk x #(dfwalk % f) f))]
 
          bfwalk
-         (f
-          [x f]
-          (walk (f x) #(bfwalk % f) id))
+         ["breadth first walk"
+          (f
+           [x f]
+           (walk (f x) #(bfwalk % f) id))]
 
          walk?
          (f
           [x ? f]
           (cs [nxt (? x)]
             ($ nxt #(walk? % ? f))
-            (f x))) )
+            (f x))))
 
         (_ :tries 
            (!! ($+.inspect))
@@ -3290,7 +3428,25 @@
            (qbench (!! (* [add sub add] (list [1 2 3] [1 2 3] [1 2 3]))))))
 
     (E+ subjectify
-        {:val
+        {:doc
+         "in asparagus, many functions takes what we can call the object as first argument
+          I mean, the thing we are working on, for instance, in the expression (assoc mymap :a 1 :b 2), mymap is what we call the object
+          the subjectify function will help to turn this kind of function into a one that takes only the arguments (in the previous exemple: :a 1 :b 2)
+          and return a function that takes only the target object, and return the result.
+          (let [assoc_ (subjectify assoc)
+                assoc-a-and-b (assoc_ :a 1 :b 2)]
+             (assoc-a-and-b {})) ;=> {:a 1 :b 2}
+
+          many of the asparagus functions of this form, have their subjectified version with the same suffixed with _
+          this is handy, for instance, to create chains of 1 argument functions
+          (> myseq (take_ 3) (dropend_ 2)) will thread 'myseq thru 2 functions, the semantics is analog to core/-> but it is a function
+          the '> function is defined in the :invocation-application-mapping section (the previous one)
+          (>_ (take_ 3) (dropend_ 2)) ;; will return a function that wait for its first argument ('myseq in the previous example)
+
+          the idea behind this is to ease function composition, the preference for guards over predicates is also a step in this direction
+          the further 'flow section will introduce some useful functional constructs that go even further (in conjunction with this and guards)
+"
+         :val
          (f1 f
              (fn& [] (f1 s (f s ...))))
          :mac
@@ -3302,9 +3458,10 @@
              ($ xs #(sym % '_))
              ($ xs (p lst 'subjectify))))}
 
+        ;; here we are defining subjectified versions of some important functions
         (subjectify.definitions
          take takend drop dropend section
-         sip + * § $
+         sip + * § $ >
          eq neq gt gte lt lte
          walk dfwalk bfwalk walk?))
 
@@ -3313,58 +3470,64 @@
         (E+
 
          zip
-         (f                            ;core/map(ish)
-          [f . xs]
-          (* c/map f ($ xs vals)))
+         ["core/map(ish)"
+          (f
+           [f . xs]
+           (* c/map f ($ xs vals)))]
 
          red
-         (fn
-                                        ;reduce with seed (init) as first argument
-                                        ;and variadic seq(s) argument (like map does)
-           ([x f xs]
-            (c/reduce (§ f) x xs))
-           ([x f y & ys]
-            (red x (* f)
-                 (* zip vec y ys))
-            #_(if (c/every? cons? xs)
-                (* red
-                   (* f x ($ xs car))
-                   f ($ xs cdr))
-                x)))
+         ["reduce with seed (init) as first argument
+           and variadic seq(s) argument (like map does)"
+          (fn
+            ([x f xs]
+             (c/reduce (§ f) x xs))
+            ([x f y & ys]
+             (red x (* f)
+                  (* zip vec y ys))
+             #_(if (c/every? cons? xs)
+                 (* red
+                    (* f x ($ xs car))
+                    f ($ xs cdr))
+                 x)))]
 
-         ;; $+ is to § what c/mapcat is to c/map
          $+
-         (generic.reduced
-          [x f]
-          :any
-          (* + #_(pure x) ($ x f)))
+         ["$+ is to § what c/mapcat is to c/map"
+          (generic.reduced
+           [x f]
+           :any
+           (* + #_(pure x) ($ x f)))]
 
          zip+
-         (f                            ;core/mapcat(ish)
-          [f . xs]
-          (cs [ret (c/seq (* zip f xs))]
-            (* + ret) ()))
+         ["core/mapcat(ish)"
+          (f
+           [f . xs]
+           (cs [ret (c/seq (* zip f xs))]
+               (* + ret) ()))]
 
          scan
-         (f                            ;similar to core/partition
-          [x size step]
-          (let [[pre post] (splat x size)]
-            (if (cons? post)
-              (cons pre (scan (drop x step) size step))
-              (if (cons? pre)
-                (sip (pure x) pre)
-                (pure x)))))
+         ["similar to core/partition"
+          (f
+           [x size step]
+           (let [[pre post] (splat x size)]
+             (if (cons? post)
+               (cons pre (scan (drop x step) size step))
+               (if (cons? pre)
+                 (sip (pure x) pre)
+                 (pure x)))))]
 
          chunk
-         (f [x size]
-            (scan x size size))
+         ["split an iterable 'x by chunk of size 'size"
+          (f [x size]
+             (scan x size size))]
 
          nths
-         (f [x n]
-            ($ (scan x n n) car))
+         ["like core/take-nths"
+          (f [x n]
+             ($ (scan x n n) car))]
 
          braid
-         (p zip+ (p sip ()))
+         ["like core/interleave"
+          (p zip+ (p sip ()))]
 
          (subjectify.definitions
           red $+ scan chunk nths))
@@ -3383,7 +3546,7 @@
          (eq [1 1 1 2 2 2 3 3 3]
              (zip+ (p sip []) [1 2 3] [1 2 3] [1 2 3]))
 
-                                        ;scan
+         ;; scan
          (eq [[1 2] [3 4]]
              (scan [1 2 3 4] 2 2))
          (eq [[1 2] [2 3] [3 4]]
@@ -3391,7 +3554,7 @@
          (eq '((0 1 2 3) (2 3 4))
              (scan (c/range 5) 4 2))
 
-                                        ;chunk
+         ;; chunk
          (eq [[1 2] [3]]
              (chunk [1 2 3] 2))
          (eq []
@@ -3471,29 +3634,70 @@
     (do :dive
 
         (E+ dive
-            (generic
-             [x y]
 
-             :vec
-             (c/reduce #(dive %2 %1) y x)
+            [
 
-             #{:key :sym}
-             (c/when (hash? y)
-               (c/get y x))
+             "the dive generic function, let you get something inside something else
+             its first argument represent the address of what you want to get
+             the second is the thing in which you want to find it
 
-             :num
-             (gat y x)
+             it is like core/get but with arguments reversed, and being a generic function, it can be extended.
 
-             :set
-             (dive (+ {} ($ (iter x) #(vec % %))) y)
+             Also, we can mention that it is a concrete exemple of something that is a function and a macro at the same time
+             here we use a technique that is analog to the one we used in bind (binding operators)
+             the dive module holds a map of operations implementations in dive.ops
+             At expansion time, if the first argument to dive is an sexpr, the verb will be searched in dive.ops
+             if an implementation is found, it will be executed (at expansion time) and the return value will take the place of the original expression
 
-             :map
-             ($ x #(dive % y))
+             as an exemple, we use the 'ks operation
+             (dive (ks :a :b) {:a 1 :b 2 :c 2})
+             ks is resolved in dive.ops and applied to the given args (here :a and :b), producing this form
+             (dive (fn [y] (select-keys y [:a :b]))
+                   {:a 1 :b 2 :c 2})
 
-             :fun (§ x y)
+             functions implement dive so the expansion time work is done, the form will now ready for runtime
 
-             :nil y
-             )
+             As you may have deduced by yourself, dive.ops can be extended with new operations
+             Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :))
+"
+
+             (generic
+              [x y]
+
+              ;; vec perform a deep dive, analog to what core/get-in do,
+              ;; but can be populated with anything that is a valid dive 1st argument
+              :vec
+              (c/reduce #(dive %2 %1) y x)
+
+              ;; symbols and keywords performs a simple get
+              #{:key :sym}
+              (c/when (hash? y)
+                (c/get y x))
+
+              ;; numbers do an index search, supporting negative indexes (indexing from the end of a sequential datastructure)
+              :num
+              (gat y x)
+
+              ;; maps let you group several dive together
+              ;; (dive {:one diving-address1 :two diving-address2} diving-target)
+              ;; => {:one wathever-was-at-address1 :two wathever-was-at-address1}
+              :map
+              ($ x #(dive % y))
+
+              ;; sets behave as maps
+              ;; #{diving-address1 diving-address2}
+              ;; <=> {diving-address1 diving-address1
+              ;;      diving-address2 diving-address2}
+              :set
+              (dive (+ {} ($ (iter x) #(vec % %))) y)
+
+              ;; function simply applied themselves to the diving-target
+              :fun (§ x y)
+
+              ;; nil do nothing, it returns the diving-target unchanged
+              :nil y)]
+
+
 
             dive
             {:mac
@@ -3520,15 +3724,16 @@
          ;; guard composition, filtering, control flow etc...
 
          $?
-         (guard [x] (c/every? id (vals x)))
+         ["check if all values of a datastructure are not nil (see 'vals)"
+          (guard [x] (c/every? id (vals x)))]
 
          ?$
-         (+ $ $?)
+         ["like $ but succeed only if the result does pass $?"
+          (+ $ $?)]
 
-         ;; ?zip is to zip what ?$ is to $
-         ?zip (+ zip $?)
-
-                                        ;:fx (pp 'iop)
+         ?zip
+         ["?zip is to zip what ?$ is to $"
+          (+ zip $?)]
 
          :fx
          (check
@@ -3557,20 +3762,22 @@
                     (if (keep? (§ g v)) (sip x e) x))
                  (vals x) x))
 
-         ;; is to $ what core/filter is to core/map
          filt
-         (generic.reduced [x f] :any (shrink x f id))
+         ["is to $ what core/filter is to core/map"
+          (generic.reduced [x f] :any (shrink x f id))]
 
-         ;; is to $ what core/remove is to core/map
          rem
-         (generic.reduced [x f] :any (shrink x f not))
+         ["is to $ what core/remove is to core/map"
+          (generic.reduced [x f] :any (shrink x f not))]
 
          :fx
          (check
           (eq [1 2 3]  (filt [1 2 -1 -2 3] pos?))
           (eq [-1 -2] (rem [1 2 -1 -2 3] pos?)))
 
-         ?$i (+ $i $?)
+         ?$i
+         ["like ?$ but the given functions will receive indexes as well as values"
+          (+ $i $?)]
 
          :fx
          (check
@@ -3582,12 +3789,12 @@
           (nil? (?$i [1 1 3] neq)))
 
          ?deep
-         (guard
-                                        ;"deeply check x for nils"
-          [x]
-          (if (coll? x)
-            (?$ x ?deep)
-            x))
+         ["the deep version of ?$"
+          (guard
+           [x]
+           (if (coll? x)
+             (?$ x ?deep)
+             x))]
 
          :fx
          (check
@@ -3597,20 +3804,18 @@
           (?deep {:a {:b 1 :c [1 2 3]}}))
 
          ?>
-         (f
-                                        ;"thread x thru guards
-                                        ; shorting on first nil result"
-          [x f . fs]
-          (?let [x (c/and x (§ f x))]
-                (if (cons? fs) (* ?> x fs) x)))
+         ["thread x thru guards shorting on first nil resul"
+          (f
+           [x f . fs]
+           (?let [x (c/and x (§ f x))]
+                 (if (cons? fs) (* ?> x fs) x)))]
 
          ?<
-         (f
-                                        ;"thread x thru guards
-                                        ; until first non nil result"
-          [x f . fs]
-          (c/or (§ f x)
-                (c/when (cons? fs) (* ?< x fs))))
+         ["trying all given guards against x until first non nil result"
+          (f
+           [x f . fs]
+           (c/or (§ f x)
+                 (c/when (cons? fs) (* ?< x fs))))]
 
          (subjectify.definitions
           ?$ ?$i filt rem ?> ?<)
@@ -3654,20 +3859,24 @@
           )
 
          ?c>
-         (f                            ;"a scheme-cond(ish) function"
-          [x . bs]
-          (* ?< x ($ bs (* ?>_))))
+         ["a scheme-cond(ish) function"
+          (f
+           [x . bs]
+           (* ?< x ($ bs (* ?>_))))]
 
          ?c
-         (f                            ;"a clojure-cond(ish) function"
-          [x . cs]
-          (* ?c> x (chunk cs 2)))
+         ["a clojure-cond(ish) function"
+          (f
+           [x . cs]
+           (* ?c> x (chunk cs 2)))]
 
          ?><
-         (f                 ;"at least one guard of each branch have to succeed
-                                        ; last branch's first success returned"
-          [x . bs]
-          (* ?> x ($ bs (* ?<_))))
+         ["at least one guard of each branch have to succeed
+           last branch's first success returned.
+           this one is a bit convoluted... maybe not so useful"
+          (f
+           [x . bs]
+           (* ?> x ($ bs (* ?<_))))]
 
          (subjectify.definitions
           ?c> ?c ?><)
@@ -3728,38 +3937,53 @@
 
     (do :mlet
 
-        (E+ mlet:mac
-            (fn [e [ms & bod]]
-              (let [local-path #(path (loc e) % :mac)
-                    ;; this should be abstracted (local env extension)
-                    e (red e (f [e [s x]] (env-add-member e (local-path s) (eval e x)))
-                           (chunk ms 2))]
-                (exp e (bindings.bodify bod)))))
+        (E+ mlet
+            ["let you bind a local macros"
+             :mac
+             (fn [e [ms & bod]]
+               (let [local-path #(path (loc e) % :mac)
+                     ;; this should be abstracted (local env extension)
+                     e (red e (f [e [s x]] (env-add-member e (local-path s) (eval e x)))
+                            (chunk ms 2))]
+                 (exp e (bindings.bodify bod))))])
 
         (_ :tries
            (!! (mlet [fi (fn [e [p f t]] (exp e (lst 'if p t f)))]
-                     (fi (vec? []) :novec (?lut [a 1 a 2] :vec))))
+                     (fi (vec? [])
+                         :novec
+                         ;; this one is just to check expansion occurs well
+                         (lut [a 1 a 1] :vec))))
 
            (exp @E '(mlet [fi (fn [e [p f t]] (exp e (lst 'if p t f)))]
-                          (fi (vec? []) :novec (?lut [a 1 a 2] :vec)))))
+                          (fi (vec? []) :novec (lut [a 1 a 2] :vec)))))
 
-        (E+ let-syms:mac
-            (fn [e [xs & bod]]
-              (exp e '(let [~xs (gensyms)] . ~bod))))
+        (E+ let-syms
+            ["let you introduce a bunch of gensyms easily
+              (let-syms [a b c] (list a b c))
+              ;=> (G__198743 G__198744 G__198745)"
+             :mac
+             (fn [e [xs & bod]]
+               (exp e '(let [~xs (gensyms)] . ~bod)))])
 
-        (!! (let-syms [a b c] (list a b c)))
-
-        (E+ mac:mac
-            (f [e [pat . body]]
-               (exp e '(f [e' ~pat] (exp e' ~(lst* 'do body))))))
+        (E+ mac
+            ["let you define a macro that behave as regular lisps ones do
+              e.g: no need to manually thread expansion"
+             :mac
+             (f [e [pat . body]]
+                (exp e '(f [e' ~pat] (exp e' ~(lst* 'do body)))))])
 
         (_ :tries
            (exp @E '(mac [p f t] (lst 'if p t f)))
            (E+ fi:mac (mac [p f t] (lst 'if p t f)))
            (exp @E '(fi yop (lut [a 1 a 2] :pouet) (fn& [] (add ...)))))
 
-        (E+ at:mac (mac [x y] (lst 'dive y x))
-            at_:mac (mac [x] '(f_ (at _ ~x))))
+        (E+ at
+            ["like dive but with arguments reversed"
+             :mac (mac [x y] (lst 'dive y x))]
+
+            at_
+            ["subjectified version of at"
+             :mac (mac [x] '(f_ (at _ ~x)))])
 
         (_ :tries
            (!! (at {:a 1 :b 2 :c 2} (ks :a :b)))
@@ -3771,15 +3995,13 @@
                          (rec verb symseed [.(butlast xs) (quot _) (last xs)])))))
 
     (E+ bindings.case
-        [;:fx (pp "suspect unresolvable rec bindings case 3673")
+        ["the case form and its variants casu, !case, and !casu"
 
          form
          (f [verb symseed xs]
             (if (even? (count xs))
               (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
               (rec verb symseed [.(butlast xs) (quot _) (last xs)])))
-
-         ;:fx (pp "after suspect unresolvable rec bindings case 3673")
 
          verb
          (f1 (ks strict unified)

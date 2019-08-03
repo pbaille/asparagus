@@ -23,6 +23,7 @@
 ;; ------------------------------------------------------------------------
 
 ;; you can define a variable like this (E+ stands for extend-environment)
+;; its like a really (really!) fancy 'def
 
 (E+ foo 1)
 
@@ -98,7 +99,7 @@
 
 (E+ stats
     {;; for now i've hidden an important detail,
-     ;; each identifier can have any number of what we will call attributes
+     ;; each identifier can have any number of what we will call attributes (or meta-keys, not really sure about the naming yet...)
      ;; attributes are stored and accessible using clojure keywords
      ;; for instance an identifier 'foo can have an attribute :size
      ;; it would be defined like this (E+ foo:size 3) and accessed like this 'foo:size, simple enough...
@@ -234,7 +235,7 @@
 
 ;; you may wonder about interop... we do not support it for now, we have to think more carrefully about it
 ;; at those early stages I tought that the core design is the main focus,
-;; even if it does not sound get-the-things-done-ish enough to some people ;)
+;; We are not at the get-the-things-done stage for now ;)
 
 ;; bubbling resolution
 ;; use absolute and relative paths for all our vars is kind of painfull and ugly
@@ -285,13 +286,14 @@
 ;; with this we can acheive some of the things we do with :require and :use in clojure ns's form
 ;; it will not oftenly used directly, but will be used under the hood by higher level macros...
 
-;; ------------------------------------------------------------------------
-;;                           compilation steps
-;; ------------------------------------------------------------------------
 
 ;; the asparagus environment is holded by the asparagus.core/E atom
 
 (keys @E)
+
+;; ------------------------------------------------------------------------
+;;                           compilation steps
+;; ------------------------------------------------------------------------
 
 ;; there is three fundamentals compilation steps in asparagus
 
@@ -441,7 +443,7 @@
 (is ((sip add 1 2) 3)
     6)
 
-;; pure return the empty version of the given argument
+;; 'pure returns the empty version of the given argument
 ;; ---------------------------------------------------
 
 (is (pure "foobar") "")
@@ -514,7 +516,7 @@
 
 (let [nums [2 3 4]]
 
-  ;; in conjunction with 'lst you can do the same things that we have showed with vectors
+  ;; in conjunction with 'lst you can do the same things that we have shown with vectors
   (eq (lst 1 . nums)
       (lst 1 2 3 4))
 
@@ -582,7 +584,7 @@
     (try (?let [a 1
                 !b (pos? -1)] (add a !b))
          (catch Exception _ :catched)))
-;; if we want to allow regular bindings (has normal symbols in a classic let)
+;; if we want to allow regular bindings (as normal symbols in a classic let)
 ;; we use the _ prefix
 (eq (?let [a 1
            _b nil] ;; _b is bound to nil but this does not shorts
@@ -596,7 +598,7 @@
          (catch Exception _ :catched)))
 
 ;; lut (unified let)
-;; in a unified let, all symbols that appears several times have to bind to the same value (an equal value)
+;; in a unified let, all symbols that appears several times have to bind to the same value (equal values)
 
 (lut [a 1 a (dec 2)] :success)
 
@@ -639,6 +641,9 @@
 (eq (let [{:a aval :b bval} {:a 1 :b 2 :c 3}] [aval bval])
     [1 2])
 
+;; in clojure the same is acheived like this (I don't really understand why)
+(c/let [{aval :a bval :b} {:a 1 :b 2 :c 3}] [aval bval])
+
 ;; maps have rest patterns to
 (eq (let [{:a aval . xs} {:a 1 :b 2 :c 3}] [aval xs])
     [1 {:b 2 :c 3}])
@@ -658,6 +663,8 @@
 ;; something that i've sometimes missed in clojure (lightly)
 (eq (let [(& mymap (ks a b)) {:a 1 :b 2 :c 3}] [mymap a b])
     [{:a 1 :b 2 :c 3} 1 2])
+
+;; some others builtin bindings exists, see source
 
 ;; new binding operators can be defined by the user
 ;; TODO
@@ -686,14 +693,12 @@
       (error "never touched"))
 
 ;; type guards
+;; an sexpr starting with a type keyword (see asparagus.boot.types) indicates a type guard pattern
 (?let [(:vec v) [1 2 3]]
       v)
 
 (?let [(:seq v) [1 2 3]]
       (error "never"))
-
-;; asparagus has its own thin layer on top of clojure's type system
-;; TODO
 
 ;; guard syntax
 (eq (?let [(pos? a) 1
@@ -706,7 +711,7 @@
 
 ;; value patterns -----------------------
 
-;; any value can be used in pattern position, 
+;; any value can be used in pattern position,
 
 (eq :ok (let [a (inc 2)
               3 a] ;; 3 is in binding position, therefore the seed (a) is tested for equality against it, and it shorts if it fails
@@ -724,7 +729,7 @@
 ;; cased let ----------------------------
 
 ;; cased let is like a cascade of shortcircuiting let forms
-;; it can be be compared to cond-let but it is more powerful
+;; it can be be compared to cond-let but is more powerful
 
 ;;simple
 (eq (clet [x (pos? -1)] {:pos x} ;first case
@@ -732,7 +737,7 @@
           )
     {:neg -1})
 
-;; each binding block can have several cases
+;; each binding block can have several bindings
 (let [f (fn [seed]
           (clet [x (num? seed) x++ (inc x)] x++
                 [x (str? seed) xbang (+ x "!")] xbang))]
@@ -777,7 +782,7 @@
 ;; regular monoarity lambda
 
 (let [fun (f [a b] (add a b))]
-  (fun 1 2))
+  (eq 3 (fun 1 2)))
 
 ;; variadic syntax
 (let [fun (f [x . xs] (add x . xs))]
@@ -905,12 +910,12 @@
 ;; You may ask yourself what is the price for this expressivity
 ;; i've worked hard on compiling those forms into performant code,
 ;; there is certainly a price for the shortcircuit, strict and unified binding modes, but certainly not as high as you may expect
-;; sometimes it is even as performant as bare clojure
+;; sometimes it is close to bare clojure's perfs
 
 ;; case ----------------------------------------
 
 (let [x (range 12)]
-  ;; try those values to,  42 "iop" :pouet
+  ;; try those values too:  42 "iop" :pouet
   (case x
     (num? x) {:num x} ;; first clause, x is a number
     (str? x) {:str x} ;; second clause, x is a string
@@ -972,9 +977,9 @@
 
 ;; you can nest invocables several level deep, it will do what you expect
 (is (§ [inc dec [inc dec :foo]] [0 0 [0 0 0]])
-    [1 -1 [1 -1 :foo]]) ;; don(t forget that :foo is a :constant and return itself when invoked
+    [1 -1 [1 -1 :foo]]) ;; don't forget that :foo is a :constant and return itself when invoked
 
-;; but wait you can feed several arguments to!
+;; but wait you can feed several arguments too!
 (is (§ [add sub add] [1 2 3] [1 2 3] [1 2 3])
     [3 -2 9])
 
@@ -1002,6 +1007,144 @@
 (is (§ {:a add} {:a 1 :b 2} {:a 1 :b 7})
     {:a 2 :b 7})
 
+;; environment (continued) ----------------------------
+
+;; it's time to talk about metaprograming
+;; as any Lisp, asparagus has metaprograming facilities (e.g macros but not only)
+;; asparagus macro system is a bit different than regulars Lisps
+
+;; it use a technique introduced by Daniel Friedman called "expansion passing style"
+;; in regular Lisps, macro calls are recursively expanded until no more macro calls appears in the resulting expression
+;; it results in more concise macro definition, but is less powerfull and prevents you to do more advanced things
+
+;; a macros in asparagus is a function that takes 2 arguments:
+;; the current environment
+;; the list of operands of the macro call
+
+;; since macros have access to the environment, and are responsable to thread expansion further
+;; they can do all sort of transformations/updates on the environment before passing it to further expansions
+;; therefore a macro has full control over its operands, which tends to make more sense to me.
+
+;; another interesting thing about asparagus macros, occuring from the fact that there is no automatic recursive expansions
+;; is that functions and macros can share the same name. you may ask yourself what is the point :)
+;; in fact in clojurescript, this kind of technique is used for compile time optimizations for exemple.
+
+;; macros ------------------
+
+;; a simple macro definition
+
+(E+ postfix:mac
+    (fn [e args]
+      (reverse args)))
+
+;; let's expand this form in the current global environment
+(exp @E '(postfix 3 2 1 add))
+;;=> (add 1 2 3)
+
+;; in trivial cases like this one it works but if the operands contains some macro calls, they will not be expanded
+(exp @E '(postfix (postfix 5 4 add) 3 2 1 add))
+;;=> (add 1 2 3 (postfix 5 4 add))
+
+;; as we've said, we have to thread the expansion further
+;; we've just seen the 'exp function that perform expansion given an environment and an expression
+(E+ postfix:mac
+    (fn [e args]
+      (reverse
+       ;; we are mapping the expansion over the arguments, with the same environment e
+       ($ args (p exp e)) ;; equivalent to (clojure.core/map (partial exp e) args)
+       )))
+
+;; therefore
+(exp @E '(postfix (postfix 5 4 add) 3 2 1 add))
+;;=> (add:val 1 2 3 (add:val 4 5))
+
+(!! (postfix (postfix 5 4 add) 3 2 1 add))
+;;=> 15
+
+;; it is not a high price to pay I think, given the flexibility and power it can provide
+
+;; You can do many crazy things with this behavior, but you don't have to.
+;; I personaly tends to prefer technologies that let the power to the user
+;; even if I agree that strong opinions and good practices enforcement can yield to a powerfull language and strong community (like clojure)
+;; Its a matter of taste and needs after all (at a point in time)
+
+;; all the binding forms and lambda macros are defined this way, so maybe its time to look at the asparagus.core namespace
+
+;; substitutions --------------
+
+;; 'substitutions' are another metaprograming device that deserve attention i think
+;; it gives the user a way to replace a simple symbol with an arbitrary expression
+
+;; trivial substitution
+(E+ macro-exemple.foo:sub ;; :sub attribute denotes a substitution function 
+    (fn [e] :foofoofoo))
+
+(exp @E 'macro-exemple.foo) ;;=> :foofoofoo
+
+;; substitution are performed at expansion time, like macros
+
+;; another simple substitution
+;; a really dummy exemple just to demonstrate that you have access to the environment
+
+(E+ substitution-exemple.bar:sub
+    (f [e]
+       (or
+        ;; the bubget function try to resolve a symbol in the given env
+        (bubget e 'substitution-exemple.bar:val)
+        ;; if not found, it will be substitute by this expression
+        '(some expression) 
+       )))
+
+(exp @E 'substitution-exemple.bar) ;=> (some expression)
+
+(E+ substitution-exemple.bar 42) ;; not we define a :val
+
+;; so now it is substituted by what's in substitution-exemple.bar:val
+(exp @E 'substitution-exemple.bar) ;=> 42
+
+(env-inspect 'substitution-exemple.bar)
+
+;; updates --------------------
+
+;; extending E+ behavior with the :upd attribute
+
+;; it can hold a function that creates an update datastructure , hold on, see the exemple:
+
+;; we declare an update called tagged
+(E+ tagged:upd ;; note the :upd suffix
+    (f [e [tag data]]
+       ;; an update function has to return any datastructure that is understood by E+
+       ;; like expansions and substitutions it has access to the environment (not used in this case)
+       [:tag tag :val data]))
+
+;; we can use it in an E+ form like this
+(E+ upd-function-demo.foo (tagged :my-tag 42))
+
+;; when E+ see an :upd call it will execute it and substitute it with its return value
+;; in this case it will be equivalent to this
+(E+ upd-function-demo.foo [:tag :my-tag :val 42])
+
+(env-inspect 'upd-function-demo.foo)
+
+;; this technique is used at several place in asparagus source (feel free to look at it)
+;; contrary to macros and substitutions, updates are recursivelly executed, so an update function can return an expression which is another update call
+
+;; effects -----------------------
+
+;; sometimes you need to do dirty (real) things,
+;; :fx let you write an expression that will be executed at environment extension time
+(E+ fx-demo.foo [:fx (println "defining fx-demo.foo") :val 42])
+
+;; in practice it is used for things like, extending a protocol for exemple.
+;; see the 'generic section (which wrap clojure's protocols)
+
+;; all those special attributes may appears abstract at this time,
+;; but looking at asparagus source will show them in practice, and it will become more clear I hope
+
+
+
+
+;; iterables ------------------------------------------------------------------------
 
 
 
