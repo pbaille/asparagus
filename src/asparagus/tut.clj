@@ -9,7 +9,7 @@
      clet clut !clet !clut
      case casu !case !casu)
 
-;; asparagus is my last experience in language design
+;; asparagus is my last experience in language design 
 ;; it is a clojure embedded language
 ;; it differs from clojure on several crucial points
 ;; for instance it does not use clojure namespaces nor clojure macro system
@@ -335,7 +335,7 @@
 
 ;; with sequential last argument (like core/list*)
 
-(vec* (lst 1 2 3 4)) ;; with one argument it bahaves like core.vec
+(vec* (lst 1 2 3 4)) ;; with one argument it behaves like core.vec
 (vec* 1 2 [3 4])
 
 (lst* [1 2 3 4])

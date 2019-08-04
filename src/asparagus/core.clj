@@ -29,7 +29,7 @@
      call*]]))
 
 ;; there is some uncommon code practice in this file that may surprise the reader
-;; I'm heavily using 'do blocks to group related peace of functionality, which i usually prepend with a descriptive keyword
+;; I'm heavily using 'do blocks to group related peace of functionality, which i usually start with a descriptive keyword
 ;; it has no incidence on execution (as far as i know) but let you fold code in a meaningful and convenient way
 ;; this practice has led me to increase the average size of my namespaces (I don't really like to constantly jump to other files...)
 ;; so for a better experience, the reader should use an editor that can fold groups easily and possibly gradually
@@ -127,6 +127,7 @@
               (Path. _rel xs _mkey)))
 
         (defn path+
+          "add two paths together"
           ([{:as x xxs :xs xrel :rel}
             {:as y yxs :xs yrel :rel ymk :mkey}]
            (cs yrel
@@ -157,24 +158,24 @@
               (throw (Exception. (str* "not pathable " xs)))))
 
         (defn rpath
-          "make a path relative"
+          "make a path relative, accepts symbols as well as paths"
           [p]
           (cs [p (path p)]
               (update p :rel #(or % 0))))
 
         (defn apath
-          "make a path absolute"
+          "make a path absolute, accepts symbols as well as paths"
           [p]
           (cs [p (path p)]
               (assoc p :rel nil)))
 
         (defn ppath
-          "make a path primary (without mkey)"
+          "make a path primary (without mkey), accepts symbols as well as paths"
           [p]
           (cs [p (path p)]
               (assoc p :mkey nil)))
 
-        (_ asserts
+        (asserts
 
          (path->str (name->path '..a.b.c:val))
 
@@ -189,10 +190,6 @@
 
             (path '..a.b.c
                   '.d.e)
-
-            (path '..a '.b '.c '[.d e])
-
-            (path '.. '[.a b c d e])
 
             (path '..a.b.c.d.e))
 
@@ -209,7 +206,7 @@
                   '..d.e))
 
          (= (path '..d.e)
-            (path sym0 '..d.e))
+            (path (symbol "") '..d.e))
 
          (= (path '.. '..d.e)
             (path '...d.e))))
@@ -227,17 +224,27 @@
               x))
 
         (defn rpath?
+          "is x a relative path ?"
           [x] (cs (path? x) (.rel x)))
         (defn apath?
+          "is x an absolute path ?"
           [x] (cs (path? x) (not (.rel x))))
         (defn mpath?
+          "is x a meta path ? (leaf path, a path that has an mkey)"
           [x] (cs (path? x) (.mkey x)))
         (defn ppath?
+          "is x a primary path ? (does not have mkey)"
           [x] (cs (path? x) (cs (not (.mkey x)) x)))
         (defn dotpath?
+          "is x a dotpath ? (a relative path with empty xs and no mkey)"
           [x] (cs (rpath? x)
                   (and (not (mpath? x))
-                       (empty? (.xs x))))))
+                       (empty? (.xs x)))))
+        (defn pure-mpath? [p]
+          (and (mpath? p)
+               (not (rpath? p))
+               (not (seq (.xs p)))))
+        )
 
     (do :misc
 
@@ -303,11 +310,6 @@
                      (-> p2 :xs count
                          (drop (:xs p1)) vec))))
 
-        (defn pure-mpath? [p]
-          (and (mpath? p)
-               (not (rpath? p))
-               (not (seq (.xs p)))))
-
         (asserts
          (parent-path (path 'a.b))
          (parent-paths (path '..a.b.c:val))
@@ -326,8 +328,6 @@
     ;; at: a Path representing current position
     ;; members: a nested map holding environment bindings
 
-    ;; this will not be used directly 
-
     (defrecord Env [at members])
 
     (do :base
@@ -338,8 +338,6 @@
         (def env0
           (Env. root-path
                 {:links {'_ root-path}}))
-
-        #_(def ROOT_PREFIX 'ROOT)
 
         (defmacro env!
           [x]
@@ -363,7 +361,7 @@
     (do :defne
 
         ;; a lambda that takes an env as first argument
-        ;; and throw if @echeck? is true and first arg is not a thing
+        ;; and throw if @echeck? is true and first arg is not an Environment
         ;; maybe just a dev purpose device, if @echeck? is false it compile to regular clojure lambda
 
         (defn arg1-sym [[a1 & _]]
@@ -420,8 +418,8 @@
                       (path-segments p))))
 
         ;; the following find operations are inspired by core/find
-        ;; given an env and a path
-        ;; if it find something, returns a tuple containing the path and the found value
+        ;; given an env e and a path p
+        ;; if it finds something at p in e, returns a tuple containing p and the found value
         ;; else return nil
 
         (defne env-absfind
@@ -448,8 +446,6 @@
               ;; if yes we replace the prefix by it
               (path (path* target _xs) (.mkey p))))
 
-        #_(linked-path2 e1' (path 'ab))
-
         (defne env-linkedfind [e p]
           (cs [p' (linked-path e p)]
               (env-absfind e p')))
@@ -457,9 +453,6 @@
         (defne env-find [e p]
           (or (env-relfind e p)
               (env-linkedfind e p)))
-
-        #_(defn root-pathsym? [p]
-          (= ROOT_PREFIX (path-prefix p)))
 
         (defne bubfind
           "bubbling find, the main resolution function
@@ -493,7 +486,8 @@
               [[_ v] (bubfind e p)] v))
 
         (defne qualsym
-          "try to turn a symbol into its corresponding path"
+          "try to qualify a symbol into its corresponding path,
+           using same bubling strategy than bubfind"
           [e s]
           (cs [p (path s)]
               (cs (mpath? p)
@@ -566,13 +560,16 @@
 
     ;; if this flag is on
     ;; all defined env members will be assigned to vars
-    ;; resulting in much better performances (2 OoM)
+    ;; resulting in much better performances (20x faster)
     (def varmode (atom true))
 
     ;; holds env members-symbols that can be used at ns level
+    ;; this atom will be populated by main asparagus macros
     (def top-forms (atom #{}))
 
     (do :vars
+
+        ;; the varmode business
 
         (def PATHVAR_PREFIX 'ENV_)
 
@@ -688,45 +685,60 @@
 
     (defne qualify
 
+      "takes an environment e and an expression x
+       it will turn all resolvable symbols into paths, using bubbling resolution
+       (see bubfind and qualsym in the [:env :getters] section)
+       macro calls will be handled differently, the verb will be qualified, the expression marked, and the arguments left as is"
+
       [e x]
 
       (cp x
 
+          ;; for symbol, we try to qualify it or leave it as is
           sym?
           (or (qualsym e x) x)
 
           seq?
-          (cs [p (-> x car path)
-               ? (or (ppath? p) (macpath? p))
-               p (qualsym e (path p :mac))]
-              (mark-exp (cons p (cdr x)))
-              ($ x (p qualify e)))
+          (cs
+           ;; if x is a macro call, we qualify the verb (the macro identifier)
+           ;; and mark the expression as expansion
+           [p (-> x car path)
+            ? (or (ppath? p) (macpath? p))
+            p (qualsym e (path p :mac))]
+           (mark-exp (cons p (cdr x)))
+           ;; else we just map qualify over the expression
+           ($ x (p qualify e)))
 
+          ;; for clojure's collection, we map qualify
           holycoll?
           ($ x (p qualify e))
 
+          ;; else do nothing
           x))
 
-    #_(defne expand
-      [e x]
-      #_(pp 'expand x)
-      (cp x
-          ;env-access? x
-          subpath? ((env-access e x) e)
-          ;path? x
-          mcall? ((env-access e (car x)) e (cdr x))
-          holycoll? ($ x (p expand e))
-          x))
     (defne expand
+
+      "takes an environment e and an expression x
+       will handle substitutions and macro calls"
+
       [e x]
       #_(pp 'expand x)
       (cp x
+          ;; subsitution
           subpath? (expand-subpath e x)
+          ;; macro call
           mcall? (expand-mcall e x)
+          ;; clojure collection
           holycoll? ($ x (p expand e))
+          ;; anything else
           x))
 
     (defne resolve
+
+      "takes an environment e and an expression x
+       in varmode it will replace paths by corresponding var symbols
+       in normal mode (wich is far slower, and maybe will never be used) it replace paths by environment access expression"
+
       [e x]
       #_(pp 'resolve x (path? x))
       (cp x
@@ -736,6 +748,11 @@
           x))
 
     (defne exp
+
+      "the composition of qualify and expand,
+       in most case that's what you want to use (in macro implementations for instance)
+       "
+
       [e x]
       (let [;; this expansion context thing is an attempt to provide better error messages on expansion failure
             ;; used by expand-mcall and expand-subpath via defexpansion
@@ -743,10 +760,13 @@
         (->> x (qualify e) (expand e))))
 
     (defne res
+      "the whole compilation process, qualify -> expand -> resolve"
       [e x]
       (->> x (exp e) (resolve e)))
 
-    (defne eval [e x]
+    (defne eval
+      "compile x in e and eval the resulting expression"
+      [e x]
       (c/eval (res e x)))
 
     )
@@ -772,8 +792,6 @@
           (reduce (p* env-add-member) e xs))
 
         (defn env-add-meta [e p x]
-          #_(pp 'add-meta p x)
-          #_(update-in e (env-meta-path p) deep-merge x)
           (update-in e (env-member-path (ppath p))
                      vary-meta deep-merge {(.mkey p) x}))
 
@@ -790,7 +808,6 @@
 
         (defn env-declare-member [e p]
           (let [known? (c/resolve (path->varsym p))]
-            #_(pp 'declaring p (path->varsym p) (not known?) (mpath? p))
             (when @varmode (init-pathvar! p))
             (if (and (not known?) (mpath? p))
               (env-add-member e p ::unbound)
@@ -837,6 +854,7 @@
     (do :updates
 
         ;; an asparagus update is a description of an environment mutation
+        ;; those functions will be used by the main environment extension form: E+
         ;; i've written a gentle introduction to asparagus updates in ./tut.clj
 
         (defn env-upd_prepend-declarations [u]
@@ -932,7 +950,7 @@
                (not intended to be used directly)
 
                there is 4 base operations:
-               :declare : declare a member, in order make it available eventually before it is bound (analog to clojure's declare semantics) [:declare path]
+               :declare : declare a member, in order to make it available eventually before it is bound (analog to clojure's declare semantics) [:declare path]
                :def : evaluate the given expression and  put the result at the given path. [:def path expression]
                :link : define a link from a path to another [:link path1 path2]
                :fx : a side effect [:fx path expression]
@@ -1178,7 +1196,7 @@
 
 (do :reboot
 
-    (_ :upd-tests
+    (_ :upd-tries
        ;; nested vec upd test
         (E+ iop [v:val [1 2 3] i 1 o {p 1 q [:doc "iop" pop 42]}])
         ;; vec at mpath are normal vec values
@@ -1267,7 +1285,9 @@
 
     (do :base
 
-        (rEset!)
+        "in this section we will define the most basic forms that asparagus will build upon
+         let, lambda, loop, cs (same semantics as asparagus.boot/cs)
+         those version will be hygienic in the sense that they will replace all introduced binding symbols with gensyms"
 
         (E+
 
@@ -1477,11 +1497,6 @@
                  "\n"
                  (exp e xs)))))
 
-    #_(E+ a.b.c
-        (fn [a] (error "iop iop: " a)))
-
-    #_(!! (a.b.c 42))
-
     (do :strict-qualify
 
         "redefine qualify in a strict way, it will throw on unqualifiable symbols
@@ -1500,26 +1515,37 @@
 
         (defne qualify
 
+          "takes an environment e and an expression x
+           it will turn all resolvable symbols into paths, using bubbling resolution
+           (see bubfind and qualsym in the [:env :getters] section)
+           macro calls will be handled differently, the verb will be qualified, the expression marked, and the arguments left as is"
+
           [e x]
 
           (cp x
 
+              ;; symbols
               sym?
-              (cs [qs (qualsym e x)] qs
-                  (unqualifiable? x) x
-                  (c/resolve x) (ns-resolve-sym x)
-                  (error "not resolvable: " x))
+              (cs [qs (qualsym e x)] qs ;; x is qualifiable in e
+                  (unqualifiable? x) x ;; unqualifiable symbol (gensyms or clojure special forms) left as is
+                  (c/resolve x) (ns-resolve-sym x) ;; else we use clojure/resolve
+                  (error "not resolvable: " x))    ;; and fail if nothing works
 
               seq?
-              (cs [p (-> x car path)
-                   ? (or (ppath? p) (macpath? p))
-                   p (qualsym e (path p :mac))]
-                  (mark-exp (cons p (cdr x)))
-                  ($ x (p qualify e)))
+              (cs
+               ;; if x is a macro call, we qualify the verb (the macro identifier)
+               ;; and mark the expression as expansion
+               [p (-> x car path)
+                ? (or (ppath? p) (macpath? p))
+                p (qualsym e (path p :mac))]
+               (mark-exp (cons p (cdr x)))
+               ($ x (p qualify e)))
 
+              ;; for clojure's collection, we map qualify
               holycoll?
               ($ x (p qualify e))
 
+              ;; else do nothing
               x))
 
         #_(-> (qualify @E '(pos? 1 (hygiene.shadow.pat->submap x)))
@@ -1788,7 +1814,9 @@
     (E+ generic
         {:doc
          "an update to define a generic function
-          and its related inspection and extension capabilities"
+          and its related inspection and extension capabilities
+          it is a wrapper around asparagus.boot.generics functionalities
+          please refer directly asparagus.boot.generics source file for documentation"
 
          :upd
          (fn [e body]
@@ -1849,7 +1877,7 @@
 
          type+
          {:doc
-          "lets you implement some generics for a type.
+          "lets you implement one or several generics for a type.
            analog to extend-type"
 
           :upd
