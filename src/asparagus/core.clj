@@ -41,6 +41,8 @@
 ;; I also use some collection type preserving versions of map and filter e.g: $, $keys, $vals,shrink+, shrink-
 
 ;; all those really basic building blocks that i tend to use everywhere are defined in asparagus.boot.prelude
+;; keep in mind that two other important namespaces on top of which asparagus is built are asparagus.boot.types and asparagus.boot.generics
+;; they contain examples and documentation so feel free to study them to
 
 ;; ------------------
 
@@ -716,6 +718,8 @@
           ;; else do nothing
           x))
 
+    (def qualify1 qualify)
+
     (defne expand
 
       "takes an environment e and an expression x
@@ -858,7 +862,7 @@
         ;; i've written a gentle introduction to asparagus updates in ./tut.clj
 
         (defn env-upd_prepend-declarations [u]
-          #_(pp 'will-prep-decl u)
+          #_(pp 'will-prep-decl (doall u))
           (let [ps
                 (-> (shrink+ u #(= :def (car %)))
                     ($ #(vector :declare (second %)))
@@ -869,7 +873,7 @@
           #_(pp 'will-sort-u u)
           (let [filtype
                 (fn [t] (shrink+ u #(= t (car %))))]
-            (doall (mapcat filtype [:link :declare :fx :def]))))
+            (doall (mapcat filtype [:link :declare #_:clj :fx :def]))))
 
         (defn env-upd_upd-expr? [e x]
           (cs [? (seq? x)
@@ -931,14 +935,30 @@
               "handle vectors and map literals semantics of the E+ macro
                one level only, the recursion will be eventually done by env-upds"
               [[x1 x2 & rs :as xs]]
-              (cs (not (seq xs)) []
-                  (word? x1)
-                  (cs (and (vec? x2) (ppath? (path x1)))
-                      (concat ($ (env-upd_split x2) (p hash-map x1))
-                              (env-upd_split rs))
-                      (cons {x1 x2} (env-upd_split rs)))
-                  (holymap? x1) (cons x1 (env-upd_split (rest xs)))
-                  (cons {root-path x1} (env-upd_split (rest xs)))))
+              (cs
+
+               ;; done!
+               (not (seq xs)) []
+               (word? x1)
+
+               ;; primary path and vector
+               (cs (and (vec? x2) (ppath? (path x1)))
+                   (concat ($ (env-upd_split x2) (p hash-map x1))
+                           (env-upd_split rs))
+                   (cons {x1 x2} (env-upd_split rs)))
+
+               ;; map
+               (holymap? x1)
+               (cons x1 (env-upd_split (rest xs)))
+
+               ;; vec
+               (vec? x1)
+               (concat (env-upd_split x1)
+                       (env-upd_split (rest xs)))
+
+               ;; else
+               (cons {root-path x1} (env-upd_split (rest xs)))
+               ))
 
             (asserts
              (= (env-upd_split '[a 1 b 2]) (list '{a 1} '{b 2}))
@@ -975,8 +995,13 @@
                        [[:def (path from :doc) x]]
 
                        (p env-upd_upd-expr? (mv e from))
-                       (let [[_ updf] (env-upd_upd-expr? (mv e from) x)]
-                         (env-upds e (updf (mv e from) (cdr x)) from))
+                       (let [e' (mv e from)
+                             [_ updf] (env-upd_upd-expr? e' x)
+                             expanded (updf e' (cdr x))]
+
+                         (env-upds e expanded ;;(updf (mv e from) (cdr x))
+                                   from)
+                         )
 
                        [[:def (path from :val) x]])
 
@@ -984,6 +1009,7 @@
                    [(condp = (.mkey from)
                       :links [:link (epath (ppath from)) x]
                       :fx [:fx (epath (ppath from)) x]
+                      ;;:clj [:clj nil x]
                       [:def (epath from) x])])))
 
             (_ :tries
@@ -1026,12 +1052,35 @@
                          :link (env-add-member e (path at :links) x)
                          :declare (env-declare-member e at)
                          :fx (do (eval (mv e at) x) e)
+                         ;;:clj (do (c/eval x) e)
                          :def (env-member-add-compiled e at x))
                        (catch Exception err
                          (error "\nenv-upd error compiling:\n"
                                 (pretty-str [verb at x])
                                 "\n" (.getMessage err)))))))
           @E)))
+
+(_ :scratch-env-split
+   #_(E+ decl:upd
+         (fn [e xs] ($ (vec* xs) #(hash-map % ::unbound)))
+
+         (decl po pi pu))
+
+   (env-upd_split (vector
+                   '(fn [e xs] ($ (vec* xs) #(hash-map % ::unbound)))
+                   '(decl po pi pu)))
+
+   (env-upd_split (vector
+                   
+                   [
+                    '(fn [e xs] ($ (vec* xs) #(hash-map % ::unbound)))
+                    '(decl po pi pu)]))
+
+   (macroexpand
+    (E+ decl2:upd
+         (fn [e xs] (p/prob ($ (vec* xs) #(hash-map % ::unbound))))
+
+         (decl2 po2 pi2 pu2))))
 
 (do :API
 
@@ -1497,7 +1546,7 @@
                  "\n"
                  (exp e xs)))))
 
-    (do :strict-qualify
+    #_(do :strict-qualify
 
         "redefine qualify in a strict way, it will throw on unqualifiable symbols
          excepting gensyms and some unavoidable ones like 'do 'if etc... (listed in #'unqualified-symbols)"
@@ -1651,8 +1700,9 @@
            (expand (quotf e x)))
 
          cxp
-         (fn [e x]
-           (expand (exp e x)))]
+         ["a version of exp that handle composite datastrctures"
+          (fn [e x]
+            (expand (exp e x)))]]
 
         :links {;; quote composite.quote
                 cxp composite.cxp})
@@ -1816,13 +1866,14 @@
          "an update to define a generic function
           and its related inspection and extension capabilities
           it is a wrapper around asparagus.boot.generics functionalities
-          please refer directly asparagus.boot.generics source file for documentation"
+          please refer directly asparagus.boot.generics source file for documentation and examples"
 
          :upd
          (fn [e body]
            (let [gsym (generic.symbol (loc e))]
              (assoc (generic.module gsym)
-                    :fx '(generic.init ~gsym ~body))))
+                    :fx '(generic.init ~gsym ~body)
+                    #_(lst 'generic.init gsym body))))
 
          reduced:upd
          (fn [e [argv & decls]]
@@ -1850,6 +1901,7 @@
          spec
          {:val
           (fn [e n body]
+            #_(g/generic-spec n body)
             (.exp-cases e (g/generic-spec n body)))
 
           exp-case
@@ -1884,32 +1936,37 @@
           (fn [e [type & body]]
             ($ (c/vec body)
                (fn [[n & xs]]
-                 '(~(p/sym n ".extend")
-                   . ~(g/impl-body->cases type xs)))))}
+                 (lst* (p/sym n ".extend")
+                       (g/impl-body->cases type xs)))))}
 
          :tries
          '(do
 
-            (exp @E '(fn [x & xs] :yop))
-
+            ;; defines a pul+ generic function
+            ;; with 3 implementations for: strings, symbols and numbers
             (E+ pul+
                 (generic [a b]
                          :str (str a b)
                          :sym (pul+ (str a) (str b))
-                         :num (+ a b)))
+                         :num (add a b)))
+
 
             (!! (pul+.inspect))
 
             (!! (pul+ 1 2))
             (!! (pul+ "a" 2))
 
+            ;; implement pul+ for vectors
             (E+ (pul+.extend
                  [x y]
-                 :vec (do (pp 'hey) (catv x y))))
+                 :vec (catv x y)))
 
             (!! (pul+ [1] [7]))
             (!! (pul+.inspect))
 
+            ;; generic.reduced
+            ;; let you define a binary generic function
+            ;; and use reduce for calls with more than 2 arguments
             (E+ pil+
                 (generic.reduced [a b]
                                  :str (str a b)
@@ -2075,6 +2132,7 @@
            :str (c/str a b #_(.toString b))
            :sym (c/symbol (c/str (c/name a) b #_(.toString b)))
            :key (c/keyword (c/str (c/name a) (c/name b)))
+           :num (c/+ a b)
            :any (c/reduce sip a (iter b)))
 
           (check.thunk 
@@ -2178,7 +2236,7 @@
                   ~n* (fn& [x] (apl ~n x ...))
                   ~n+* (fn& [x] (apl ~n+ x ...))]))
              ([x & xs]
-              (catv ($ (cons x xs) make-upd))))
+              (apl catv ($ (cons x xs) make-upd))))
 
            :upd
            (fn [_ xs]
@@ -2346,7 +2404,10 @@
         )
 
     (E+ types
-        [
+        ["wrap some of the asparagus.boot.types functionalities
+          still have to handle type declaration (auto guard declaration...)
+          a deftype like construct should be great too"
+
          prims (keys t/prims)
          builtins t/builtin-types
          preds t/builtin-preds
@@ -2685,7 +2746,11 @@
            (fn [[v s & args] y]
              (cs (sym? s)
                  (cs (key? v)
-                     [s y (gensym "?typecheck") '(eq (type ~s) ~v)]
+                     [s y (gensym "?typecheck")
+                      (cs [pred (t/guards v)]
+                          '(~(sym v "?") ~s)
+                          '(or (eq (type ~s) ~v)
+                               (t/>= ~v (type ~s))))]
                      [s (lst* v y args)]
                      ;(bind s (lst* v y args))
                      )
@@ -3444,7 +3509,10 @@
                         y0 (c/zipmap yks (c/repeat []))
                         y (c/merge-with c/conj y0 ...)
                         x (c/merge (c/zipmap yks (c/repeat #(c/last %&))) x)]
-                    (c/merge-with * x y)))))
+                    (c/merge-with * x y)))
+             ;;:key
+             ;;(fn& [o] ((get o x) o ...))
+             ))
 
         (_ :tries
 
@@ -4474,3 +4542,119 @@
           r)
 
       ))
+
+(_ :type+
+
+   (E+ type+
+       ["an update to declare a new type"
+
+        :upd
+        (f [e [name fields . impls]]
+
+           (let [name-sym (sym name)
+                 class-sym (sym name "_USERTYPE")]
+
+             ;;TODO
+
+             ;; I would like to be able to put the following form in the update function return
+             ;; but it needs to be executed before the generic.type+ update is processed
+             ;; 'vectors returned by an update function' treatment is not lazy enough (in the sense that it process all contained update-expression at the same time)
+
+             ;; idealy if an update function returns something like: [form1 form2 ...]
+             ;; the behavior should be similar to (E+ form1 form2 ...)
+             ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
+
+             (c/eval
+              `(do (defrecord ~class-sym ~fields)
+                   (t/prim+ ~name [~class-sym] [:usertypes])))
+
+             [;; constructors (positional and from hashmap)
+              name-sym '(f ~fields (~(sym "->" class-sym) .~fields))
+              (sym "map->" name-sym) '(f_ (~(sym "map->" class-sym) _))
+
+              ;; generic implementations
+              '(generic.type+ ~name (type [x] ~name ~name) .~impls)
+
+              ]))
+
+        :demo
+        '(do
+
+           ;; definition
+           (E+ (type+ :fut [bar baz]
+                      (+ [a b]
+                         (!let [(:fut b) b]
+                               (fut (+ (:bar a) (:bar b))
+                                    (+ (:baz a) (:baz b)))))))
+
+           ;; instantiation
+           (!! (fut 1 2))
+           (!! (map->fut {:bar 1 :baz 2}))
+
+           ;; type
+           (!! (type (fut 1 2))) ;=> :fut
+
+           ;; using generic implmentations
+           (!! (+ (fut 1 2) (fut 1 2))))])
+
+   )
+
+(do :generic-implementations-binding-patterns
+
+  (E+ generic.spec.exp-case
+      (f [e [argv . body]]
+         (nth (exp e '(f ~argv .~body)) 2)))
+
+  (E+ mygen
+      (generic [a (:coll b)]
+               :vec (+ a b)))
+
+  (!! (mygen.inspect))
+
+  (exp @E '(let [(:coll a) [1 2]] a))
+
+  (exp @E '(let [(:pouet a) [1 2]] a)))
+
+(do :verb-litterals
+
+    (E+ implicit-invoc
+        ["this compilation step will insert § in front of sexpr starting with a litteral vec or map
+          and will handle object oriented syntax (sexpr starting with a keyword) like the janet language do"
+         (f [x]
+            (cp x
+                seq?
+                (cs [x1 (car x)
+                     ? (or (vec? x1) (map? x1))]
+                    (cons '§ ($ x rec))
+                    [? (key? (car x))
+                     [x1 x2 & _xs] x
+                     x2 (rec x2)]
+                    (lst* '(or (c/get ~x2 ~x1)
+                               (error "object:\n" ~x2 "\nhas no " ~x1 " implementation"))
+                          x2 (when _xs ($ _xs rec)))
+                    ($ x rec))
+                coll?
+                ($ x rec)
+                x))])
+
+    ;; we keep a copy of the actual cxp function
+    (E+ composite.cxp-old composite.cxp)
+
+    ;; we overide it with one that do the same plus implicit-invoc stuff
+    (E+ composite.cxp
+        (f [e x] (composite.cxp-old e (implicit-invoc x))))
+
+    (!! (cxp @E '(f [a] (:iop a))))
+
+    (exp @E '(f [a b c] (:op a b (:top c))))
+
+    (bubfind @E (path 'cxp))
+
+    (let [o1 {:greet (f [x . [y]] (println "hello" y))}]
+      (:greet o1 "you")
+      (:bark o1 "you"))
+
+    (let [(:coll a) [1 2]] (pp a) ([add sub] [1 2 3] [1 2 3] [1 2 3]))
+
+
+    )

@@ -8,12 +8,10 @@
 
 (def debug (atom nil))
 
-(defmacro use! []
-  `(~'ns ~(symbol (str *ns*))
-     (:refer-clojure :exclude ~'[assert not-empty empty or cat])
-     (:use mad.boot.prelude)))
-
 (do :aliases
+
+    "some really commonly used functions, with shorter names"
+
     (def p partial)
     (def apl apply)
     (def p* (p p apl))
@@ -711,3 +709,13 @@
        (aze/add 1)
 
        (pp *ns*)))
+
+(do :xp
+
+    (defmacro use!
+      "the purpose of this is to be able to 'use' this ns without do the :refer-clojure :exclude boilerplate
+       but this does not works :)"
+      []
+      `(~'ns ~(symbol (str *ns*))
+        (:refer-clojure :exclude ~'[assert not-empty empty or cat])
+        (:use mad.boot.prelude))))

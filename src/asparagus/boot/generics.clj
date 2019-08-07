@@ -236,7 +236,7 @@
       [tag & impls]
       `(do ~@(map #(implement tag %) impls))))
 
-(do :tests
+(_ :tests
 
   #_(pp (@reg '+))
   (generic g1 [x]

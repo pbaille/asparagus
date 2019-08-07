@@ -7,6 +7,8 @@
 ;; the need for this comes from asparagus.boot.generics
 ;; which is a collection of tools to define generic functions
 
+;; for a quick introduction by examples, see the tutorial section at the end of this file
+
 (defn- cmap [& xs]
   ($vals (apply hash-map xs)
          vector))
@@ -163,8 +165,6 @@
 (p/asserts
   (parents @reg :vec)
   (childs :coll))
-
-{}
 
 ;; type preds -----------------------------------------
 
