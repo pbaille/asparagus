@@ -1371,13 +1371,18 @@
                       ($keys pat rec))
                   pat))]
 
+           gensym?
+           (c/fn [x]
+             (and (symbol? x)
+                  (re-matches #"^.*_[0-9]+#*$" (name x))))
+
            pat->submap
            ["turn a clojure binding pattern into a substitution map
              from symbol to uniq symbol"
             (c/fn [pat]
               (c/let [syms (shrink- (p/findeep pat symbol?) (p = '&))]
                 (->> (set syms)
-                     (c/map (fn [s] [s (gensym (sym s '_))]))
+                     (c/map (fn [s] [s (if (gensym? s) s (gensym (sym s '_)))]))
                      (into {}))))]
 
            ;;main
@@ -1902,6 +1907,7 @@
          {:val
           (fn [e n body]
             #_(g/generic-spec n body)
+            #_(println "generic-spec " body)
             (.exp-cases e (g/generic-spec n body)))
 
           exp-case
@@ -1936,6 +1942,7 @@
           (fn [e [type & body]]
             ($ (c/vec body)
                (fn [[n & xs]]
+                 #_(pp :gentyp+ xs (g/impl-body->cases type xs))
                  (lst* (p/sym n ".extend")
                        (g/impl-body->cases type xs)))))}
 
@@ -3516,6 +3523,7 @@
 
         (_ :tries
 
+           (!! (invocation.inspect))
            (qbench (!! (§ {:a add :b sub} {:a 2 :b 1 :c 56} {:a 3 :b 5})))
            (qbench (!! (§ [add sub add] [1 2 3] [1 2 3] [1 2 3])))
            (qbench (!! (c/mapv (fn [f args] (apl f args))
@@ -4543,83 +4551,113 @@
 
       ))
 
-(_ :type+
+(E+ type+
+    ["an update to declare a new type"
 
-   (E+ type+
-       ["an update to declare a new type"
+     :upd
+     (f [e [name fields . impls]]
 
-        :upd
-        (f [e [name fields . impls]]
+        (let [name-sym (sym name)
+              class-sym (sym name "_USERTYPE")]
 
-           (let [name-sym (sym name)
-                 class-sym (sym name "_USERTYPE")]
+          ;;TODO
 
-             ;;TODO
+          ;; I would like to be able to put the following form in the update function return
+          ;; but it needs to be executed before the generic.type+ update is processed
+          ;; 'vectors returned by an update function' treatment is not lazy enough (in the sense that it process all contained update-expression at the same time)
 
-             ;; I would like to be able to put the following form in the update function return
-             ;; but it needs to be executed before the generic.type+ update is processed
-             ;; 'vectors returned by an update function' treatment is not lazy enough (in the sense that it process all contained update-expression at the same time)
+          ;; idealy if an update function returns something like: [form1 form2 ...]
+          ;; the behavior should be similar to (E+ form1 form2 ...)
+          ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
 
-             ;; idealy if an update function returns something like: [form1 form2 ...]
-             ;; the behavior should be similar to (E+ form1 form2 ...)
-             ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
+          (println "impls " impls)
+          (println "emited " '(generic.type+ ~name (type [x] ~name ~name) .~impls))
 
-             (c/eval
-              `(do (defrecord ~class-sym ~fields)
-                   (t/prim+ ~name [~class-sym] [:usertypes])))
+          (c/eval
+           `(do (defrecord ~class-sym ~fields)
+                (t/prim+ ~name [~class-sym] [:usertypes])))
 
-             [;; constructors (positional and from hashmap)
-              name-sym '(f ~fields (~(sym "->" class-sym) .~fields))
-              (sym "map->" name-sym) '(f_ (~(sym "map->" class-sym) _))
+          [;; constructors (positional and from hashmap)
+           name-sym '(f ~fields (~(sym "->" class-sym) .~fields))
+           (sym "map->" name-sym) '(f_ (~(sym "map->" class-sym) _))
+           (sym name-sym "?") '(f_ (instance? ~class-sym _))
 
-              ;; generic implementations
-              '(generic.type+ ~name (type [x] ~name ~name) .~impls)
+           ;; generic implementations
+           '(generic.type+ ~name (type [x] ~name ~name) .~impls)
 
-              ]))
+           ]))
 
-        :demo
-        '(do
+     :demo
+     '(do
 
-           ;; definition
-           (E+ (type+ :fut [bar baz]
-                      (+ [a b]
-                         (!let [(:fut b) b]
-                               (fut (+ (:bar a) (:bar b))
-                                    (+ (:baz a) (:baz b)))))))
+        ;; definition
+        (E+ (type+ :fut [bar baz]
+                   (+ [a b]
+                      (!let [(:fut b) b]
+                            (fut (+ (:bar a) (:bar b))
+                                 (+ (:baz a) (:baz b)))))))
 
-           ;; instantiation
-           (!! (fut 1 2))
-           (!! (map->fut {:bar 1 :baz 2}))
+        (E+ (type+ :fut [bar baz]
+                   (+ [(ks bar baz) (& {:bar !barb :baz bazb} (:fut b) )]
+                      (do (pp "here")
+                          (fut (+ bar !barb)
+                               (+ baz bazb))))))
 
-           ;; type
-           (!! (type (fut 1 2))) ;=> :fut
+        (!! (+.inspect))
 
-           ;; using generic implmentations
-           (!! (+ (fut 1 2) (fut 1 2))))])
+        ;; instantiation
+        (!! (fut 1 2))
+        (!! (fut? (fut 1 2)))
+        (!! (map->fut {:bar 1 :baz 2}))
 
-   )
+        ;; type
+        (!! (type (fut 1 2))) ;=> :fut
 
-(do :generic-implementations-binding-patterns
+        ;; using generic implmentations
+        (!! (+ (fut 1 2) (fut 1 2) )))])
 
-  (E+ generic.spec.exp-case
-      (f [e [argv . body]]
-         (nth (exp e '(f ~argv .~body)) 2)))
 
-  (E+ mygen
-      (generic [a (:coll b)]
-               :vec (+ a b)))
+(E+ generic.spec.exp-case
+    (f [e [argv . body]]
+       (let [syms (vec* (take (gensyms) (count argv)))
+             binding-form (vec* (braid argv syms))]
+         #_(pp binding-form)
+         (lst+* [syms]
+                ($ (chunk body 2)
+                   (f1 [t impl]
+                       [t (exp e '(let ~binding-form ~impl))]))))))
 
-  (!! (mygen.inspect))
+(_ :generic-implementations-binding-patterns
 
-  (exp @E '(let [(:coll a) [1 2]] a))
+   (E+ mygen
+       (generic [a (:coll b)]
+                :vec (+ a b)))
 
-  (exp @E '(let [(:pouet a) [1 2]] a)))
+   (!! (mygen.inspect))
+
+   (exp @E '(let [(:coll a) [1 2]] a))
+
+   (exp @E '(let [(:pouet a) [1 2]] a))
+
+   (!! (generic.type+:upd @E (quot [:fut (mygen [x y] (pp 'iop) x)])))
+   (E+ (generic.type+ :fut (mygen [x y] (pp 'iop) x)))
+   (!! (mygen (fut 1 2) [])))
+
+
+
+
 
 (do :verb-litterals
 
     (E+ implicit-invoc
         ["this compilation step will insert § in front of sexpr starting with a litteral vec or map
           and will handle object oriented syntax (sexpr starting with a keyword) like the janet language do"
+
+         method-not-found
+         (f [o k]
+            (error "object:\n" o "\nhas no "
+                   k " implementation"))
+
          (f [x]
             (cp x
                 seq?
@@ -4630,7 +4668,7 @@
                      [x1 x2 & _xs] x
                      x2 (rec x2)]
                     (lst* '(or (c/get ~x2 ~x1)
-                               (error "object:\n" ~x2 "\nhas no " ~x1 " implementation"))
+                               (.method-not-found ~x2 ~x1))
                           x2 (when _xs ($ _xs rec)))
                     ($ x rec))
                 coll?
@@ -4658,3 +4696,26 @@
 
 
     )
+
+(_
+
+ (E+ generic.spec
+        (fn [e n body]
+          #_(g/generic-spec n body)
+          (pp "generic-spec " body
+              (.exp-cases e (g/generic-spec n body)))
+          (.exp-cases e (g/generic-spec n body))))
+
+   (E+ generic.type+:upd
+       (fn [e [type & body]]
+         ($ (c/vec body)
+            (fn [[n & xs]]
+              (pp "generic.type+-inner " n xs (g/impl-body->cases type xs)
+                  (lst* (p/sym n ".extend")
+                        (g/impl-body->cases type xs)))
+              (lst* (p/sym n ".extend")
+                    (g/impl-body->cases type xs))))))
+
+   (E+ (generic.type+ :key (pure [x] "pouet")))
+   (E+ (pure.extend [x] :key "puet" :num (c/zero? x)))
+   (!! (pure.inspect)))

@@ -223,10 +223,15 @@
     ;; extend-type
 
     (defn impl-body->cases
-      [tag [x1 x2 :as xs]]
-      (if (vector? x1)
-        [(list x1 tag x2)]
-        (map (fn [[argv expr]] (list argv tag expr)) xs)))
+      [tag [x1 & xs :as all]]
+      (let [bodify (fn [[b1 & bs]]
+                     (if-not bs b1
+                             (list* 'do b1 bs)))]
+        (if (vector? x1)
+          [(list x1 tag (bodify xs))]
+          (map (fn [[argv & bs]]
+                 (list argv tag (bodify bs)))
+               all))))
 
     (defn implement [tag [name & body]]
       `(generic+ ~name ~@(impl-body->cases tag body)))
@@ -236,7 +241,7 @@
       [tag & impls]
       `(do ~@(map #(implement tag %) impls))))
 
-(_ :tests
+(do :tests
 
   #_(pp (@reg '+))
   (generic g1 [x]
