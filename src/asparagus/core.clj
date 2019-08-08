@@ -1247,88 +1247,88 @@
 
     (_ :upd-tries
        ;; nested vec upd test
-        (E+ iop [v:val [1 2 3] i 1 o {p 1 q [:doc "iop" pop 42]}])
-        ;; vec at mpath are normal vec values
-        (!! iop.v)
-        ;; nested vec updates works
-        (!! iop.o.q:doc)
+       (E+ iop [v:val [1 2 3] i 1 o {p 1 q [:doc "iop" pop 42]}])
+       ;; vec at mpath are normal vec values
+       (!! iop.v)
+       ;; nested vec updates works
+       (!! iop.o.q:doc)
 
-        ;; dual mac and upd test
-        (E+ um
-            {:mac (fn [e xs] (exp e (lst* 'add xs)))
-             :upd (fn [e xs] {:um (lst* 'um xs)})
-             })
+       ;; dual mac and upd test
+       (E+ um
+           {:mac (fn [e xs] (exp e (lst* 'add xs)))
+            :upd (fn [e xs] {:um (lst* 'um xs)})
+            })
 
-        (E+ iop (um 1 2 3))
-        (!! iop:um)
+       (E+ iop (um 1 2 3))
+       (!! iop:um)
 
-        ;; an upd does not occur at mpath
-        (E+ iop:val (um 1 2 3))
-        (!! iop)
+       ;; an upd does not occur at mpath
+       (E+ iop:val (um 1 2 3))
+       (!! iop)
 
-        (E+ cq:mac
-            (fn [e [x]]
-              #_(pp (env-simple-quotf e x))
-              (exp e (env-simple-quotf e (composite.compile-quote x)))))
+       (E+ cq:mac
+           (fn [e [x]]
+             #_(pp (env-simple-quotf e x))
+             (exp e (env-simple-quotf e (composite.compile-quote x)))))
 
-        #_(call* '(+ 1 2))
-        #_(!! (let [x 1] (cq (~x . xs))))
-        #_(!! (cxp @E '(cq (a ~. as))))
+       #_(call* '(+ 1 2))
+       #_(!! (let [x 1] (cq (~x . xs))))
+       #_(!! (cxp @E '(cq (a ~. as))))
 
-        ;; define an upd and use it in the same block
-        (E+ 
-         yupd:upd (c/fn [_ xs] {'pouet (vec xs)})
-         baba (yupd 1 2 3)
-         )
-
-        (_ :error
-           (rEset!)
-           (env-upds
-            @E '[op [yupd:upd (fn [_ xs] {'pouet:val (vec xs)})
-                     baba (op.yupd 1 2 3)]])
-
-           (E+ op [yupd:upd (fn [_ xs] {'pouet (vec xs)})
-                   baba (op.yupd 1 2 3)]))
-
-        ;; for macros it works as intended
-        (E+ post [fix:mac (fn [_ xs] (reverse xs))
-                  n (post.fix 1 2 3 +)])
-        (!! post.n)
-
-        ;; lambda upd
-        (E+ l2 (fn lamb1
-                 "lamb1 doc"
-                 {:some :meta
-                  :demo (fn [] (eq 1 (l2 3 1)))}
-                 ([x] x)
-                 ([x y] (lamb1 y))))
-
-        (!! (l2:demo))
-
-        ;; links test
-        (E+ a.boo [{:doc "ab doc"} (fn [] 'b) c 1]
-            :links {boo a.boo})
-
-        (into {} @E)
-
-        (!! a.boo:doc)
-        (!! boo:doc)
-
-        (swap! E assoc-in [:members :links '_] root-path)
-
-        (E+ a 1
-            b {a 2 p (add _.a a)})
-
-        (!! b.p)
-
-        (E+ documented-id
-            ["my id function"
-             (fn [x] x)])
-
-        (!! (documented-id 1))
-        (!! documented-id:doc)
-
+       ;; define an upd and use it in the same block
+       (E+ 
+        yupd:upd (c/fn [_ xs] {'pouet (vec xs)})
+        baba (yupd 1 2 3)
         )
+
+       (_ :error
+          (rEset!)
+          (env-upds
+           @E '[op [yupd:upd (fn [_ xs] {'pouet:val (vec xs)})
+                    baba (op.yupd 1 2 3)]])
+
+          (E+ op [yupd:upd (fn [_ xs] {'pouet (vec xs)})
+                  baba (op.yupd 1 2 3)]))
+
+       ;; for macros it works as intended
+       (E+ post [fix:mac (fn [_ xs] (reverse xs))
+                 n (post.fix 1 2 3 +)])
+       (!! post.n)
+
+       ;; lambda upd
+       (E+ l2 (fn lamb1
+                "lamb1 doc"
+                {:some :meta
+                 :demo (fn [] (eq 1 (l2 3 1)))}
+                ([x] x)
+                ([x y] (lamb1 y))))
+
+       (!! (l2:demo))
+
+       ;; links test
+       (E+ a.boo [{:doc "ab doc"} (fn [] 'b) c 1]
+           :links {boo a.boo})
+
+       (into {} @E)
+
+       (!! a.boo:doc)
+       (!! boo:doc)
+
+       (swap! E assoc-in [:members :links '_] root-path)
+
+       (E+ a 1
+           b {a 2 p (add _.a a)})
+
+       (!! b.p)
+
+       (E+ documented-id
+           ["my id function"
+            (fn [x] x)])
+
+       (!! (documented-id 1))
+       (!! documented-id:doc)
+
+       )
 
     (rEset!)
 
@@ -1357,7 +1357,7 @@
 
          hygiene
          {shadow
-          [;; helpers
+          [ ;; helpers
            expand-keys-pattern
            ["transform the clojure :keys syntax into regular map pattern
              because all symbol will be made uniq and it will no longer work as is"
@@ -1374,7 +1374,7 @@
            gensym?
            (c/fn [x]
              (and (symbol? x)
-                  (re-matches #"^.*_[0-9]+#*$" (name x))))
+                  (re-matches #"^.*_+[0-9]+#*$" (name x))))
 
            pat->submap
            ["turn a clojure binding pattern into a substitution map
@@ -1382,7 +1382,8 @@
             (c/fn [pat]
               (c/let [syms (shrink- (p/findeep pat symbol?) (p = '&))]
                 (->> (set syms)
-                     (c/map (fn [s] [s (if (gensym? s) s (gensym (sym s '_)))]))
+                     (c/map (fn [s] [s #_(gensym (sym s '_))
+                                    (if (gensym? s) s (gensym (sym s '_)))]))
                      (into {}))))]
 
            ;;main
@@ -1498,6 +1499,11 @@
            ["try to collapse cs emitted form into a more compact one
              grouping let levels when possible and substituting instead of binding sym to sym"
 
+            substitutable-sym?
+            (fn [x]
+              (and (sym? x)
+                   (not (p/generated-binding-sym? x))))
+
             let-expr?
             (fn [x]
               (when (and (seq? x) (= `let (car x)))
@@ -1515,7 +1521,7 @@
             substitute
             (fn [e x]
               (cs [[_ [b1 b2] expr] (let-expr? x)
-                   ? (and (sym? b1) (sym? b2))]
+                   ? (and (substitutable-sym? b1) (substitutable-sym? b2))]
                   (rec e (exp (env.add-sub e [b1 b2]) expr))
 
                   (seq? x)
@@ -1533,7 +1539,7 @@
               (optimize e (lst `first (form xs))))
 
             :tries
-            '(do (exp @E '(cs [[x & _xs] y] y :nop)) 
+            '(do (exp @E '(cs [[x & _xs] 1] 1 :nop)) 
                  )]]]
 
          :links {fn primitives.fn
@@ -1551,7 +1557,7 @@
                  "\n"
                  (exp e xs)))))
 
-    #_(do :strict-qualify
+    (do :strict-qualify
 
         "redefine qualify in a strict way, it will throw on unqualifiable symbols
          excepting gensyms and some unavoidable ones like 'do 'if etc... (listed in #'unqualified-symbols)"
@@ -1680,36 +1686,36 @@
            handles unquoting, does not quote dots,
            qualifies symbols if possible"
 
-          wrap
-          (fn [x] (list (symbol "quote") x))
-          rootsym
-          (fn [p] (path->sym (path (symbol "_") p)))
+            wrap
+            (fn [x] (list (symbol "quote") x))
+            rootsym
+            (fn [p] (path->sym (path (symbol "_") p)))
 
-          (fn
-            [e form]
-            (cp form
-                dot? dot
-                dotdot? dotdot
-                unquote? (exp e (second form))
-                seq? (cons `list ($ form (p quotf e)))
-                holycoll? ($ form (p quotf e))
-                symbol?
-                (cs [p (path form)
-                     [p _] (bubfind e p)]
-                    (.wrap (.rootsym p))
-                    (.wrap form))
-                (.wrap form)))]
+            (fn
+              [e form]
+              (cp form
+                  dot? dot
+                  dotdot? dotdot
+                  unquote? (exp e (second form))
+                  seq? (cons `list ($ form (p quotf e)))
+                  holycoll? ($ form (p quotf e))
+                  symbol?
+                  (cs [p (path form)
+                       [p _] (bubfind e p)]
+                      (.wrap (.rootsym p))
+                      (.wrap form))
+                  (.wrap form)))]
 
          ;; quote:mac
          #_(fn [e [x]]
-           (expand (quotf e x)))
+             (expand (quotf e x)))
 
          cxp
          ["a version of exp that handle composite datastrctures"
           (fn [e x]
             (expand (exp e x)))]]
 
-        :links {;; quote composite.quote
+        :links { ;; quote composite.quote
                 cxp composite.cxp})
 
     (E+ quote
@@ -1799,9 +1805,6 @@
 
         )
 
-    #_(E+ num!:mac (fn [e [x]] (when-not (number? x) (error "no num")) x)
-        testsum (fn [a] (add 1 2 3 (add 6 7 (num! a)))))
-
     (init-top-forms check)
 
     (E+ import
@@ -1863,9 +1866,6 @@
             (E+ (import foot :all))
             (!! (add foota footb footc.n)))})
 
-    #_(ppenv import.build-upd.prefix-members)
-    #_(error "_")
-
     (E+ generic
         {:doc
          "an update to define a generic function
@@ -1925,8 +1925,8 @@
 
          #_init
          #_(fn [e n body]
-           (g/declaration-form
-            (..spec e n body)))
+             (g/declaration-form
+              (..spec e n body)))
 
          init:mac
          (fn [e [n body]]
@@ -2645,9 +2645,6 @@
 
         (import testing [assert throws tests eq!]))
 
-    #_(exp @E '(assert (not nil) (str "iop")))
-    #_(!! (assert nil (str "iop")))
-
     (E+ bindings
         {:val
          (fn [xs]
@@ -2759,7 +2756,7 @@
                           '(or (eq (type ~s) ~v)
                                (t/>= ~v (type ~s))))]
                      [s (lst* v y args)]
-                     ;(bind s (lst* v y args))
+                                        ;(bind s (lst* v y args))
                      )
                  (error "guard binding takes a symbol as first argument"
                         (lst* v s args))))
@@ -3128,7 +3125,6 @@
         (import bindings.let.builtins
                 [clet clut !clet !clut])
         )
-    #_(error "after bindings")
 
     (E+ lambda
         {:links {cp composite}
@@ -3197,11 +3193,11 @@
                       fixed-arity (vec* seeds)
                       :else ['& fs])]
 
-             (cxp e
-                  (lst 'primitives.fn . (if name [name] [])
-                       binding-form
-                       (lst (binding-verb opts) bs body)))
-             ))
+               (cxp e
+                    (lst 'primitives.fn . (if name [name] [])
+                         binding-form
+                         (lst (binding-verb opts) bs body)))
+               ))
 
          compiler
          (fn [& flags]
@@ -3248,54 +3244,54 @@
                             (interleave ($ xs #(:pat %)) (repeat "\n")))))]
 
            (fn [[fst & nxt :as form]]
-            #_(pp "cased-lambda-parse" form)
-            (let [[name . cases]
-                  (if (word? fst)
-                    (cons fst nxt)
-                    (concat [nil fst] nxt))
+             #_(pp "cased-lambda-parse" form)
+             (let [[name . cases]
+                   (if (word? fst)
+                     (cons fst nxt)
+                     (concat [nil fst] nxt))
 
-                  cases
-                  (partition 2 cases)
+                   cases
+                   (partition 2 cases)
 
-                  parsed-cases
-                  ($ cases parse.case)
+                   parsed-cases
+                   ($ cases parse.case)
 
-                  variadic-cases (seq (filter :variadic parsed-cases))
-                  variadic (boolean variadic-cases)
-                  monadic (and (not variadic) (apl c/= ($ cases (comp count car))))
-                  polyadic (not monadic)
+                   variadic-cases (seq (filter :variadic parsed-cases))
+                   variadic (boolean variadic-cases)
+                   monadic (and (not variadic) (apl c/= ($ cases (comp count car))))
+                   polyadic (not monadic)
 
-                  arities
-                  (reduce
-                   (fn [r {:keys [arity min-arity] :as c}]
-                     (if arity
-                       (update r arity (fnil conj []) c)
-                       (update r :& (fnil conj []) c)))
-                   {} parsed-cases)]
+                   arities
+                   (reduce
+                    (fn [r {:keys [arity min-arity] :as c}]
+                      (if arity
+                        (update r arity (fnil conj []) c)
+                        (update r :& (fnil conj []) c)))
+                    {} parsed-cases)]
 
 
-              (when variadic
-                (parse.check-variadic-sigs (:& arities)))
+               (when variadic
+                 (parse.check-variadic-sigs (:& arities)))
 
-              {:name name
-               :monadic monadic
-               :variadic variadic
-               :polyadic polyadic
-               :arity-map arities
-               :cases cases}))]
+               {:name name
+                :monadic monadic
+                :variadic variadic
+                :polyadic polyadic
+                :arity-map arities
+                :cases cases}))]
 
           compile
           {:val
            (fn [e {:as opts :keys [arity-map name]}]
              (exp e '(fn .~(when name [name])
-                        .~($ (iter arity-map) (p .arity opts)))))
+                       .~($ (iter arity-map) (p .arity opts)))))
            arity
            {:val
             (fn [opts [n cases]]
               (let [verb (verb opts cases)]
                 (if (num? n)
-                 (.fixed verb n cases)
-                 (.variadic verb cases))))
+                  (.fixed verb n cases)
+                  (.variadic verb cases))))
 
             verb
             (fn [{:keys [unified short strict]} cases]
@@ -3343,29 +3339,29 @@
           }
 
          builtins
-        [f:mac (compiler)
-         !f:mac  (compiler :strict)
-         ?f:mac  (compiler :short)
-         !fu:mac (compiler :unified :strict)
-         fu:mac  (compiler :unified :short)
+         [f:mac (compiler)
+          !f:mac  (compiler :strict)
+          ?f:mac  (compiler :short)
+          !fu:mac (compiler :unified :strict)
+          fu:mac  (compiler :unified :short)
 
-         f1:mac   (compiler :unary)
-         !f1:mac  (compiler :unary :strict)
-         ?f1:mac  (compiler :unary :short)
-         !fu1:mac (compiler :unary :unified :strict)
-         fu1:mac  (compiler :unary :unified :short)
+          f1:mac   (compiler :unary)
+          !f1:mac  (compiler :unary :strict)
+          ?f1:mac  (compiler :unary :short)
+          !fu1:mac (compiler :unary :unified :strict)
+          fu1:mac  (compiler :unary :unified :short)
 
-         f_:mac   (f [e xs] (cxp e (lst* 'f1 '_ xs)))
-         ?f_:mac  (f [e xs] (cxp e (lst* '?f1 '_ xs)))
-         !f_:mac  (f [e xs] (cxp e (lst* '!f1 '_ xs)))
-         !fu_:mac (f [e xs] (cxp e (lst* '!fu1 '_ xs)))
-         fu_:mac  (f [e xs] (cxp e (lst* 'fu1 '_ xs)))
+          f_:mac   (f [e xs] (cxp e (lst* 'f1 '_ xs)))
+          ?f_:mac  (f [e xs] (cxp e (lst* '?f1 '_ xs)))
+          !f_:mac  (f [e xs] (cxp e (lst* '!f1 '_ xs)))
+          !fu_:mac (f [e xs] (cxp e (lst* '!fu1 '_ xs)))
+          fu_:mac  (f [e xs] (cxp e (lst* 'fu1 '_ xs)))
 
-         cf:mac   (cased.compiler)
-         !cf:mac  (cased.compiler :strict)
-         ?cf:mac  (cased.compiler :short)
-         cfu:mac  (cased.compiler :unified)
-         !cfu:mac (cased.compiler :unified :strict)]}
+          cf:mac   (cased.compiler)
+          !cf:mac  (cased.compiler :strict)
+          ?cf:mac  (cased.compiler :short)
+          cfu:mac  (cased.compiler :unified)
+          !cfu:mac (cased.compiler :unified :strict)]}
 
         (import lambda.builtins :all)
 
@@ -3379,17 +3375,6 @@
                          :name (:name opts)}))
                 (cxp e ($ (:bs opts) second)))))
 
-    #_( 1 2)
-    #_(exp @E '(cf :io [a] 1 [a b] 2 [(:num a) b c . xs] :var1 [a b . d] :var2))
-    #_(exp @E '(cf :io [a] 1 [(:num a) b] 2 [(:str a) b] 3))
-    #_(exp @E '(primitives.let [s size ret [['a 'd]]]
-                                (if (eq 1 s)
-                                  (* + (cdr ret))
-                                  (recur (dec s)
-                                         (sip ret
-                                              ($+ (last ret)
-                                                  #($ ['a 'd] (p + %))))))))
-
     (do :guard-macro
         (E+ guard:mac
             (f [e (& form [argv . _])]
@@ -3402,8 +3387,11 @@
         #_(check ((guard:fn c/>) 2 1 0)
                  ((guard [x y] (c/> x y)) 3 2)))
 
-    (E+ df
-        {:mac
+    #_(E+ df
+        {:doc
+         "not sure it is needed, the semantics are the same as datastructure invocation"
+
+         :mac
          (f [e [x]]
             (let [all (.walk x (f1 y (lst y (gensym))))
                   pat (.walk all second)
@@ -3418,7 +3406,7 @@
                 dot? x
                 (g x)))})
 
-    (do :invocation-application-mapping-walking
+    (do :invoc-apply-map-walk
 
         (E+
 
@@ -3495,8 +3483,8 @@
          (f
           [x ? f]
           (cs [nxt (? x)]
-            ($ nxt #(walk? % ? f))
-            (f x))))
+              ($ nxt #(walk? % ? f))
+              (f x))))
 
         (_ :tries 
            (!! ($+.inspect))
@@ -3671,6 +3659,57 @@
              (braid [1 2 3] [4 5])))
 
         )
+
+    (E+ df
+        ["data function,
+          create a function from a data structure that
+          apply all functions contained in it (deeply) to further args.
+          preserve original structure"
+
+         (f1 data
+             (f xs
+                (walk? data
+                       (f1 y (or (vec? y) (map? y)))
+                       (f1 leaf (* leaf xs)))))
+
+         :demo
+         '(do
+            ;; you can use vectors and maps to compose the resulting function
+            (!! (df [inc dec])) ;; <fn>
+
+            ;; invoc it
+            (let [f (df [inc dec])]
+              (f 1)) ;;=> [2 0]
+
+            ;; is equivalent to write
+            ((f1 a [(inc a) (dec a)]) 1)
+
+            ;; you can deeply mix maps and vecs to compose your function
+            (let [f (df {:addsub [add sub]
+                         :average (f xs (div (add . xs) (count xs)))})]
+              (f 1 2 3))
+            ;;=> {:addsub [6 -4], :average 2}
+
+            ;; any invocable can serve as a leaf
+            ;; don't know if you remember, but in asparagus almost everything is invocable,
+            ;; in particular constant values like 42 or :foo return themselves
+            ;; to demonstrate that df can handle any invocable we will use some of those
+            (let [f (df [inc dec :foo 42])]
+              (f 1)) ;;=> [2 0 :foo 42]
+
+            ;; can take several arguments
+            (let [f (df [add sub])] (f 1 2 3)) ;;=> [6 -4]
+
+            ;; maybe you are wondering about our vec and map invocation behavior
+            ;; this is prevented here because vecs and maps mean something else in this context
+            ;; but you can use the § function to state that a leaf that is a map or a vec has to be treated as an invocable
+            (let [f (df [concat
+                         (§ [add sub mul]) ;; here
+                         ])]
+              (f [1 2 3] [4 5 6]))
+            ;;=> [(1 2 3 4 5 6) [5 -3 18]]
+
+            )])
 
     (do :compare
 
@@ -4039,7 +4078,7 @@
                2))
           )))
 
-    (do :mlet
+    (do :mlet-mac-at
 
         (E+ mlet
             ["let you bind a local macros"
@@ -4079,7 +4118,7 @@
         (_ :tries
            (exp @E '(mac [p f t] (lst 'if p t f)))
            (E+ fi:mac (mac [p f t] (lst 'if p t f)))
-           (exp @E '(fi yop (lut [a 1 a 2] :pouet) (fn& [] (add ...)))))
+           (exp @E '(fi true (lut [a 1 a 2] :pouet) (fn& [] (add ...)))))
 
         (E+ at
             ["like dive but with arguments reversed"
@@ -4094,9 +4133,9 @@
            (!! ((at_ (ks :a :b)) {:a 1 :b 2 :c 2}))))
 
     #_(expand @E (qualify @E '(fn [verb symseed xs]
-                       (if (even? (count xs))
-                         (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
-                         (rec verb symseed [.(butlast xs) (quot _) (last xs)])))))
+                                (if (even? (count xs))
+                                  (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
+                                  (rec verb symseed [.(butlast xs) (quot _) (last xs)])))))
 
     (E+ bindings.case
         ["the case form and its variants casu, !case, and !casu"
@@ -4183,62 +4222,222 @@
           ]))
 
     #_(E+ move-members
-        {:doc
-         "a couple of updates for moving (aliasing is more accurate) members from path to path
+          {:doc
+           "a couple of updates for moving (aliasing is more accurate) members from path to path
               It is mainly used in order to being able to define related functions in a module
               which is handy to put documentation tests exemples and helpers
               then make them available elsewhere (most commonly top level)"
 
-         :usage
-         '[(move-members target-path [mod1.foo mod2.bar])
-           (move-members base-path target-path [m1 m2 m3])
-           "if target-path is nil, root-path is used"]
+           :usage
+           '[(move-members target-path [mod1.foo mod2.bar])
+             (move-members base-path target-path [m1 m2 m3])
+             "if target-path is nil, root-path is used"]
 
-         ;; helpers
+           ;; helpers
 
-         path-head
-         (fn [p]
-           (let [mk (.mkey p)
-                 ps (path-segments (ppath p))]
-             (path (last ps) mk)))
+           path-head
+           (fn [p]
+             (let [mk (.mkey p)
+                   ps (path-segments (ppath p))]
+               (path (last ps) mk)))
 
-         switch-prefix
-         (fn [pref p]
-           (let [head (path-head p)]
-             (or (path pref head) head)))
+           switch-prefix
+           (fn [pref p]
+             (let [head (path-head p)]
+               (or (path pref head) head)))
 
-         build-upd
-         (fn ([target-path xs]
-             (let [xs ($ xs path)
-                   ks ($ xs (p switch-prefix target-path))]
-               (zipmap ($ ks path->sym)
-                       ($ xs path->sym))))
-           ([base-path target-path xs]
-            (build-upd target-path
-                       ($ xs (p path base-path)))))
+           build-upd
+           (fn ([target-path xs]
+               (let [xs ($ xs path)
+                     ks ($ xs (p switch-prefix target-path))]
+                 (zipmap ($ ks path->sym)
+                         ($ xs path->sym))))
+             ([base-path target-path xs]
+              (build-upd target-path
+                         ($ xs (p path base-path)))))
 
-         ;; update
+           ;; update
+
+           :upd
+           (fn [_ xs]
+             (apl build-upd xs))
+
+           to-root:upd
+           (fn [_ [a b]]
+             (if-not b
+               (build-upd nil a)
+               (build-upd a nil b)))
+
+           :tries
+           '(do
+
+              (E+ ffoo.bar {a 1 b 2}
+                  (move-members nil [ffoo.bar.a ffoo.bar.b]))
+
+              (E+ ggoo.bar {a :ggoobara b :ggoobarb}
+                  (move-members ggoo.bar nil [a b]))
+
+              (!! a))})
+
+    ;; redefine generic case expansion to follow the asparagus binding syntax
+    (E+ generic.spec.exp-case
+        (f [e [argv . body]]
+           (let [syms (vec* (take (gensyms) (count argv)))
+                 binding-form (vec* (braid argv syms))]
+             #_(pp binding-form)
+             (lst+* [syms]
+                    ($ (chunk body 2)
+                       (f1 [t impl]
+                           [t (exp e '(let ~binding-form ~impl))]))))))
+
+    (E+ type+
+        ["an update to declare a new type"
 
          :upd
-         (fn [_ xs]
-           (apl build-upd xs))
+         (f [e [name fields . impls]]
 
-         to-root:upd
-         (fn [_ [a b]]
-           (if-not b
-             (build-upd nil a)
-             (build-upd a nil b)))
+            (let [name-sym (sym name)
+                  class-sym (sym name "_USERTYPE")]
 
-         :tries
+              ;;TODO
+
+              ;; I would like to be able to put the following form in the update function return
+              ;; but it needs to be executed before the generic.type+ update is processed
+              ;; 'vectors returned by an update function' treatment is not lazy enough (in the sense that it process all contained update-expression at the same time)
+
+              ;; idealy if an update function returns something like: [form1 form2 ...]
+              ;; the behavior should be similar to (E+ form1 form2 ...)
+              ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
+
+              (println "impls " impls)
+              (println "emited " '(generic.type+ ~name (type [x] ~name ~name) .~impls))
+
+              (c/eval
+               `(do (defrecord ~class-sym ~fields)
+                    (t/prim+ ~name [~class-sym] [:usertypes])))
+
+              [ ;; constructors (positional and from hashmap)
+               name-sym '(f ~fields (~(sym "->" class-sym) .~fields))
+               (sym "map->" name-sym) '(f_ (~(sym "map->" class-sym) _))
+               (sym name-sym "?") '(f_ (instance? ~class-sym _))
+
+               ;; generic implementations
+               '(generic.type+ ~name (type [x] ~name ~name) .~impls)
+
+               ]))
+
+         :demo
          '(do
 
-            (E+ ffoo.bar {a 1 b 2}
-                (move-members nil [ffoo.bar.a ffoo.bar.b]))
+            ;; definition
+            (E+ (type+ :fut [bar baz]
+                       (+ [a b]
+                          (!let [(:fut b) b]
+                                (fut (+ (:bar a) (:bar b))
+                                     (+ (:baz a) (:baz b)))))))
 
-            (E+ ggoo.bar {a :ggoobara b :ggoobarb}
-                (move-members ggoo.bar nil [a b]))
+            (E+ (type+ :fut [bar baz]
+                       (+ [(ks bar baz) (& {:bar !barb :baz bazb} (:fut b) )]
+                          (do (pp "here")
+                              (fut (+ bar !barb)
+                                   (+ baz bazb))))))
 
-            (!! a))})
+            (!! (+.inspect))
+
+            ;; instantiation
+            (!! (fut 1 2))
+            (!! (fut? (fut 1 2)))
+            (!! (map->fut {:bar 1 :baz 2}))
+
+            ;; type
+            (!! (type (fut 1 2)))       ;=> :fut
+
+            ;; using generic implmentations
+            (!! (+ (fut 1 2) (fut 1 2) )))])
+
+    (do :object-oriented-syntax
+
+        #_(E+ composite.cxp composite.cxp-old)
+
+        (E+ compile-method-calls
+
+            ["this compilation step will insert § in front of sexpr starting with a litteral vec or map
+          and will handle object oriented syntax (sexpr starting with a keyword) like the janet language do"
+
+             method-not-found
+             (f [o k]
+                (error "object:\n" o "\nhas no "
+                       k " implementation"))
+
+             (f [e x]
+                (cp x
+                    seq?
+                    (clet [x1 (key? (car x))
+                           [x2 . _xs] (cdr x)
+                           x2 (rec e x2)]
+                          (lst* (exp e '(or (c/get ~x2 ~x1) (.method-not-found ~x2 ~x1)))
+                                x2 (when _xs ($ _xs (p rec e))))
+                          ($ x (p rec e)))
+                    holycoll?
+                    ($ x (p rec e))
+                    x))])
+
+        ;; we keep a copy of the actual cxp function
+        (E+ composite.cxp-old composite.cxp)
+
+        ;; we overide it with one that do the same plus implicit-invoc stuff
+        (E+ composite.cxp
+            (f [e x]
+               #_(pp "new cxp " (composite.cxp-old e x #_(implicit-invoc x)))
+               (compile-method-calls
+                e (composite.cxp-old e x))))
+
+        (_ :scratch
+
+           (!! (cxp @E '(f [a] (:iop a))))
+
+           (exp @E '(f [a b c] (:op a b (:top c))))
+
+           (bubfind @E (path 'cxp))
+
+           (let [o1 {:greet (f [x . [y]] (println "hello" y))}]
+             (:greet o1 "you")
+             (:bark o1 "you"))
+
+           (exp @E '(let [o1 {:greet (f [x . [y]] (println "hello" y))}]
+                      (:greet o1 "you")
+                      (:bark o1 "you")))
+
+           (exp @E '(let [(:coll a) [1 2]] (pp a) ([add sub] [1 2 3] [1 2 3] [1 2 3])))
+
+           (exp @E '(f [x . [y]] (println "hello" y)))
+
+           (exp @E '(f [e x]
+                       (cp x
+                           seq?
+                           (cs [? (key? (car x))
+                                [x1 x2 & _xs] x
+                                x2' (rec e x2)]
+                               (lst* (exp e '(or (c/get ~x2' ~x1)
+                                                 (.method-not-found ~x2' ~x1)))
+                                     x2' (when _xs ($ _xs (p rec e))))
+                               ($ x (p rec e)))
+                           holycoll?
+                           ($ x (p rec e))
+                           x)))
+
+           (macroexpand '(cs [? (key? (car x))
+                              [x1 x2 & _xs] x
+                              x2' (rec e x2)]
+                             (lst* (exp e '(or (c/get ~x2' ~x1)
+                                               (.method-not-found ~x2' ~x1)))
+                                   x2' (when _xs ($ _xs (p rec e))))
+                             ($ x (p rec e)))
+                        )
+
+           (macroexpand '(c/let [[x1 x2 x3 & xs] (range)] [x1 x2 x3 xs]))
+           )
+        )
 
     (pp :will-declare-topforms)
 
@@ -4250,7 +4449,7 @@
      cf ?cf !cf cfu !cfu 
      clet clut !clet !clut
      case casu !case !casu)
-)
+    )
 
 (defmacro qbench [& xs]
   `(do ~@(c/map (fn [x]
@@ -4315,6 +4514,9 @@
 
    (_
     (res @E '(df [inc [dec {:a pos? . _}] . _]))
+
+    (!! (§ [inc [dec {:a pos?}]]
+         [1 [0 {:a 2 :b 'io}] 'po :mo]))
 
     (!! ((df [inc [dec {:a pos? . _}] . _])
          [1 [0 {:a 2 :b 'io}] 'po :mo])))
@@ -4551,151 +4753,6 @@
 
       ))
 
-(E+ type+
-    ["an update to declare a new type"
-
-     :upd
-     (f [e [name fields . impls]]
-
-        (let [name-sym (sym name)
-              class-sym (sym name "_USERTYPE")]
-
-          ;;TODO
-
-          ;; I would like to be able to put the following form in the update function return
-          ;; but it needs to be executed before the generic.type+ update is processed
-          ;; 'vectors returned by an update function' treatment is not lazy enough (in the sense that it process all contained update-expression at the same time)
-
-          ;; idealy if an update function returns something like: [form1 form2 ...]
-          ;; the behavior should be similar to (E+ form1 form2 ...)
-          ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
-
-          (println "impls " impls)
-          (println "emited " '(generic.type+ ~name (type [x] ~name ~name) .~impls))
-
-          (c/eval
-           `(do (defrecord ~class-sym ~fields)
-                (t/prim+ ~name [~class-sym] [:usertypes])))
-
-          [;; constructors (positional and from hashmap)
-           name-sym '(f ~fields (~(sym "->" class-sym) .~fields))
-           (sym "map->" name-sym) '(f_ (~(sym "map->" class-sym) _))
-           (sym name-sym "?") '(f_ (instance? ~class-sym _))
-
-           ;; generic implementations
-           '(generic.type+ ~name (type [x] ~name ~name) .~impls)
-
-           ]))
-
-     :demo
-     '(do
-
-        ;; definition
-        (E+ (type+ :fut [bar baz]
-                   (+ [a b]
-                      (!let [(:fut b) b]
-                            (fut (+ (:bar a) (:bar b))
-                                 (+ (:baz a) (:baz b)))))))
-
-        (E+ (type+ :fut [bar baz]
-                   (+ [(ks bar baz) (& {:bar !barb :baz bazb} (:fut b) )]
-                      (do (pp "here")
-                          (fut (+ bar !barb)
-                               (+ baz bazb))))))
-
-        (!! (+.inspect))
-
-        ;; instantiation
-        (!! (fut 1 2))
-        (!! (fut? (fut 1 2)))
-        (!! (map->fut {:bar 1 :baz 2}))
-
-        ;; type
-        (!! (type (fut 1 2))) ;=> :fut
-
-        ;; using generic implmentations
-        (!! (+ (fut 1 2) (fut 1 2) )))])
-
-
-(E+ generic.spec.exp-case
-    (f [e [argv . body]]
-       (let [syms (vec* (take (gensyms) (count argv)))
-             binding-form (vec* (braid argv syms))]
-         #_(pp binding-form)
-         (lst+* [syms]
-                ($ (chunk body 2)
-                   (f1 [t impl]
-                       [t (exp e '(let ~binding-form ~impl))]))))))
-
-(_ :generic-implementations-binding-patterns
-
-   (E+ mygen
-       (generic [a (:coll b)]
-                :vec (+ a b)))
-
-   (!! (mygen.inspect))
-
-   (exp @E '(let [(:coll a) [1 2]] a))
-
-   (exp @E '(let [(:pouet a) [1 2]] a))
-
-   (!! (generic.type+:upd @E (quot [:fut (mygen [x y] (pp 'iop) x)])))
-   (E+ (generic.type+ :fut (mygen [x y] (pp 'iop) x)))
-   (!! (mygen (fut 1 2) [])))
-
-
-
-
-
-(do :verb-litterals
-
-    (E+ implicit-invoc
-        ["this compilation step will insert § in front of sexpr starting with a litteral vec or map
-          and will handle object oriented syntax (sexpr starting with a keyword) like the janet language do"
-
-         method-not-found
-         (f [o k]
-            (error "object:\n" o "\nhas no "
-                   k " implementation"))
-
-         (f [x]
-            (cp x
-                seq?
-                (cs [x1 (car x)
-                     ? (or (vec? x1) (map? x1))]
-                    (cons '§ ($ x rec))
-                    [? (key? (car x))
-                     [x1 x2 & _xs] x
-                     x2 (rec x2)]
-                    (lst* '(or (c/get ~x2 ~x1)
-                               (.method-not-found ~x2 ~x1))
-                          x2 (when _xs ($ _xs rec)))
-                    ($ x rec))
-                coll?
-                ($ x rec)
-                x))])
-
-    ;; we keep a copy of the actual cxp function
-    (E+ composite.cxp-old composite.cxp)
-
-    ;; we overide it with one that do the same plus implicit-invoc stuff
-    (E+ composite.cxp
-        (f [e x] (composite.cxp-old e (implicit-invoc x))))
-
-    (!! (cxp @E '(f [a] (:iop a))))
-
-    (exp @E '(f [a b c] (:op a b (:top c))))
-
-    (bubfind @E (path 'cxp))
-
-    (let [o1 {:greet (f [x . [y]] (println "hello" y))}]
-      (:greet o1 "you")
-      (:bark o1 "you"))
-
-    (let [(:coll a) [1 2]] (pp a) ([add sub] [1 2 3] [1 2 3] [1 2 3]))
-
-
-    )
 
 (_
 

@@ -1018,7 +1018,7 @@
 ;; it results in more concise macro definition, but is less powerfull and prevents you to do more advanced things
 
 ;; a macros in asparagus is a function that takes 2 arguments:
-;; the current environment
+;; the current environment (in this, it can reminds you Fexprs, more precisely 'compile time fexprs')
 ;; the list of operands of the macro call
 
 ;; since macros have access to the environment, and are responsable to thread expansion further
@@ -1069,6 +1069,60 @@
 ;; Its a matter of taste and needs after all (at a point in time)
 
 ;; all the binding forms and lambda macros are defined this way, so maybe its time to look at the asparagus.core namespace
+
+;; regular macros with the 'mac macro -------
+
+;; and as you may have guessed, we can implement regular Lisp behavior in terms of those semantics
+;; using the builtin 'mac macro, we will define a dummy 'fi macro (same as clojure's if-not)
+
+(E+ fi:mac
+    ;; the 'mac macro let you define a macro in a standard way
+    (mac [p f t] ;; we do not receive the environment
+         '(if ~p ~t ~f) ;; we don't thread the expansion, it will be automatically done
+         ))
+
+(exp @E '(fi (pos? 1)
+             (fi (neg? 1) :zero :neg)
+             :pos))
+
+;; and operands are expanded as they would be with regular Lisp macro
+'(if (guards.builtins.pos?:val 1)
+   :pos
+   (if (guards.builtins.neg?:val 1)
+     :neg
+     :zero))
+
+;; dual stage ------
+
+;; our fancy-add function, will check the presence of litteral numbers in its operands and preprocess them at compile time
+;; living others operands as is for runtime
+(E+ fancy-add
+    {;; compile time behavior
+     :mac
+     (f [e xs]
+        (let [lit-nums (shrink+ xs num?) ;; we grab all litteral numbers
+              others (shrink- xs num?)] ;; and we keep others operands
+          ;; we return the preprocessed form
+          '(fancy-add:val ;; we have to explicitly write the :val suffix in this case
+            ;; we peform the compile time work
+            ~(* add lit-nums)
+            ;; we thread the expansion mapping cxp (composite expand) on others operands and splice the result
+            .~($ others (p cxp e)))))
+
+     ;; runtime behavior, a normal addition
+     ;; using the scheme's variadic args syntax and the composite syntax (the dot)
+     :val
+     (f xs (add . xs)) ;; equivalent to (fn [& xs] (apply add xs))
+     })
+
+(exp @E '(let [a 1]
+           (fancy-add 1 a 2)))
+;;=> (clojure.core/let [a_152671 1]
+;;     (fancy-add:val 3 a_152671))
+
+(!! (let [a 1]
+      (fancy-add 1 a 2))) ;;=> 4
+
 
 ;; substitutions --------------
 
