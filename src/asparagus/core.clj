@@ -29,7 +29,7 @@
      call*]]))
 
 ;; there is some uncommon code practice in this file that may surprise the reader
-;; I'm heavily using 'do blocks to group related peace of functionality, which i usually start with a descriptive keyword
+;; I'm heavily using 'do blocks to group related peaces of functionality, which i usually start with a descriptive keyword
 ;; it has no incidence on execution (as far as i know) but let you fold code in a meaningful and convenient way
 ;; this practice has led me to increase the average size of my namespaces (I don't really like to constantly jump to other files...)
 ;; so for a better experience, the reader should use an editor that can fold groups easily and possibly gradually
@@ -38,15 +38,15 @@
 ;; cs: is like a fusion of if when cond cond-let (see the little tutorial at asparagus.boot.prelude:591)
 ;; cp: a shortcut for (condp #(%1 %2) ...)
 
-;; I also use some collection type preserving versions of map and filter e.g: $, $keys, $vals,shrink+, shrink-
-
+;; I also use some collection type preserving versions of map and filter e.g: $, $keys, $vals, shrink+, shrink-
 ;; all those really basic building blocks that i tend to use everywhere are defined in asparagus.boot.prelude
+
 ;; keep in mind that two other important namespaces on top of which asparagus is built are asparagus.boot.types and asparagus.boot.generics
 ;; they contain examples and documentation so feel free to study them to
 
 ;; ------------------
 
-;; this form is a dev convenience that will reset the asparagus global environment and do some cleaning when the file is reloaded
+;; a dev convenience that will reset the asparagus global environment and do some cleaning when the file is reloaded
 (when-let [! (c/resolve 'rEset!)] (!))
 
 ;; env --------------
@@ -880,93 +880,42 @@
                p (path (car x) :upd)]
               (bubfind e (path (car x) :upd))))
 
-        (_ :old-impl-DEPRECATED
-
-           (defn env-upd_split [[x1 x2 & rs :as xs]]
-             (cs (not (seq xs)) []
-                 (word? x1) (cons {x1 x2} (env-upd_split rs))
-                 (map? x1) (cons x1 (env-upd_split (rest xs)))
-                 (cons {root-path x1} (env-upd_split (rest xs)))))
-
-           (defn env-upd_path-map
-             ([x]
-              (env-upd_path-map x root-path))
-             ([x from]
-              (if (and (holymap? x) (ppath? from))
-                (mapcat (fn [[k v]] (env-upd_path-map v (path from k))) x)
-                [[from x]])))
-
-           (declare env-upds)
-
-           (defn env-upd_map->upds [e m]
-             (let [epath (p path (loc e))]
-               (->> (env-upd_path-map m)
-                    (mapcat
-                     (fn [[p x]]
-                       (cs (mpath? p)
-                           [(condp = (.mkey p)
-                              :links [:link (epath (ppath p)) x]
-                              :fx [:fx (epath (ppath p)) x]
-                              [:def (epath p) x])]
-                           (vec? x)
-                           (env-upds (mv e p) x)
-                           [[_ updf] (env-upd_upd-expr? (mv e p) x)]
-                           (cs (= ::unbound updf)
-                               (error "upd ::unbound error")
-                               (env-upds (mv e p) (updf (mv e p) (cdr x))))
-                           [[:def (epath p :val) x]])))
-                    doall
-                    env-upd_prepend-declarations
-                    env-upd_sort)))
-
-           (defn env-upds [e x]
-             #_(pp 'env-upds e x)
-             (cp x
-                 holymap?
-                 (env-upd_map->upds e x)
-                 seq?
-                 (env-upd_map->upds e {root-path x})
-                 vec?
-                 (doall (mapcat (p env-upds e) (env-upd_split x))))))
-
-        (do :new-impl
-
-            (defn env-upd_split
-              "handle vectors and map literals semantics of the E+ macro
+        (defn env-upd_split
+          "handle vectors and map literals semantics of the E+ macro
                one level only, the recursion will be eventually done by env-upds"
-              [[x1 x2 & rs :as xs]]
-              (cs
+          [[x1 x2 & rs :as xs]]
+          (cs
 
-               ;; done!
-               (not (seq xs)) []
-               (word? x1)
+           ;; done!
+           (not (seq xs)) []
+           (word? x1)
 
-               ;; primary path and vector
-               (cs (and (vec? x2) (ppath? (path x1)))
-                   (concat ($ (env-upd_split x2) (p hash-map x1))
-                           (env-upd_split rs))
-                   (cons {x1 x2} (env-upd_split rs)))
+           ;; primary path and vector
+           (cs (and (vec? x2) (ppath? (path x1)))
+               (concat ($ (env-upd_split x2) (p hash-map x1))
+                       (env-upd_split rs))
+               (cons {x1 x2} (env-upd_split rs)))
 
-               ;; map
-               (holymap? x1)
-               (cons x1 (env-upd_split (rest xs)))
+           ;; map
+           (holymap? x1)
+           (cons x1 (env-upd_split (rest xs)))
 
-               ;; vec
-               (vec? x1)
-               (concat (env-upd_split x1)
-                       (env-upd_split (rest xs)))
+           ;; vec
+           (vec? x1)
+           (concat (env-upd_split x1)
+                   (env-upd_split (rest xs)))
 
-               ;; else
-               (cons {root-path x1} (env-upd_split (rest xs)))
-               ))
+           ;; else
+           (cons {root-path x1} (env-upd_split (rest xs)))
+           ))
 
-            (asserts
-             (= (env-upd_split '[a 1 b 2]) (list '{a 1} '{b 2}))
-             (= (env-upd_split '[42 foo "iop"]) (list {root-path 42} '{foo "iop"})))
+        (asserts
+         (= (env-upd_split '[a 1 b 2]) (list '{a 1} '{b 2}))
+         (= (env-upd_split '[42 foo "iop"]) (list {root-path 42} '{foo "iop"})))
 
-            (defn env-upds
+        (defn env-upds
 
-              "destructure an update as taken by the E+ macro into a serie of base operations
+          "destructure an update as taken by the E+ macro into a serie of base operations
                (not intended to be used directly)
 
                there is 4 base operations:
@@ -976,68 +925,64 @@
                :fx : a side effect [:fx path expression]
               "
 
-              ([e x]
-               (env-upds e x root-path))
-              ([e x from]
-               #_(println 'top x from)
-               (cs (ppath? from)
-                   (cp x
+          ([e x]
+           (env-upds e x root-path))
+          ([e x from]
+           #_(println 'top x from)
+           (cs (ppath? from)
+               (cp x
 
-                       holymap?
-                       (env-upd_sort
-                        (env-upd_prepend-declarations
-                         (mapcat (fn [[k v]] (env-upds e v (path from k))) x)))
+                   holymap?
+                   (env-upd_sort
+                    (env-upd_prepend-declarations
+                     (mapcat (fn [[k v]] (env-upds e v (path from k))) x)))
 
-                       vec?
-                       (mapcat #(env-upds e % from) (env-upd_split x))
+                   vec?
+                   (mapcat #(env-upds e % from) (env-upd_split x))
 
-                       string?
-                       [[:def (path from :doc) x]]
+                   string?
+                   [[:def (path from :doc) x]]
 
-                       (p env-upd_upd-expr? (mv e from))
-                       (let [e' (mv e from)
-                             [_ updf] (env-upd_upd-expr? e' x)
-                             expanded (updf e' (cdr x))]
+                   (p env-upd_upd-expr? (mv e from))
+                   (let [e' (mv e from)
+                         [_ updf] (env-upd_upd-expr? e' x)]
+                     (env-upds e (updf e' (cdr x)) from))
 
-                         (env-upds e expanded ;;(updf (mv e from) (cdr x))
-                                   from)
-                         )
+                   [[:def (path from :val) x]])
 
-                       [[:def (path from :val) x]])
+               [epath (p path (loc e))]
+               [(condp = (.mkey from)
+                  :links [:link (epath (ppath from)) x]
+                  :fx [:fx (epath (ppath from)) x]
+                  ;;:clj [:clj nil x]
+                  [:def (epath from) x])])))
 
-                   [epath (p path (loc e))]
-                   [(condp = (.mkey from)
-                      :links [:link (epath (ppath from)) x]
-                      :fx [:fx (epath (ppath from)) x]
-                      ;;:clj [:clj nil x]
-                      [:def (epath from) x])])))
+        (_ :tries
 
-            (_ :tries
+           (env-upds
+            @E '[iop (generic [x] :vec 'veciop)
+                 a 1
+                 b [c 1 {d 3 b:op 56}]])
 
-               (env-upds
-                @E '[iop (generic [x] :vec 'veciop)
-                     a 1
-                     b [c 1 {d 3 b:op 56}]])
-
-               (defmacro E+ [& xs]
-                 `(do ~@(map (fn [u]
-                               `(env-upd_exe @E (env-upds2 @E '~u)))
-                             (env-upd2_split xs))))
+           (defmacro E+ [& xs]
+             `(do ~@(map (fn [u]
+                           `(env-upd_exe @E (env-upds2 @E '~u)))
+                         (env-upd2_split xs))))
 
 
-               (env-upds2 @E '{op {baba 12}})
+           (env-upds2 @E '{op {baba 12}})
 
-               (_ :error
-                  (rEset!)
-                  (map (p env-upds2 @E)
-                       (env-upd2_split
-                        '[op [yupd:upd (fn [_ xs] {'pouet:val (vec xs)})
-                              baba (op.yupd 1 2 3)]]))
+           (_ :error
+              (rEset!)
+              (map (p env-upds2 @E)
+                   (env-upd2_split
+                    '[op [yupd:upd (fn [_ xs] {'pouet:val (vec xs)})
+                          baba (op.yupd 1 2 3)]]))
 
-                  (E+2 op [yupd:upd (fn [_ xs] {'pouet:val (c/vec xs)})
-                           baba (op.yupd 1 2 3)])
+              (E+2 op [yupd:upd (fn [_ xs] {'pouet:val (c/vec xs)})
+                       baba (op.yupd 1 2 3)])
 
-                  (!! op.baba.pouet))))
+              (!! op.baba.pouet)))
 
         (defn env-upd_exe
           "takes a serie of base operation litterals (as returned by env-upds, refer to its docstring for details)
@@ -1059,28 +1004,6 @@
                                 (pretty-str [verb at x])
                                 "\n" (.getMessage err)))))))
           @E)))
-
-(_ :scratch-env-split
-   #_(E+ decl:upd
-         (fn [e xs] ($ (vec* xs) #(hash-map % ::unbound)))
-
-         (decl po pi pu))
-
-   (env-upd_split (vector
-                   '(fn [e xs] ($ (vec* xs) #(hash-map % ::unbound)))
-                   '(decl po pi pu)))
-
-   (env-upd_split (vector
-                   
-                   [
-                    '(fn [e xs] ($ (vec* xs) #(hash-map % ::unbound)))
-                    '(decl po pi pu)]))
-
-   (macroexpand
-    (E+ decl2:upd
-         (fn [e xs] (p/prob ($ (vec* xs) #(hash-map % ::unbound))))
-
-         (decl2 po2 pi2 pu2))))
 
 (do :API
 
@@ -1111,62 +1034,9 @@
         (println)))
 
     (defmacro ppenv
-      "a thin wrapper around env-inspect, lets you pass an unquoted symbol"
+      "a thin wrapper around env-inspect, let you pass an unquoted symbol"
       [s]
       `(env-inspect '~s))
-
-    (_ :tries
-
-       (env-upds
-        @E '{a {:links {m m1} b 1} g 2
-             h:mac (fn [e x] :yop)
-             m1 (mod :fx (pp 'hey) i 42)})
-
-       (rEset!)
-
-       (mx' (E+ a 1
-                mod:upd (c/fn [e xs] ($keys (apl hash-map xs) path))
-                {a {:links {m m1} b 1} g 2
-                 h:mac (fn [e x] :yop)
-                 m1 (mod :fx (pp 'hey) i 42)}))
-
-       (rEset!)
-
-       (do
-
-         (E+ a :aval)
-
-         (!! (c/= a :aval))
-
-         (E+ a.b 1)
-
-         (E+ c (+ a.b 1))
-
-         (E+ d {e (+ a.b 1)
-                f (- c c a.b)} )
-
-         (E+ c:sub (fn [_] 42))
-
-         (E+ cc c)
-
-         (E+ d :dval)
-
-         (E+ d {t:val 45
-                e:sub (fn [_] :desub)})
-
-         (E+ {m1 (fn [] ..m2)
-              m2 (fn [] ..m1)})
-
-         (E+ foo 1
-             {bar (+ foo 1)
-              math {bardd (fn [x] (+ bar x))}}
-             bardd1 (math.bardd 1))
-
-         )
-
-       #_(pp @E)
-
-       #_(car (env-history @E)))
 
     (defn top-form-decl
       "bring an asparagus macro into the top level,
@@ -1184,7 +1054,7 @@
       (swap! top-forms into xs)
       `(do ~@($ xs top-form-decl))))
 
-(do :quoting
+#_(do :quoting
 
     ;; asparagus has its own quoting mecanism, those simple quoting functions, inspired by bbloom/backtic
     ;; will be used by the main implementation of quoting at a later point
@@ -1242,6 +1112,9 @@
                 seq? `(list* ~cat)
                 (error "Unknown collection type")))
           (list 'quote form))))
+
+;; from this point asparagus is built in itself (using E+ macro)
+;; for a gentle introduction to E+, please refer to ./tut.clj
 
 (do :reboot
 
@@ -1328,7 +1201,7 @@
        (!! (documented-id 1))
        (!! documented-id:doc)
 
-       )
+)
 
     (rEset!)
 
@@ -1388,18 +1261,23 @@
 
            ;;main
            "takes an environment and a binding pattern
-            return a new environment with uniq symbols substitutions
-            and the pattern with all syms made uniq"
+            return a tuple [e p] where
+            e: new environment with uniq symbols substitutions
+            p: the pattern with all syms made uniq"
            (c/fn [e pat]
              (c/let [pat (.expand-keys-pattern pat)
                      shadenv (env.add-subs e (.pat->submap pat))]
                [shadenv (exp shadenv pat)]))]}
 
          primitives
-         ["hygienic versions of lambda and let"
+         [" 'hygienic' versions of lambda and let (with all binding symbols made uniq)"
 
           fn
-          {parse
+          {:doc
+           "we will use this version of lambda to build asparagus,
+            it will ultimatly be replaced by the 'f macro (and friends)"
+
+           parse
            (c/fn [[fst & nxt :as all]]
              (c/let [[name b1 & bs]
                      (if (word? fst)
@@ -1434,7 +1312,46 @@
            :mac
            (c/fn [e form]
              (.expand
-              e (.parse form)))}
+              e (.parse form)))
+
+           :demo
+           '(do
+              (exp @E '(fn [a b] (add a b)))
+              ;;=>
+              '(clojure.core/fn rec_179091
+                 ([a_179092 b_179093]
+                  (add:val a_179092 b_179093)))
+
+              ;; as you can see, all symbols are qualified, and introduced bindings made uniqs
+
+              (exp @E '(fn [{:keys [a b] :as m}] [a b m]))
+              ;;=>
+              '(clojure.core/fn rec_179123
+                 ([{:as m_179125, a_179124 :a, b_179126 :b}]
+                  [a_179124 b_179126 m_179125]))
+
+              (exp @E '(fn me [a b] (me a b)))
+              ;;=>
+              '(clojure.core/fn me_179161
+                 ([a_179162 b_179163]
+                  (me_179161 a_179162 b_179163)))
+
+              (exp @E '(fn [a b] (rec a b)))
+              ;;=>
+              '(clojure.core/fn rec_179193
+                 ([a_179194 b_179195] (rec_179193 a_179194 b_179195)))
+
+              (exp @E '(fn
+                         ([a] (rec a a))
+                         ([a b] (add a b))
+                         ([a b & xs] (reduce rec (rec a b) xs))))
+              ;;=>
+              '(clojure.core/fn rec_179360
+                 ([a_179361] (rec_179360 a_179361 a_179361))
+                 ([a_179362 b_179363] (add:val a_179362 b_179363))
+                 ([a_179364 b_179366 & xs_179365]
+                  (clojure.core/reduce rec_179360 (rec_179360 a_179364 b_179366) xs_179365)))
+              )}
 
           let
           {parse
@@ -1453,7 +1370,23 @@
            :mac
            (fn [e form]
              (.expand
-              e (.parse form)))}
+              e (.parse form)))
+
+           :demo
+           '(do
+
+              ;; like primitives.lambda, it qualify symbols and makes uniq introduced binding symbols
+
+              (exp @E '(primitives.let [a 1] a))
+              ;;=>
+              '(clojure.core/let [a_179450 1] a_179450)
+
+              (exp @E '(primitives.let [{:keys [a b] :as m} {}] [a b m]))
+              ;;=>
+              '(clojure.core/let
+                   [{:as m_179459, a_179458 :a, b_179460 :b} {}]
+                   [a_179458 b_179460 m_179459])
+              )}
 
           loop:mac
           (fn [e xs]
@@ -1499,6 +1432,22 @@
            ["try to collapse cs emitted form into a more compact one
              grouping let levels when possible and substituting instead of binding sym to sym"
 
+            or-expr?
+            (fn [x]
+              (and (seq? x) (= `c/or (car x))))
+
+            remove-useless-ors
+            (fn  [x]
+              (cp x
+                  or-expr?
+                  (cons `c/or
+                        (mapcat (fn [y]
+                                  (mapv remove-useless-ors (if (or-expr? y) (cdr y) [y])))
+                                (cdr x)))
+                  holycoll?
+                  ($ x rec)
+                  x))
+
             substitutable-sym?
             (fn [x]
               (and (sym? x)
@@ -1536,11 +1485,51 @@
 
             :mac
             (fn [e xs]
-              (optimize e (lst `first (form xs))))
+              (remove-useless-ors
+               (optimize e (lst `first (form xs)))))
 
             :tries
             '(do (exp @E '(cs [[x & _xs] 1] 1 :nop)) 
-                 )]]]
+                 )]
+
+           :demo
+           '(do
+
+              ;; for complete overview of the semantics and usage  of cs,
+              ;; please refer to asparagus.boot.prelude (:macros section)
+
+              (exp @E
+                   (let [x 1 y nil z 2]
+                     '(cs [a ~x b ~y] (add a b)
+                          [a ~x b ~z] (sub a b)
+                          [_a ~y b ~z] (if _a (mul _a b) b)
+                          :fail)))
+
+              ;;=>
+              '(clojure.core/first
+                (clojure.core/or
+                 (clojure.core/let
+                     [G__293545 1]
+                     (clojure.core/when
+                         G__293545
+                         (clojure.core/let
+                             [G__293550 nil]
+                             (clojure.core/when G__293550 [(add:val G__293545 G__293550)]))))
+                 (clojure.core/let
+                     [G__293546 1]
+                     (clojure.core/when
+                         G__293546
+                         (clojure.core/let
+                             [G__293553 2]
+                             (clojure.core/when G__293553 [(sub:val G__293546 G__293553)]))))
+                 (clojure.core/or
+                  (clojure.core/let
+                      [_a_293547 nil G__293548 2]
+                      (clojure.core/when
+                          G__293548
+                          [(if _a_293547 (mul:val _a_293547 G__293548) G__293548)]))
+                  [:fail])))
+              )]]
 
          :links {fn primitives.fn
                  let primitives.let
@@ -1548,14 +1537,18 @@
                  cs primitives.cs.optimized
                  }
 
-         error:mac
-         (fn [e xs]
-           (lst* `p/error
-                 "at: " (path->str (loc e))
-                 "\nctx:\n"
-                 (pretty-str (first (:exp-ctx e)))
-                 "\n"
-                 (exp e xs)))))
+         error
+         ["throw an error printing some context (not so great, to improve!)"
+          :mac
+          (fn [e xs]
+            (lst* `p/error
+                  "at: " (path->str (loc e))
+                  "\nctx:\n"
+                  (pretty-str (first (:exp-ctx e)))
+                  "\n"
+                  (exp e xs)))]
+
+         __:mac (fn [_ _])))
 
     (do :strict-qualify
 
@@ -1681,48 +1674,66 @@
 
                x))
 
-         ;; quotf
-         #_["quoting function,
-           handles unquoting, does not quote dots,
-           qualifies symbols if possible"
+         :demo
+         (__
 
-            wrap
-            (fn [x] (list (symbol "quote") x))
-            rootsym
-            (fn [p] (path->sym (path (symbol "_") p)))
+          ;; vecs --------
 
-            (fn
-              [e form]
-              (cp form
-                  dot? dot
-                  dotdot? dotdot
-                  unquote? (exp e (second form))
-                  seq? (cons `list ($ form (p quotf e)))
-                  holycoll? ($ form (p quotf e))
-                  symbol?
-                  (cs [p (path form)
-                       [p _] (bubfind e p)]
-                      (.wrap (.rootsym p))
-                      (.wrap form))
-                  (.wrap form)))]
+          (!! (composite.expand (quot [a b . c])))
+          ;;=>
+          '(clojure.core/vec (clojure.core/concat [a b] c))
 
-         ;; quote:mac
-         #_(fn [e [x]]
-             (expand (quotf e x)))
+          (!! (composite.expand (quot [a b . c . d])))
+          ;;=>
+          '(clojure.core/vec (clojure.core/concat [a b] c d))
+
+          (!! (composite.expand (quot [a b .. c d])))
+          ;;=>
+          '(clojure.core/vec (clojure.core/concat [a b] c d))
+
+          ;; maps --------
+
+          (!! (composite.expand (quot {:a 1 . b})))
+          ;;=>
+          '(clojure.core/merge {:a 1} b)
+
+          (!! (composite.expand (quot {:a 1 .. [b c d]})))
+          ;;=>
+          '(clojure.core/merge {:a 1} b c d)
+
+          ;; lists -------
+
+          (!! (composite.expand (quot (fun a b . c))))
+          ;;=>
+          '(asparagus.boot.prelude/call*
+            (clojure.core/concat [fun a b] c))
+          ;; which is equivalent to
+          '(apply fun (clojure.core/concat [a b] c))
+
+          (!! (composite.expand (quot (fun a b . c . d))))
+          ;;=>
+          '(asparagus.boot.prelude/call*
+            (clojure.core/concat [fun a b] c d))
+
+          (!! (composite.expand (quot (fun a b .. c d e))))
+          ;;=>
+          '(asparagus.boot.prelude/call*
+            (clojure.core/concat [fun a b] c d e))
+          )
 
          cxp
-         ["a version of exp that handle composite datastrctures"
-          (fn [e x]
-            (expand (exp e x)))]]
+         ["a version of exp that handle composite datastructures"
+          (fn [e x] (expand (exp e x)))]]
 
-        :links { ;; quote composite.quote
-                cxp composite.cxp})
+        ;; we put cxp at the root
+        :links {cxp composite.cxp})
 
     (E+ quote
 
-        ["the quoting marco
-          behave like clojure's quasiquote, qualify symbols if possible,
-          supports unquoting and splicing (via composite.expand)"
+        ["the quoting macro
+          behaves like clojure's quasiquote, qualify symbols if possible,
+          supports unquoting (it will expand unquoted expression with the compiling env)
+          and splicing (via composite.expand)"
 
          :links {cp composite}
 
@@ -1765,45 +1776,89 @@
 
         )
 
-    ;; temp misc
-    (E+ add c/+
-        sub c/-
-        div c//
-        mul c/*
-        eq c/= ;; will be rebound later, needed for check blocks
+    ;; misc
+    (E+
 
-        quot:mac
-        (fn [_ [x]]
-          (lst (sym "quote") x))
+     ;; importing math basics ops
+     ;; because some of those symbols will be rebound
+     add c/+
+     sub c/-
+     div c//
+     mul c/*
+     eq c/= ;; eq will be rebound later, but is needed for check blocks
 
-        check
-        {:mac
-         (fn [e xs]
-           (cxp e '(p/asserts . ~xs)))
-         thunk
-         {:mac
-          (fn [e xs]
-            (cxp e '(fn [] (p/asserts . ~xs))))
-          :upd
-          (fn [e xs] {:check '(check.thunk . ~xs)})}}
+     quot:mac
+     (fn [_ [x]]
+       (lst (sym "quote") x))
 
-        upd.mk:upd
-        (fn [e [x]] (eval e x))
+     check
+     {:doc "a quick way to assert things"
+      :mac
+      (fn [e xs]
+        (cxp e '(p/asserts . ~xs)))
 
-        group:upd
-        (fn [e [metas & xs]]
-          ($ (env-upd_split xs)
-             ($vals #(vector metas %))))
+      thunk
+      {:mac
+       (fn [e xs]
+         (cxp e '(fn [] (p/asserts . ~xs))))
+       :upd
+       (fn [e xs] {:check '(check.thunk . ~xs)})}
 
-        tagged:upd
-        (fn [e [t & xs]]
-          (let [ts (if (c/keyword? t) #{t} (c/set t))]
-            (c/vec
-             (mapcat
-              (fn [x] [($ x (fn [[k _]] [(path k :tags) ts])) x])
-              (env-upd_split xs)))))
+      :demo
+      (__
+       ;; simple
+       (check (pos? 1) (neg? -1))
+       ;; thunk form
+       (check.thunk (pos? 1) (neg? -1))
+       ;; is equivalent to 
+       (fn [] (check (pos? 1) (neg? -1)))
+       ;; update version (the thunk will be put under the :check attr)
+       (E+ foo (check.thunk (pos? 1) (neg? -1)))
+       (!! (foo:check)) ;; will call the thunk
+       )}
 
-        )
+     upd.mk
+     ["an update that evaluate the given expression in order to produce another update"
+      :upd (fn [e [x]] (eval e x))]
+
+     group
+     ["an update to spread common attrs to several identifiers"
+      :upd
+      (fn [e [metas & xs]]
+        ($ (env-upd_split xs)
+           ($vals #(vector metas %))))
+
+      :demo
+      (__
+       (E+ (group {:myattr :pouet} foo 1 bar 2))
+       ;; is equivalent to
+       (E+ foo {:myattr :pouet :val 1}
+           bar {:myattr :pouet :val 2}))]
+
+     tagged:upd
+     ["an update to spread tags to several identifiers"
+      (fn [e [t & xs]]
+        (let [ts (if (c/keyword? t) #{t} (c/set t))]
+          (c/vec
+           (mapcat
+            (fn [x] [($ x (fn [[k _]] [(path k :tags) ts])) x])
+            (env-upd_split xs)))))
+
+      :demo
+      (__
+       (E+ (tagged :iop foo 1 bar 2))
+       ;; is equivalent to
+       (E+ foo {:tags #{:iop} :val 1}
+           bar {:tags #{:iop} :val 2})
+
+       ;; it also accept set litterals
+       (E+ (tagged #{:iop :pouet} foo 1 bar 2))
+       ;; is equivalent to
+       (E+ foo {:tags #{:iop :pouet} :val 1}
+           bar {:tags #{:iop :pouet} :val 2})
+       )]
+
+     )
 
     (init-top-forms check)
 
@@ -1851,20 +1906,50 @@
            #_(pp "import.upd" (apl build-upd xs))
            (apl build-upd e xs))
 
-         :tries
-         '(do
-            (E+ foo.bar {a [:doc "foobar a" (fn [] 'foobara)]}
-                foo.qux 42
-                (import foo [bar qux])
-                here [(import foo [bar qux]) (add qux qux)]
-                )
-            (!! bar.a:doc)
-            (!! qux:val)
-            (!! here:val)
+         :demo
+         (__
 
-            (E+ foot {foota 1 footb 2 footc {n 4}})
-            (E+ (import foot :all))
-            (!! (add foota footb footc.n)))})
+          ;; basic usage --------
+
+          (E+
+           ;; declaring some random stuff to work with 
+           foo.bar {a ["foobar a" (fn [] 'foobara)]}
+           foo.qux 42
+
+           ;; we will use import at the top level (env root)
+           ;; this will make foo.bar available as bar, and foo.qux available as qux
+           (import foo [bar qux])
+
+           ;; import can be used nested (in this example at the 'here path)
+           ;; this will make foo.bar available as here.bar, and foo.qux available as here.qux
+           here [(import foo [bar qux])
+                 ;; we use the fresh links to give 'here a :val
+                 (lst (.bar.a) (add 1 .qux))])
+
+          (!! bar.a:doc) ;;=> "foobar a"
+          (!! qux:val) ;;=> 42
+          (!! here:val) ;;=> '(foobara 43)
+
+          ;; the :all syntax ----
+
+          ;; first we define some random stuff
+          (E+ foot {foota 1 footb 2 footc {n 4}})
+          ;; then we import them all
+          (E+ (import foot :all))
+          ;; then use it
+          (!! (add foota footb footc.n)) ;;=> 7
+
+          ;; chain --------------
+
+          (E+ mymodule
+              [;; import several things at once
+               (import foo [bar qux]
+                       foot :all)
+               ;; we use the fresh links to bind mymodule:val
+               (add qux foota footb footc.n)])
+          (!! mymodule:val) ;;=> 49
+
+          )})
 
     (E+ generic
         {:doc
@@ -1923,11 +2008,6 @@
          (fn [n]
            (path->varsym (path n :generic)))
 
-         #_init
-         #_(fn [e n body]
-             (g/declaration-form
-              (..spec e n body)))
-
          init:mac
          (fn [e [n body]]
            (g/declaration-form
@@ -1946,46 +2026,54 @@
                  (lst* (p/sym n ".extend")
                        (g/impl-body->cases type xs)))))}
 
-         :tries
-         '(do
+         :demo
+         (__
 
-            ;; defines a pul+ generic function
-            ;; with 3 implementations for: strings, symbols and numbers
-            (E+ pul+
-                (generic [a b]
-                         :str (str a b)
-                         :sym (pul+ (str a) (str b))
-                         :num (add a b)))
+          ;; generic ----------------
 
+          ;; defines a pul+ generic function
+          ;; with 3 implementations for: strings, symbols and numbers
+          (E+ pul+
+              (generic [a b]
+                       :str (str a b)
+                       :sym (pul+ (str a) (str b))
+                       :num (add a b)))
 
-            (!! (pul+.inspect))
+          ;; inspect
+          (!! (pul+.inspect))
 
-            (!! (pul+ 1 2))
-            (!! (pul+ "a" 2))
+          ;; use
+          (!! (pul+ 1 2))
+          (!! (pul+ "a" 2))
 
-            ;; implement pul+ for vectors
-            (E+ (pul+.extend
-                 [x y]
-                 :vec (catv x y)))
+          ;; extend
+          ;; implement pul+ for vectors
+          (E+ (pul+.extend
+               [x y]
+               :vec (catv x y)))
 
-            (!! (pul+ [1] [7]))
-            (!! (pul+.inspect))
+          ;; use the new impl
+          (!! (pul+ [1] [7]))
+          (!! (pul+.inspect))
 
-            ;; generic.reduced
-            ;; let you define a binary generic function
-            ;; and use reduce for calls with more than 2 arguments
-            (E+ pil+
-                (generic.reduced [a b]
-                                 :str (str a b)
-                                 :num (+ a b)))
+          ;; generic.reduced ---------
 
-            (!! (pil+.inspect))
+          ;; let you define a binary generic function
+          ;; and use reduce for calls with more than 2 arguments
+          (E+ pil+
+              (generic.reduced [a b]
+                               :str (str a b)
+                               :num (+ a b)))
 
-            (!! (pil+ 7 9 7))
+          (!! (pil+.inspect))
+          (!! (pil+ 7 9 7))
 
-            (E+ foo.bar.fortytwo:sub (fn [_] 42))
-            (E+ foo.bar.g (generic [x] :num (+ ..fortytwo x)))
-            (!! (foo.bar.g 1)))})
+          ;; scope checks ------------
+
+          ;; here we are just checking that generic implementation have access to the local scope
+          (E+ foo.bar.fortytwo:sub (fn [_] 42))
+          (E+ foo.bar.g (generic [x] :num (+ ..fortytwo x)))
+          (!! (foo.bar.g 1)))})
 
     (E+ fn&
 
@@ -2056,14 +2144,7 @@
 
          :mac
          (fn [e form]
-           (exp e '(fn . ~(fn&.cases form))))
-
-         :tries
-         '(do
-            (exp @E '(fn& [a b]
-                          (toto (yop ...)
-                                {:a [m n o ...]
-                                 :b [a b c #{foo a ...}]}))))])
+           (exp e '(fn . ~(fn&.cases form))))])
 
     (E+ joining
         ["a bunch of function for handling monoidish things"
@@ -2101,7 +2182,7 @@
 
           :notes
           "maybe we should consider to implement sip for named
-                (sipping some chars makes sense)"
+           (sipping some chars makes sense but in practice...)"
 
           (check.thunk
            (eq (sip [] 1 2) [1 2])
@@ -2158,7 +2239,7 @@
            (eq (+ "foo" 'bar 'baz)
                "foobarbaz")
            (eq ((+ inc inc inc) 0)
-               3))]
+               3))] ;; :fx (+:check)
 
          vals
          ["return the values of a collection"
@@ -2531,7 +2612,9 @@
                 guards.builtins :all))
 
     (E+ testing
-        [throws:mac
+        ["the testing module is an attempt to describe tests as data"
+
+         throws:mac
          (fn [e [x m]]
            (let [expr (c/str x)]
              '(or
@@ -3669,47 +3752,56 @@
          (f1 data
              (f xs
                 (walk? data
-                       (f1 y (or (vec? y) (map? y)))
-                       (f1 leaf (* leaf xs)))))
+                       (f1 node (or (vec? node) (map? node)))
+                       (f1 leaf (* leaf xs))))) ;; don't forget that * is application ;)
 
          :demo
-         '(do
-            ;; you can use vectors and maps to compose the resulting function
-            (!! (df [inc dec])) ;; <fn>
+         (__
+          ;; you can use vectors and maps to compose the resulting function
+          (!! (df [inc
+                   dec
+                   {:doubled (f_ (mul 2 _))
+                    :halfed (f_ (div _ 2))}]))
+          ;; <fn>
 
-            ;; invoc it
-            (let [f (df [inc dec])]
-              (f 1)) ;;=> [2 0]
+          ;; invoc it
+          (let [f (df [inc dec
+                       {:doubled (f_ (mul 2 _))
+                        :halfed (f_ (div _ 2))}])]
+            (f 1)) ;;=> [2 0 {:doubled 2 :halfed 1/2}]
 
-            ;; is equivalent to write
-            ((f1 a [(inc a) (dec a)]) 1)
+          ;; is equivalent to write
+          ((f1 a [(inc a) (dec a)
+                  {:doubled (mul 2 a)
+                   :halfed (div a 2)}])
+           1)
 
-            ;; you can deeply mix maps and vecs to compose your function
-            (let [f (df {:addsub [add sub]
-                         :average (f xs (div (add . xs) (count xs)))})]
-              (f 1 2 3))
-            ;;=> {:addsub [6 -4], :average 2}
+          ;; any invocable can serve as a leaf
+          ;; don't know if you remember, but in asparagus almost everything is invocable,
+          ;; in particular constant values like 42 or :foo return themselves
+          ;; to demonstrate that df can handle any invocable we will use some of those
+          (let [f (df [inc dec :foo 42])]
+            (f 1)) ;;=> [2 0 :foo 42]
 
-            ;; any invocable can serve as a leaf
-            ;; don't know if you remember, but in asparagus almost everything is invocable,
-            ;; in particular constant values like 42 or :foo return themselves
-            ;; to demonstrate that df can handle any invocable we will use some of those
-            (let [f (df [inc dec :foo 42])]
-              (f 1)) ;;=> [2 0 :foo 42]
+          ;; can take several arguments
+          (let [f (df [add sub])] (f 1 2 3)) ;;=> [6 -4]
 
-            ;; can take several arguments
-            (let [f (df [add sub])] (f 1 2 3)) ;;=> [6 -4]
+          ;; you can deeply mix maps and vecs to compose your function
+          (let [f (df {:addsub [add sub]
+                       :average (f xs (div (* add xs) (count xs)))})]
+            (f 1 2 3))
+          ;;=> {:addsub [6 -4], :average 2}
 
-            ;; maybe you are wondering about our vec and map invocation behavior
-            ;; this is prevented here because vecs and maps mean something else in this context
-            ;; but you can use the § function to state that a leaf that is a map or a vec has to be treated as an invocable
-            (let [f (df [concat
-                         (§ [add sub mul]) ;; here
-                         ])]
-              (f [1 2 3] [4 5 6]))
-            ;;=> [(1 2 3 4 5 6) [5 -3 18]]
+          ;; maybe you are wondering about our vec and map invocation behavior
+          ;; this is prevented here because vecs and maps mean something else in this context
+          ;; but you can use the § function to state that a leaf that is a map or a vec has to be treated as an invocable
+          (let [f (df [concat
+                       (§ [add sub mul]) ;; here
+                       ])]
+            (f [1 2 3] [4 5 6]))
+          ;;=> [(1 2 3 4 5 6) [5 -3 18]]
 
-            )])
+          )])
 
     (do :compare
 
@@ -3827,7 +3919,7 @@
               :map
               ($ x #(dive % y))
 
-              ;; sets behave as maps
+              ;; sets behave like maps
               ;; #{diving-address1 diving-address2}
               ;; <=> {diving-address1 diving-address1
               ;;      diving-address2 diving-address2}
@@ -4081,7 +4173,7 @@
     (do :mlet-mac-at
 
         (E+ mlet
-            ["let you bind a local macros"
+            ["let you bind local macros"
              :mac
              (fn [e [ms & bod]]
                (let [local-path #(path (loc e) % :mac)

@@ -586,6 +586,32 @@
         (defmacro cs [& xs]
           `(first ~(cs-form xs)))
 
+        (_ :flat-cs-emitted-or-form
+
+            (defn or-expr? [x]
+              (and (seq? x) (= `c/or (first x))))
+
+            (defn remove-useless-ors [x]
+              (cp x
+                  or-expr?
+                  (cons `c/or
+                        (mapcat (fn [y]
+                                  (mapv remove-useless-ors
+                                        (if (or-expr? y) (rest y) [y])))
+                                (rest x)))
+                  holycoll?
+                  ($ x remove-useless-ors)
+                  x))
+
+            (defmacro cs [& xs]
+              `(first ~(remove-useless-ors (cs-form xs))))
+
+            (_ (let [a 0] ;; feel free to change the value and reevaluate
+                 (macroexpand '(cs
+                                (pos? a) :pos
+                                (neg? a) :neg
+                                :zero)))))
+
         (_ :cs-tuto
 
             ;; like a normal let
