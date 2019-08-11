@@ -17,11 +17,19 @@
  ;; asparagus is my last experience in language design
  ;; after several attempt, i've compiled some of the ideas I like, found in other languages/books/papers
 
+ ;; it is embedded in clojure, but at the same time is quite far from it.
+ ;; it has its own environment/namespaces mecanism, and another kind of macro system.
+ ;; it is far from being production ready, but I hope that it can be interesting as an experiment for some of you
+
+ ;; I'm an autodidact with no proper computer science degree, my approch to programming is quite empirical.
+ ;; first of all I'm seeking for feedback, advices, discussions and even people to work with (and I'm also searching for a real job)
+
  ;; for now the main goals are:
 
  ;; flexibility
  ;; extensibility
  ;; expressivity
+ ;; performance (close to clojure)
 
  ;; the main ways/devices to acheive them:
 
@@ -351,14 +359,15 @@
   (quot mysym)                          ;=> 'mysym
   (sym "mysym")                         ;=> 'mysym
 
-  ;; it can seem like an heavy syntax for literal symbols, but I think that keywords can replace them in much cases
-  ;; literal symbols are used mainly for meta programming, introducing an unqualified symbol is not a trivial thing, so it deserve a bit of syntax
-  ;; at the opposite, having to write qualified symbol is much more common/trivial and deverses better the quote reader literal syntax 
+  ;; it can seem like an heavy syntax for literal symbols, but I think that keywords can replace them in much use cases.
+  ;; literal symbols are used mainly for meta programming. Introducing an unqualified symbol is not a trivial thing, so it deserve a bit of syntax
+  ;; at the opposite, having to write qualified symbol is much more common/trivial and deverses better the quote reader syntax
+  ;; clojure's quasiquote have special treatment that prevents me to overide it to my purposes, this is why asparagus has to make this choice.
 
   ;; a list
   (lst 1 2 3)
   ;;or if we want full quote
-  (quot (a b c)) ;; which is not pretty
+  (quot (a b c)) ;; which is not pretty I agree
   )
 
  ;; collections -------------------------------------
@@ -442,14 +451,14 @@
   (is (+ [1 2] '(3 4))
       [1 2 3 4])
 
-  (is (+ '(1 2) [3 4])
+  (is (+ (lst 1 2) [3 4])
       '(1 2 3 4))
 
   (is (+ {:a 1 :b 0} {:b 2})
       {:a 1 :b 2})
 
   ;; + is variadic
-  (is (+ #{} '(1 2) [3 4] #{3 5})
+  (is (+ #{} (lst 1 2) [3 4] #{3 5})
       #{1 2 3 4 5})
 
   ;; as you have seen, the return type is determined by the first argument
@@ -461,7 +470,7 @@
   (is (+ "foo" 'bar :baz) "foobar:baz")
 
   ;; on function it do composition
-                                        ;(left to right, not like core.comp do)
+  ;; (left to right, not like core.comp do)
   (is ((+ inc inc (p mul 2)) 0)
       4)
 
@@ -480,7 +489,7 @@
   ;; for lists it adds at the end (not like conj do)
   ;; it is a choice that can be disctable, in my own pratice i'm not realying often on way that clojure lists implements conj
   ;; sip being a generic operation (extendable by user types) we could add a datatype that conj elements at its head like clojure lists...
-  (is (sip '(1 2) 3)
+  (is (sip (lst 1 2) 3)
       '(1 2 3))
 
   (is (sip #{3 4} 1 2)
@@ -1351,8 +1360,61 @@
   )
  )
 
-;; iterables ------------------------------------------------------------------------
+;; ------------------------------------------------------------------------
+;;                              generics
+;; ------------------------------------------------------------------------
 
+;; generic functions are at heart of asparagus, every core operations are defined this way
+
+;; mono arity
+;; we will define a my-generic function and implement it for some built in types
+
+(E+ my-generic
+    (generic
+     [a] ;; the argument vector
+     :vec (str "vector: " a) ;; the vector implementation
+     :num (str "number: " a) ;; the number implementation
+     :coll (str "collection: " a) ;; collection impl
+     (str "something else: " a) ;; default case
+     ))
+
+(check
+ (eq (my-generic [1 2]) "vector: [1 2]")
+ (eq (my-generic 1) "number: 1")
+ (eq (my-generic (lst 1 2)) "collection: (1 2)")
+ (eq (my-generic :iop) "something else: :iop"))
+
+;; poly arity
+(E+ my-generic2
+    (generic
+     ([a]
+      ;; coll impl
+      :coll {:coll a}
+      ;; default case
+      {:something a})
+     ([a b]
+      ;; line impl
+      :line {:line a :extra-arg b}
+      ;; default case
+      {:my-generic2-arity2-default-case [a b]})
+     ([a b . (& c [c1 . cs])] ;; you can put any asparagus binding pattern in arguments
+      ;; default case
+      {:my-generic2-variadic-arity
+       {:a a :b b :c c :c1 c1 :cs cs}})
+     ))
+
+(check
+ (eq (my-generic2 [1 2 3]) {:coll [1 2 3]})
+ (eq (my-generic2 "iop") {:something "iop"})
+ (eq (my-generic2 (lst 1 2 3) 42) {:line (lst 1 2 3) :extra-arg 42})
+ (eq (my-generic2 :iop 42) {:my-generic2-arity2-default-case [:iop 42]})
+ (eq (!! (my-generic2 [1 2 3] 1 :iop {}))
+     {:my-generic2-variadic-arity
+      {:a [1 2 3] :b 1
+       :c (lst :iop {})
+       :c1 :iop
+       :cs (lst {})}})
+ )
 
 
 

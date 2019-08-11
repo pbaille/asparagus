@@ -758,6 +758,7 @@
        "
 
       [e x]
+      #_(pp "exp " x)
       (let [;; this expansion context thing is an attempt to provide better error messages on expansion failure
             ;; used by expand-mcall and expand-subpath via defexpansion
             e (update e :exp-ctx (fnil conj []) x)] 
@@ -1575,6 +1576,7 @@
 
           [e x]
 
+          #_(pp "qual " x)
           (cp x
 
               ;; symbols
@@ -1791,6 +1793,15 @@
      (fn [_ [x]]
        (lst (sym "quote") x))
 
+     and:mac
+     (fn [e xs]
+       (let [xs' ($ xs (p cxp e))]
+         '(c/when (c/and .~(c/butlast xs')) ~(c/last xs'))))
+
+     or:mac
+     (fn [e xs]
+       '(c/or .~($ xs (p exp e)) nil))
+
      check
      {:doc "a quick way to assert things"
       :mac
@@ -1810,7 +1821,7 @@
        (check (pos? 1) (neg? -1))
        ;; thunk form
        (check.thunk (pos? 1) (neg? -1))
-       ;; is equivalent to 
+       ;; is equivalent to
        (fn [] (check (pos? 1) (neg? -1)))
        ;; update version (the thunk will be put under the :check attr)
        (E+ foo (check.thunk (pos? 1) (neg? -1)))
@@ -2489,6 +2500,85 @@
          (section [x from to] (subvec x (max 0 from) (min (count x) to)))
          (cdr [x] (subvec x 1)))
 
+        iterables:demo
+        (__
+
+         ;; car (is like Lisp's car or clojure.core/first)
+         (!! (eq 1 (car (lst 1 2))))
+         (!! (eq 1 (car [1 2])))
+         (!! (eq [:a 1] (car {:a 1 :b 2})))
+
+         ;; cdr (is like clojure.core/rest but preserve collection type)
+         (!! (eq (cdr [1 2 3]) [2 3]))
+         (!! (eq (cdr (lst 1 2 3)) (lst 2 3)))
+         (!! (eq (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3}))
+
+         ;; last
+         (!! (eq 2 (last (lst 1 2))))
+         (!! (eq 2 (last [1 2])))
+         (!! (eq [:b 2] (last {:a 1 :b 2})))
+
+         ;; butlast (is like clojure.core/butlast but preserve collection type)
+         (!! (eq (cdr [1 2 3]) [2 3]))
+         (!! (eq (cdr (lst 1 2 3)) (lst 2 3)))
+         (!! (eq (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3}))
+
+         ;; take (like clojure.core/take with arguments reversed and preserving collection type)
+         (!! (eq (take (lst 1 2 3) 2) (lst 1 2)))
+         (!! (eq (take [1 2 3] 2) [1 2]))
+         (!! (eq (take {:a 1 :b 2 :c 3} 2) {:a 1 :b 2}))
+
+         ;; drop
+         (!! (eq (drop (lst 1 2 3) 2) (lst 3)))
+         (!! (eq (drop [1 2 3] 2) [3]))
+         (!! (eq (drop {:a 1 :b 2 :c 3} 2) {:c 3}))
+
+         ;; takend
+         (!! (eq (takend (lst 1 2 3) 2) (lst 2 3)))
+         (!! (eq (takend [1 2 3] 2) [2 3]))
+         (!! (eq (takend {:a 1 :b 2 :c 3} 2) {:b 2 :c 3}))
+
+         ;; dropend
+         (!! (eq (dropend (lst 1 2 3) 2) (lst 1)))
+         (!! (eq (dropend [1 2 3] 2) [1]))
+         (!! (eq (dropend {:a 1 :b 2 :c 3} 2) {:a 1}))
+
+         ;; rev
+         (!! (eq (rev [1 2 3]) [3 2 1]))
+         (!! (eq (rev (lst 1 2 3)) (lst 3 2 1)))
+
+         ;; section (select a subsection of a sequantial data structure)
+         (!! (eq (section [1 2 3 4 5 6] 2 5) [3 4 5]))
+         (!! (eq (section (lst 1 2 3 4 5 6) 1 5) (lst 2 3 4 5)))
+
+         ;; splat (split a sequential datastructure at the given index)
+         (!! (eq (splat [1 2 3 4] 2) [[1 2] [3 4]]))
+         (!! (eq (splat (lst 1 2 3 4) 2) [(lst 1 2) (lst 3 4)]))
+
+         ;; uncs (uncons)
+         (!! (eq (uncs [1 2 3]) [1 [2 3]]))
+         (!! (eq (uncs (lst 1 2 3)) [1 (lst 2 3)]))
+
+         ;; runcs
+         (!! (eq (runcs [1 2 3]) [[1 2] 3]))
+         (!! (eq (runcs (lst 1 2 3)) [(lst 1 2) 3]))
+
+         ;; cons
+         (!! (eq (cons 1 [2 3]) [1 2 3]))
+         (!! (eq (cons 1 (lst 2 3)) (lst 1 2 3)))
+         ;; it can take more arguments
+         (!! (eq (cons 0 1 [2 3]) [0 1 2 3]))
+         (!! (eq (cons 1 2 3 (lst)) (lst 1 2 3)))
+
+         ;; cons?
+         (!! (eq (cons? [1 2]) [1 2]))
+         (!! (nil? (cons? [])))
+         (!! (cons? (lst 1 2) (lst 1 2)))
+         (!! (nil? (cons? (lst))))
+         (!! (eq (cons? {:a 1}) {:a 1}))
+         (!! (nil? (cons? {})))
+         (!! (nil? (cons? #{}))))
+
         )
 
     (E+ types
@@ -2617,11 +2707,12 @@
          throws:mac
          (fn [e [x m]]
            (let [expr (c/str x)]
-             '(or
-               (::catched
+             '(c/or
+               (c/get
                 (try ~(exp e x)
-                     (catch Exception err {::catched err})))
-               (p/error ~(or m "this should throws")
+                     (catch Exception err {::catched err}))
+                ::catched)
+               (p/error ~(c/or m "this should throws")
                         ":\n" ~expr))))
 
          assertion
@@ -2631,7 +2722,7 @@
 
           message?
           (fn [x]
-            (or (keyword? x) (string? x)))
+            (c/or (keyword? x) (string? x)))
 
           message+
           (fn [m1 m2]
@@ -2643,7 +2734,7 @@
 
           error-str
           (fn [x m]
-            (str (or m "assertion fail") ":\n" x))
+            (str (c/or m "assertion fail") ":\n" x))
 
           mapdo:mac
           (fn [e [x f]]
@@ -2676,7 +2767,7 @@
            :string nil
 
            :any
-           '(or ~x (p/error (error-str '~x ~m)))
+           '(c/or ~x (p/error (error-str '~x ~m)))
            )]
 
          assert
@@ -3139,7 +3230,7 @@
                  '(get ~(exp e (lst* `or cs)) ::return)]
              (if strict
                #_'(assert ~retform "clet no match!")
-               '(or ~retform ~(exp e '(error "clet no match!")))
+               '(c/or ~retform ~(exp e '(error "clet no match!")))
                retform)))
 
          compiler
@@ -3201,9 +3292,11 @@
           (let [p [:point 0 2]]
             (clet [[:point x 0] p] :y0
                   [[:point 0 y] p] :x0
-                  [[:point x y] p] [x y])))
+                  [[:point x y] p] [x y]))
+          )
 
-         :fx (clet.tests:do)]
+         :fx (clet.tests:do)
+         ]
 
         (import bindings.let.builtins
                 [clet clut !clet !clut])
@@ -3813,8 +3906,20 @@
           ([x] #(eq % x))
 
           ([x y]
-           :coll
-           (when (and (c/= x y) (c/= (type x) (type y))) x)
+
+           :map
+           (and (map? y)
+                (c/= (count y) (count x))
+                (loop [[[k1 v1] & es] x]
+                  (when (eq (get y k1) v1)
+                    (if (c/seq es) (recur es) x))))
+
+           :line
+           (and (c/= (type x) (type y))
+                (c/= (count y) (count x))
+                (c/every? id (c/map eq x y))
+                x)
+
            :nil (nil? y)
            :any (when (c/= x y) x))
 
@@ -3836,6 +3941,10 @@
          (nil? (neq [1 2] [1 2]))
          ;; variadic arity
          (eq [1 2] [1 2] [1 2])
+         ;; nested
+         (nil? (eq {:a [{}]} {:a (lst {})}))
+         (eq {:a [{}]} {:a [{}]})
+         (nil? (eq {:a [{}]} {:a [{}] :b 1}))
          ))
 
     (do :linear-accesses
@@ -4372,11 +4481,28 @@
               (!! a))})
 
     ;; redefine generic case expansion to follow the asparagus binding syntax
-    (E+ generic.spec.exp-case
+    #_(E+ generic.spec.exp-case
         (f [e [argv . body]]
            (let [syms (vec* (take (gensyms) (count argv)))
+                 ;argv ($ argv (f_ (if (= _ composite.dot) (quot &) _)))
+                 ;_ (pp argv)
                  binding-form (vec* (braid argv syms))]
-             #_(pp binding-form)
+             (pp (lst+* [syms]
+                          ($ (chunk body 2)
+                             (f1 [t impl]
+                                 [t (p/prob  binding-form impl (exp e '(let ~binding-form ~impl)))]))))
+             (lst+* [syms]
+                    ($ (chunk body 2)
+                       (f1 [t impl]
+                           [t (exp e '(let ~binding-form ~impl))]))))))
+
+    (E+ generic.spec.exp-case
+        (f [e [argv . body]]
+           (let [amp (quot &)
+                 argv ($ argv (f_ (if (= _ composite.dot) amp _)))
+                 syms ($ argv (f_ (if (= _ (quot &)) amp (gensym))))
+                 binding-form (vec* (braid (rem argv (eq amp))
+                                           (rem syms (eq amp))))]
              (lst+* [syms]
                     ($ (chunk body 2)
                        (f1 [t impl]
@@ -4422,7 +4548,11 @@
          '(do
 
             ;; definition
-            (E+ (type+ :fut [bar baz]
+            (E+ (type+ :fut ;;typetag
+
+                       [bar baz] ;; fields
+
+                       ;; generic implementations
                        (+ [a b]
                           (!let [(:fut b) b]
                                 (fut (+ (:bar a) (:bar b))

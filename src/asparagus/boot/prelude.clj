@@ -531,7 +531,7 @@
          (deep-truth [1 2 [3 5 {:a 1 :b 2}]])
          (not (deep-truth [1 2 [3 5 {:a nil :b 2}]])))
 
-        (defmacro or
+        #_(defmacro or
           ([x] x)
           ([x & xs]
            `(c/or
@@ -541,15 +541,28 @@
                   x)
              (or ~@xs))))
 
+        (defmacro or
+          ([& xs]
+           `(c/or
+             ~@(map #(cp % seq? %
+                         holycoll? `(deep-truth ~%)
+                         %) xs)
+             nil)))
+
         (asserts
          (= 1 (or 1 2 3))
          (= true (or (not nil) 2 3))
          (= 2 (or {:a 1 :b nil} 2 3))
          (= :yo (or [1 nil] :yo (do (println 45) 1)))
+         (nil? (or (pos? -1) false))
          (= :yo
             (or [1 nil]
                 [1 2 [3 5 {:a nil :b 2}]]
-                :yo))))
+                :yo)))
+
+        
+
+        )
 
     (do :cs
 
