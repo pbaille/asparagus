@@ -3705,7 +3705,7 @@
                 assoc-a-and-b (assoc_ :a 1 :b 2)]
              (assoc-a-and-b {})) ;=> {:a 1 :b 2}
 
-          many of the asparagus functions of this form, have their subjectified version with the same suffixed with _
+          many of the asparagus functions of this form, have their subjectified version with the same name suffixed with _
           this is handy, for instance, to create chains of 1 argument functions
           (> myseq (take_ 3) (dropend_ 2)) will thread 'myseq thru 2 functions, the semantics is analog to core/-> but it is a function
           the '> function is defined in the :invocation-application-mapping section (the previous one)
@@ -3729,8 +3729,9 @@
         ;; here we are defining subjectified versions of some important functions
         (subjectify.definitions
          take takend drop dropend section
-         sip + * § $ >
+         sip + * § $ $i >
          eq neq gt gte lt lte
+         add mul div sub
          walk dfwalk bfwalk walk?))
 
     (do :$related
@@ -3759,11 +3760,18 @@
                  x)))]
 
          $+
-         ["$+ is to § what c/mapcat is to c/map"
+         ["$+ is to $ what c/mapcat is to c/map"
           (generic.reduced
            [x f]
            :any
            (* + #_(pure x) ($ x f)))]
+
+         $i+
+         ["$i+ is to $i what c/mapcat is to c/map"
+          (generic.reduced
+           [x f]
+           :any
+           (* + #_(pure x) ($i x f)))]
 
          zip+
          ["core/mapcat(ish)"
@@ -4545,37 +4553,37 @@
                ]))
 
          :demo
-         '(do
+         (__
 
-            ;; definition
-            (E+ (type+ :fut ;;typetag
+          ;; definition
+          (E+ (type+ :fut ;;typetag
 
-                       [bar baz] ;; fields
+                     [bar baz] ;; fields
 
-                       ;; generic implementations
-                       (+ [a b]
-                          (!let [(:fut b) b]
-                                (fut (+ (:bar a) (:bar b))
-                                     (+ (:baz a) (:baz b)))))))
+                     ;; generic implementations
+                     (+ [a b]
+                        (!let [(:fut b) b]
+                              (fut (+ (:bar a) (:bar b))
+                                   (+ (:baz a) (:baz b)))))))
 
-            (E+ (type+ :fut [bar baz]
-                       (+ [(ks bar baz) (& {:bar !barb :baz bazb} (:fut b) )]
-                          (do (pp "here")
-                              (fut (+ bar !barb)
-                                   (+ baz bazb))))))
+          (E+ (type+ :fut [bar baz]
+                     (+ [(ks bar baz) (& {:bar !barb :baz bazb} (:fut b) )]
+                        (do (pp "here")
+                            (fut (+ bar !barb)
+                                 (+ baz bazb))))))
 
-            (!! (+.inspect))
+          (!! (+.inspect))
 
-            ;; instantiation
-            (!! (fut 1 2))
-            (!! (fut? (fut 1 2)))
-            (!! (map->fut {:bar 1 :baz 2}))
+          ;; instantiation
+          (!! (fut 1 2))
+          (!! (fut? (fut 1 2)))
+          (!! (map->fut {:bar 1 :baz 2}))
 
-            ;; type
-            (!! (type (fut 1 2)))       ;=> :fut
+          ;; type
+          (!! (type (fut 1 2)))         ;=> :fut
 
-            ;; using generic implmentations
-            (!! (+ (fut 1 2) (fut 1 2) )))])
+          ;; using generic implmentations
+          (!! (+ (fut 1 2) (fut 1 2) )))])
 
     (do :object-oriented-syntax
 
@@ -4584,7 +4592,7 @@
         (E+ compile-method-calls
 
             ["this compilation step will insert § in front of sexpr starting with a litteral vec or map
-          and will handle object oriented syntax (sexpr starting with a keyword) like the janet language do"
+              and will handle object oriented syntax (sexpr starting with a keyword) like the janet language do"
 
              method-not-found
              (f [o k]

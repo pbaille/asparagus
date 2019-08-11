@@ -1083,10 +1083,303 @@
             (vec? x) :vec)))))
 
 ;; ------------------------------------------------------------------------
-;;                       application and invocation
+;;                              iterables
 ;; ------------------------------------------------------------------------
 
 (_
+
+ ;; basic operations
+
+ (_
+
+  ;; car (is like Lisp's car or clojure.core/first)
+  (!! (eq 1 (car (lst 1 2))))
+  (!! (eq 1 (car [1 2])))
+  (!! (eq [:a 1] (car {:a 1 :b 2})))
+
+  ;; cdr (is like clojure.core/rest but preserve collection type)
+  (!! (eq (cdr [1 2 3]) [2 3]))
+  (!! (eq (cdr (lst 1 2 3)) (lst 2 3)))
+  (!! (eq (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3})) ;; on map it does not make much sense but...
+
+  ;; last
+  (!! (eq 2 (last (lst 1 2))))
+  (!! (eq 2 (last [1 2])))
+  (!! (eq [:b 2] (last {:a 1 :b 2}))) ;; same here...
+
+  ;; butlast (is like clojure.core/butlast but preserve collection type)
+  (!! (eq (cdr [1 2 3]) [2 3]))
+  (!! (eq (cdr (lst 1 2 3)) (lst 2 3)))
+  (!! (eq (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3}))
+
+  ;; take (like clojure.core/take with arguments reversed and preserving collection type)
+  (!! (eq (take (lst 1 2 3) 2) (lst 1 2)))
+  (!! (eq (take [1 2 3] 2) [1 2]))
+  (!! (eq (take {:a 1 :b 2 :c 3} 2) {:a 1 :b 2}))
+
+  ;; drop
+  (!! (eq (drop (lst 1 2 3) 2) (lst 3)))
+  (!! (eq (drop [1 2 3] 2) [3]))
+  (!! (eq (drop {:a 1 :b 2 :c 3} 2) {:c 3}))
+
+  ;; takend
+  (!! (eq (takend (lst 1 2 3) 2) (lst 2 3)))
+  (!! (eq (takend [1 2 3] 2) [2 3]))
+  (!! (eq (takend {:a 1 :b 2 :c 3} 2) {:b 2 :c 3}))
+
+  ;; dropend
+  (!! (eq (dropend (lst 1 2 3) 2) (lst 1)))
+  (!! (eq (dropend [1 2 3] 2) [1]))
+  (!! (eq (dropend {:a 1 :b 2 :c 3} 2) {:a 1}))
+
+  ;; rev
+  (!! (eq (rev [1 2 3]) [3 2 1]))
+  (!! (eq (rev (lst 1 2 3)) (lst 3 2 1)))
+
+  ;; section (select a subsection of a sequantial data structure)
+  (!! (eq (section [1 2 3 4 5 6] 2 5) [3 4 5]))
+  (!! (eq (section (lst 1 2 3 4 5 6) 1 5) (lst 2 3 4 5)))
+
+  ;; splat (split a sequential datastructure at the given index)
+  (!! (eq (splat [1 2 3 4] 2) [[1 2] [3 4]]))
+  (!! (eq (splat (lst 1 2 3 4) 2) [(lst 1 2) (lst 3 4)]))
+
+  ;; uncs (uncons)
+  (!! (eq (uncs [1 2 3]) [1 [2 3]]))
+  (!! (eq (uncs (lst 1 2 3)) [1 (lst 2 3)]))
+
+  ;; runcs
+  (!! (eq (runcs [1 2 3]) [[1 2] 3]))
+  (!! (eq (runcs (lst 1 2 3)) [(lst 1 2) 3]))
+
+  ;; cons
+  (!! (eq (cons 1 [2 3]) [1 2 3]))
+  (!! (eq (cons 1 (lst 2 3)) (lst 1 2 3)))
+  ;; it can take more arguments
+  (!! (eq (cons 0 1 [2 3]) [0 1 2 3]))
+  (!! (eq (cons 1 2 3 (lst)) (lst 1 2 3)))
+
+  ;; cons?
+  (!! (eq (cons? [1 2]) [1 2]))
+  (!! (nil? (cons? [])))
+  (!! (cons? (lst 1 2) (lst 1 2)))
+  (!! (nil? (cons? (lst))))
+  (!! (eq (cons? {:a 1}) {:a 1}))
+  (!! (nil? (cons? {})))
+  (!! (nil? (cons? #{}))))
+
+ ;; map reduce and friends
+
+ (_
+
+  ;; map ($)
+
+  ;; like many asparagus functions, map is taking the object as first argument
+  (is ($ [0 1 2] inc)
+      [1 2 3])
+
+  ;; it preserves collection type
+  (is ($ #{1 2 3} inc)
+      #{2 3 4})
+
+  ;; it can take several functions
+  (is ($ (lst 0 1 2) inc inc)
+      (lst 2 3 4))
+
+  ;; on maps it behaves differently from clojure.core/map
+  ;; given functions are receiving only the values
+  (is ($ {:a 1 :b 2} inc)
+      {:a 2 :b 3})
+
+  ;; map indexed ($i)
+  (is ($i [:a :b :c] (f [idx val] {:idx idx :val val}))
+      [{:idx 0, :val :a}
+       {:idx 1, :val :b}
+       {:idx 2, :val :c}])
+
+  ;; on maps it receives key-value pairs
+  ;; given functions has to return only the value
+  (is (!!($i {:a 1 :b 2}
+             (f [idx val]
+                ;; we return the key-value pair as is
+                [idx val])))
+      ;; the key-value pair has been put in value position
+      ;; the keys cannot be altered with $i,
+      ;; if you think about it $i on a vector or sequence cannot alter indexes,
+      ;; map keys are like unordered indexes somehow, so it seems to be the correct behavior
+      {:a [:a 1], :b [:b 2]}
+      )
+
+  ;; with sets, given functions receives a twin pair,
+  ;; which seems logical as sets can be viewed as maps with twin entries
+  ;; it is pointless to use $i explicetly on a set, but in a ploymorphic context, sets have to have a meaningful implementation
+  (eq ($i #{:a :b :c}
+          ;; the same function we use above in the map exemple
+          (f [idx val] [idx val]))
+      #{[:a :a] [:b :b] [:c :c]})
+
+  ;; so now you may wonder about what we leave behing from the clojure.core/map behavior
+  ;; in particular, core/map can takes several sequences
+  (c/map + (range 10) (range 10)) ;;=> (0 2 4 6 8 10 12 14 16 18)
+
+  ;; in asparagus there is another function for that called 'zip
+  ;; zipping several iterables together using the given function
+  (is (zip add (range 10) (range 10))
+      (lst 0 2 4 6 8 10 12 14 16 18))
+
+  ;; like core.map it is variadic
+  (is (zip add (range 10) (range 10) (range 10) (range 10))
+      (lst 0 4 8 12 16 20 24 28 32 36))
+
+  ;; $+
+  (is ($+ (range 6) (f_ (c/repeat _ _)))
+      (lst 1 2 2 3 3 3 4 4 4 4 5 5 5 5 5))
+
+  (is ($+ [[3 2 1 0] [6 5 4] [9 8 7]] rev)
+      [0 1 2 3 4 5 6 7 8 9])
+
+  ;; $i+ (indexed version of $+)
+  (is ($i+ [[3 2 1 0] [6 5 4] [9 8 7]]
+           (f [i v] (cons [:idx i] (rev v))))
+      [[:idx 0] 0 1 2 3 [:idx 1] 4 5 6 [:idx 2] 7 8 9])
+
+  ;; zip+
+  (is (zip+ (f [a b]
+               (c/sort
+                ;; set+ makes a set from several collections
+                (set+ a b)))
+            [[3 1 0] [6 5] [9 8 7]]
+            [[3 2 0] [5 4] [9 7]])
+      (lst 0 1 2 3 4 5 6 7 8 9))
+
+  ;; while writing this i'm considering zipi and zipi+...
+
+  ;; red
+  ;; like core/reduce but with different argument order and variadic arity
+  ;; red takes the 'seed as first argument
+  ;; a reducing function and second argument
+  ;; and as many iterables as you like (here one)
+  (is (red #{} sip [1 2 3 3 4 2 1 5 6 4 5]) ;; 'sip is asparagus conj(ish) function
+      #{1 4 6 3 2 5})
+
+  (is (red []
+           (f [ret a b] ;; note that the reducing function arity is dependant on the number of given iterables (here two)
+              (sip ret (add a b)))
+           [1 2 3 4]
+           [2 3 4 5])
+      [3 5 7 9])
+
+  ;; filt and rem
+  (check
+   (eq [1 2 3]  (filt [1 2 -1 -2 3] num? pos?))
+   (eq [-1 -2] (rem [1 2 -1 -2 3] pos?)))
+
+  )
+
+ ;; iter, idxs and vals
+
+ (_
+
+  ;; under the hood many of the functions described in the previous section rely on those three basics operations
+
+  ;; iter is like core/seq (but do not returns nil on empty things)
+  (is (iter {:a 1 :b 2})
+      (lst [:a 1] [:b 2]))
+  (is (iter [1 2 3])
+      (lst 1 2 3))
+  (is (iter (lst 1 2 3))
+      (lst 1 2 3))
+
+  ;; vals return a seq of values in the given argument
+  (is (vals {:a 1 :b 2})
+      (lst 1 2))
+  (is (vals [1 2 3])
+      (lst 1 2 3))
+  (is (vals (lst 1 2 3))
+      (lst 1 2 3))
+
+  ;; idxs return a seq of keys for maps, or a seq of idexes for sequentials
+  (is (idxs {:a 1 :b 2})
+      (lst :a :b))
+  (is (idxs [1 2 3])
+      (lst 0 1 2))
+  (is (idxs (lst 1 2 3))
+      (lst 0 1 2))
+
+  ;; those three functions are generic and can be implemented for your types
+
+  )
+
+ ;; extra operations
+
+ (_
+
+  ;; scan (like core/partition)
+  (is [[1 2] [3 4]]
+      (scan [1 2 3 4] 2 2))
+  (is [[1 2] [2 3] [3 4]]
+      (scan [1 2 3 4] 2 1))
+  (is '((0 1 2 3) (2 3 4))
+      (scan (c/range 5) 4 2))
+
+  ;; chunk
+  (is [[1 2] [3]]
+      (chunk [1 2 3] 2))
+  (is []
+      (chunk [] 2))
+
+  ;; braid (like core/interleave)
+  (is '(1 4 2 5 3 6)
+      (braid [1 2 3] [4 5 6]))
+  (is '(1 4 2 5)
+      (braid [1 2 3] [4 5]))
+
+  ;; nths
+  (is (nths (range 10) 3)
+      (lst 0 3 6 9))
+
+  ;; car and cdr compositions
+  ;; like in scheme we have those little facilities
+  ;; this is the main reason I chose car/cdr over first/rest
+  (is :io
+      (cadr [1 :io])
+      (caddr [1 2 :io])
+      (caadr [1 [:io 2] 3])
+      (cadadr [1 [2 :io]]))
+
+  )
+
+ ;; walk
+ (_
+
+  ;; depth first
+  (!! (dfwalk [1 2 {:a 1 :b [1 2 3]}] p/prob))
+
+  ;; breadth first
+  (!! (bfwalk [1 2 {:a 1 :b [1 2 3]}] p/prob))
+
+  ;; walk?
+  (!! (walk? [1 2 {:a 1 :b [1 2 3]}]
+             coll? ;; this is call on each node, in order to decide to walk deeper or not
+             p/prob ;; when the above fails on a node, this one is called on it
+             ))
+  )
+
+ )
+
+;; ------------------------------------------------------------------------
+;;                         functional programing
+;; ------------------------------------------------------------------------
+
+(_
+  
+ ;; one thing we all love in functional programming is the ability to compose functions together
+ ;; manipulate them easily, passing them to other functions, partially apply them etc...
+ ;; in asparagus I've tried to push all this stuff further than clojure
+
+ ;; application and invocation
+
+ (_
 
   ;; application and invocation are generic function that can be implemented for any type
   ;; those operations are so central in functional programming that i've decided to give them really short symbols
@@ -1148,6 +1441,255 @@
       {:a 2 :b 7})
 
   )
+
+ ;; the object convention
+
+ (_
+
+  ;; in asparagus, many functions takes what we can call the object as first argument
+  ;; I mean, the thing we are working on, for instance, in the expression (assoc mymap :a 1 :b 2), mymap is what we call the object
+  ;; all functions that can be viewed this way, will always take the 'object' as first argument
+  ;; with this simple convention we can achieve a regularity that yield to easier function composition
+
+  ;; the subjectify function will help to turn this kind of function into a one that takes only the arguments (in the previous exemple: :a 1 :b 2)
+  ;; and return a function that takes only the target object, and return the result.
+  (let [assoc_ (subjectify assoc)
+        assoc-a-and-b (assoc_ :a 1 :b 2)]
+    (assoc-a-and-b {})) ;;=> {:a 1 :b 2}
+
+  ;; many of the asparagus functions that follow this convention, have their subjectified version with the same name suffixed with _
+  ;; this is handy, for instance, to create chains of 1 argument functions
+  (> myseq (take_ 3) (dropend_ 2)) ;; will thread 'myseq thru 2 functions, the semantics is analog to core/-> but it is a function
+  ;; the '> function is defined in the :invocation-application-mapping section of asparagus.core
+  (>_ (take_ 3) (dropend_ 2)) ;; will return a function that wait for its first argument ('myseq in the previous example)
+  )
+
+ ;; guards
+
+ (_
+
+  ;; one other thing that ease function composition is what I call guards (for lack of better name)
+  ;; guards differs from predicate by the fact that they can either return nil or something (in most case thr 'object' unchanged)
+  ;; so they can be used like predicates, but do not stop the flowing data
+  ;; therefore they can be chained via function composition
+
+  ;; some examples of guards
+  (vec? [1 2])     ;;=> [1 2]
+  (vec? (lst 1 2)) ;;=> nil
+  (pos? 1)         ;;=> 1
+  (pos? -1)        ;;=> nil
+
+  ;; as we've seen we can chain them like this
+  (let [g (>_ num? pos? (gt_ 2))] ;; gt is greater-than
+    (g 3))                        ;;=> 3
+
+  ;; but + does the same
+  (let [g (+ num? pos? (gt_ 2))]
+    (g 3))
+
+  ;; collection guards
+
+  ;; ?$
+  ;; check if all values of a datastructure are not nil (see 'iterables section)
+  (is ($? [1 2 3])
+      [1 2 3])
+
+  (!! (nil? ($? [1 nil 2 3])))
+
+  (is ($? {:a 1 :b 2})
+      {:a 1 :b 2})
+
+  (nil? ($? {:a 1 :b nil}))
+
+  ;; ?$ is a composition of $ and ?$
+  ;; it can be viewed as a map operation that succed if all values of the resulting collection are non nil
+
+  (is (?$ [2 3 4 5] num? inc (gt_ 2))
+      [3 4 5 6])
+
+  (!! (nil? (?$ [3 4 1 5] num? inc (gt_ 2))))
+
+  ;; ?zip
+  ;; the zip variant
+
+  (is (?zip #(pos? (add %1 %2)) [1 2 3] [1 2 3])
+      (lst 2 4 6))
+
+  (!! (nil? (?zip #(pos? (add %1 %2)) [1 2 3] [1 2 -3])))
+
+  ;; ?deep
+  ;; a deep variant of $?
+  ;; check if all nested values are non nil
+  (check
+   (nil? (?deep {:a {:b 1 :c [1 2 nil]}}))
+   (nil? (?deep {:a {:b 1 :c [1 2 3 {:d nil}]}}))
+   ;; succeed
+   (?deep {:a {:b 1 :c [1 2 3]}}))
+
+  )
+
+ ;; flow
+
+ (_
+
+  ;; ?< and ?>
+
+  ;; ?> thread the object thru guards shorting on first nil result
+
+  ;; ?< trying all given guards against x until first non nil result
+
+  (check
+   ;; success
+   (eq 1 (?> 1 num? pos?))
+   ;; failure
+   (nil? (?> 1 num? neg?))
+   ;; shorts after str? (else it would be an error)
+   (nil? (?> 1 str? (+_ "aze")))
+   ;; more exemples
+   (eq 3 (?> [1 2 3] (guard:fn (+ c/count c/odd?)) last))
+   (nil? (?> [1 2] (guard [x] ((+ c/count c/odd?) x)) last))
+   ;; more composed exemple
+   ;; use § under the hood,
+   ;; applicable data structure can be used
+   (eq {:-a 3 :a -3}
+       (?> -1
+           num?
+           (c/juxt (p add -2) (?>_ (p add 2) pos?))
+           car
+           neg?
+           #(do {:a % :-a (mul % -1)})
+           #_{:-a pos?} ;; no map application for now
+           ))
+
+   ;; build a guard
+   ;; that succeed for numbers or strings
+   (let [f (?<_ num? str?)]
+     (eq [1 "a" nil]
+         [(f 1) (f "a") (f :a)]))
+
+   ;; basic composition with ?< and ?>_
+   (eq 42
+       (?< 44
+           str?
+           (?>_ num? (gt_ 10) dec dec)))
+
+   )
+
+  ;; ?c> and ?c
+  ;; conditional functions
+  ;; ?c> is like a scheme-cond(ish) function
+  ;; ?c is like a clojure-cond(ish) function
+
+  (check
+
+   (eq 2
+       (?c 1
+           ;; like clojure cond
+           ;; works by couples
+           str? :pouet ;; if str? succeed :pouet is called
+           pos? inc
+           neg? dec))
+
+   (eq 10
+       (?c 10
+           num? (lt_ 3) ;; if the second pred fail, we go to next couple
+           num? (gt_ 7) ;; this line succeed
+           ))
+
+   ;; (non function values act as constant functions)
+   (eq :pouet
+       (?c "a"
+           str? :pouet
+           pos? inc
+           neg? dec))
+
+   ;; same with ?c_
+   (eq -2
+       ((?c_
+         str? :pouet
+         pos? inc
+         neg? dec)
+        -1))
+
+   (eq -8
+       (?c> -2
+            ;; like scheme cond
+            ;; several vecs of guards
+            [str? :pouet]
+            [pos? inc inc inc]
+            [neg? dec dec (p mul 2)]))
+
+   (?c> 1
+        ;; here too, if the line does not succeed entirely,
+        ;; skip to the next line
+        [pos? dec pos? :gt1]
+        [pos? :1])
+
+   (eq 5
+       ((?c>_
+         [str? :pouet]
+         [pos? inc inc inc]
+         [neg? dec dec (p mul 2)])
+        2))
+   )
+
+  )
+
+ ;; 'df (data function)
+
+ (_
+
+  ;; df: data function,
+  ;; create a function from a data structure that
+  ;; apply all functions contained in it (deeply) to further args.
+  ;; preserve original structure
+
+  ;; you can use vectors and maps to compose the resulting function
+  (!! (df [inc
+           dec
+           {:doubled (f_ (mul 2 _))
+            :halfed (f_ (div _ 2))}]))
+  ;; <fn>
+
+  ;; invoc it
+  (let [f (df [inc dec
+               {:doubled (f_ (mul 2 _))
+                :halfed (f_ (div _ 2))}])]
+    (f 1)) ;;=> [2 0 {:doubled 2 :halfed 1/2}]
+
+  ;; is equivalent to write
+  ((f1 a [(inc a) (dec a)
+          {:doubled (mul 2 a)
+           :halfed (div a 2)}])
+   1)
+
+  ;; any invocable can serve as a leaf
+  ;; don't know if you remember, but in asparagus almost everything is invocable,
+  ;; in particular constant values like 42 or :foo return themselves
+  ;; to demonstrate that df can handle any invocable we will use some of those
+  (let [f (df [inc dec :foo 42])]
+    (f 1)) ;;=> [2 0 :foo 42]
+
+  ;; can take several arguments
+  (let [f (df [add sub])] (f 1 2 3)) ;;=> [6 -4]
+
+  ;; you can deeply mix maps and vecs to compose your function
+  (let [f (df {:addsub [add sub]
+               :average (f xs (div (* add xs) (count xs)))})]
+    (f 1 2 3))
+  ;;=> {:addsub [6 -4], :average 2}
+
+  ;; maybe you are wondering about our vec and map invocation behavior
+  ;; this is prevented here because vecs and maps mean something else in this context
+  ;; but you can use the § function to state that a leaf that is a map or a vec has to be treated as an invocable
+  (let [f (df [concat
+               (§ [add sub mul]) ;; here
+               ])]
+    (f [1 2 3] [4 5 6]))
+  ;;=> [(1 2 3 4 5 6) [5 -3 18]]
+
+  )
+ )
 
 ;; ------------------------------------------------------------------------
 ;;                         environment (continued)
@@ -1364,60 +1906,160 @@
 ;;                              generics
 ;; ------------------------------------------------------------------------
 
-;; generic functions are at heart of asparagus, every core operations are defined this way
+(_
 
-;; mono arity
-;; we will define a my-generic function and implement it for some built in types
+ ;; generic functions are at heart of asparagus, every core operations are defined this way
 
-(E+ my-generic
-    (generic
-     [a] ;; the argument vector
-     :vec (str "vector: " a) ;; the vector implementation
-     :num (str "number: " a) ;; the number implementation
-     :coll (str "collection: " a) ;; collection impl
-     (str "something else: " a) ;; default case
-     ))
+ ;; mono arity
 
-(check
- (eq (my-generic [1 2]) "vector: [1 2]")
- (eq (my-generic 1) "number: 1")
- (eq (my-generic (lst 1 2)) "collection: (1 2)")
- (eq (my-generic :iop) "something else: :iop"))
+ (_
+  ;; we will define a my-generic function and implement it for some built in types
 
-;; poly arity
-(E+ my-generic2
-    (generic
-     ([a]
-      ;; coll impl
-      :coll {:coll a}
-      ;; default case
-      {:something a})
-     ([a b]
-      ;; line impl
-      :line {:line a :extra-arg b}
-      ;; default case
-      {:my-generic2-arity2-default-case [a b]})
-     ([a b . (& c [c1 . cs])] ;; you can put any asparagus binding pattern in arguments
-      ;; default case
-      {:my-generic2-variadic-arity
-       {:a a :b b :c c :c1 c1 :cs cs}})
-     ))
+  (E+ my-generic
+      (generic
+       [a]                         ;; the argument vector
+       :vec (str "vector: " a)     ;; the vector implementation
+       :num (str "number: " a)     ;; the number implementation
+       :coll (str "collection: " a) ;; collection impl
+       (str "something else: " a)   ;; default case
+       ))
 
-(check
- (eq (my-generic2 [1 2 3]) {:coll [1 2 3]})
- (eq (my-generic2 "iop") {:something "iop"})
- (eq (my-generic2 (lst 1 2 3) 42) {:line (lst 1 2 3) :extra-arg 42})
- (eq (my-generic2 :iop 42) {:my-generic2-arity2-default-case [:iop 42]})
- (eq (!! (my-generic2 [1 2 3] 1 :iop {}))
-     {:my-generic2-variadic-arity
-      {:a [1 2 3] :b 1
-       :c (lst :iop {})
-       :c1 :iop
-       :cs (lst {})}})
+  (check
+   (eq (my-generic [1 2]) "vector: [1 2]")
+   (eq (my-generic 1) "number: 1")
+   (eq (my-generic (lst 1 2)) "collection: (1 2)")
+   (eq (my-generic :iop) "something else: :iop"))
+  )
+
+ ;; poly arity
+
+ (_
+
+  ;; as clojure.core/fn generics a multi arity syntax
+  (E+ my-generic2
+      (generic
+       ([a]
+        ;; coll impl
+        :coll {:coll a}
+        ;; default case
+        {:something a})
+       ([a b]
+        ;; line impl
+        :line {:line a :extra-arg b}
+        ;; default case
+        {:my-generic2-arity2-default-case [a b]})
+       ([a b . (& c [c1 . cs])] ;; you can put any asparagus binding pattern in arguments
+        ;; default case
+        {:my-generic2-variadic-arity
+         {:a a :b b :c c :c1 c1 :cs cs}})
+       ))
+
+  (check
+   (eq (my-generic2 [1 2 3]) {:coll [1 2 3]})
+   (eq (my-generic2 "iop") {:something "iop"})
+   (eq (my-generic2 (lst 1 2 3) 42) {:line (lst 1 2 3) :extra-arg 42})
+   (eq (my-generic2 :iop 42) {:my-generic2-arity2-default-case [:iop 42]})
+   (eq (!! (my-generic2 [1 2 3] 1 :iop {}))
+       {:my-generic2-variadic-arity
+        {:a [1 2 3] :b 1
+         :c (lst :iop {})
+         :c1 :iop
+         :cs (lst {})}})
+   )
+  )
+
+ ;; inspection, extension
+
+ (_
+  ;; we can inspect your generic like this
+  (!! (my-generic2.inspect))
+
+  ;; extension
+  ;; here we will define an arity2 implementation for vectors
+  ;; with clojure protocols, if we extend a protocol to our type, we have to implement all arities
+  ;; in asparagus this is not nescessary
+
+  (E+ (my-generic2.extend
+       [a b]
+       :vec {:vec a :extra-arg b}))
+
+  (!! (my-generic2 [1 2 3] "iop"))
+  ;; we still benefits from the others arity implementations
+  (!! (my-generic2 [1 2 3]))
+  (!! (my-generic2 [1 2 3] 1 2 3))
+
+  ;; the extend form is letting you implement several things at once
+  ;; it has the same syntax as the initial definition
+
+  (E+ (my-generic2.extend
+       ([a]
+        :num {:num a}
+        :str {:str a}
+        :seq {:seq a})
+       ([a b . c]
+        :vec {:variadic-arity-vec-extension [a b c]})))
+
+  (check
+   (eq (my-generic2 1) {:num 1})
+   (eq (my-generic2 "yo") {:str "yo"})
+   (eq (my-generic2 (lst 1 2)) {:seq (lst 1 2)})
+   (eq (my-generic2 {:a 1}) {:coll {:a 1}})
+   (eq (my-generic2 [1 2] 1 2 3)
+       {:variadic-arity-vec-extension [[1 2] 1 (lst 2 3)]})
+   (eq (my-generic2 "hey" 1 2 3)
+       {:my-generic2-variadic-arity
+        {:a "hey", :b 1, :c (lst 2 3), :c1 2, :cs (lst 3)}}))
+  )
+
+ ;; a la carte polymorphism
+
+ (_
+  ;; one consideration that came to my mind and that is experimented at the end of asparagus.boot.generis
+  ;; is that each implementation should be callable directly when there is no need for polymorphism
+  ;; candidate syntaxes would be:
+  ;; (my-generic2_vec my-vec arg1 arg2)
+  ;; (my-generic2.case :vec my-vec arg1 arg2)
+  ;; it seems reasonable to be able to disambiguate when we can do so.
+  ;; and for critical code it can speed things a bit...
+  ;; it looks like best of both world to me
+  )
  )
 
+;; ------------------------------------------------------------------------
+;;                                types
+;; ------------------------------------------------------------------------
 
+(__
 
+ ;; definition
+ (E+ (type+ :fut ;;typetag
+
+            [bar baz] ;; fields
+
+            ;; generic implementations
+            (+ [a b]
+               (!let [(:fut b) b]
+                     (fut (+ (:bar a) (:bar b))
+                          (+ (:baz a) (:baz b)))))))
+
+ (!! (+.inspect))
+
+ ;; instantiation
+ (!! (fut 1 2))
+ (!! (fut? (fut 1 2)))
+ (!! (map->fut {:bar 1 :baz 2}))
+
+ ;; type
+ (!! (type (fut 1 2))) ;;=> :fut
+
+ ;; using generic implmentations
+ (!! (+ (fut 1 2) (fut 1 2) )))
+
+;; ------------------------------------------------------------------------
+;;                            object orientation
+;; ------------------------------------------------------------------------
+
+(_)
 
 
 
