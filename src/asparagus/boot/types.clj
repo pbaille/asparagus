@@ -189,6 +189,16 @@
       (clojure.string/split #" ")
       second symbol))
 
+(defn symbol->class [s]
+  (if (symbol? s)
+    (let [k (resolve s)]
+      (if (class? k) k
+          (p/error "not a resolvable class symbol")))
+    (p/error "symbol->class needs a symbol and got: " s)))
+
+(defn ensure-class [x]
+  (if (class? x) x (symbol->class x)))
+
 (defn symbolic-preds->or-form [ps]
   (if (= (count ps) 1)
     (first ps)
@@ -264,7 +274,7 @@
    classes: the clojure classes that correspond to the type
    groups: the groups your type belongs to"
   [k classes groups]
-  (swap! reg assoc-in [:prims k] classes)
+  (swap! reg assoc-in [:prims k] (map ensure-class classes))
   (doseq [g groups] (group+ g [k]))
   (compile-guards!)
   @reg)

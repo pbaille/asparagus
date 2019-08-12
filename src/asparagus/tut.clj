@@ -2032,34 +2032,93 @@
 (__
 
  ;; definition
- (E+ (type+ :fut ;;typetag
+ (E+ (type+ :mytyp ;;typetag
 
             [bar baz] ;; fields
 
             ;; generic implementations
             (+ [a b]
-               (!let [(:fut b) b]
-                     (fut (+ (:bar a) (:bar b))
+               (!let [(:mytyp b) b]
+                     (mytyp (+ (:bar a) (:bar b))
                           (+ (:baz a) (:baz b)))))))
 
  (!! (+.inspect))
 
  ;; instantiation
- (!! (fut 1 2))
- (!! (fut? (fut 1 2)))
- (!! (map->fut {:bar 1 :baz 2}))
+ (!! (mytyp 1 2))
+ (!! (mytyp? (mytyp 1 2)))
+ (!! (map->mytyp {:bar 1 :baz 2}))
 
  ;; type
- (!! (type (fut 1 2))) ;;=> :fut
+ (!! (type (mytyp 1 2))) ;;=> :mytyp
 
  ;; using generic implmentations
- (!! (+ (fut 1 2) (fut 1 2) )))
+ (!! (+ (mytyp 1 2) (mytyp 1 2) )))
 
+'((macroexpand '(extend-protocol A B (a ([x] x) ([x y] x))))
+ (macroexpand '(clojure.core/extend-type B A (a ([x] x) ([x y] x))))
+
+ (exp @E '(cf [a] a
+              [a b] b
+              [a !b (:vec c)] :hey))
+
+  (exp @E '(cf ([a] a)
+               ([a b] b)
+               ([a !b (:vec c)] :hey)))
+
+  (fn []
+    (declare Yo)
+    (defrecord Yo [a b])
+    (t/prim+ :io [Yo] [:pouet])
+    :ok)
+
+ )
 ;; ------------------------------------------------------------------------
 ;;                            object orientation
 ;; ------------------------------------------------------------------------
 
-(_)
+(_
+
+ ;; a light way to mimic object oriented programming in clojure is to put methods inside a map
+
+ (let [obj
+       { ;; the greet method, taking the object has first argument and a name
+        ;; returning a greet string
+        :greet
+        (fn [o name]
+          (str "Hello " name " my name is "
+               (c/get o :name))) ;; we use the object to retreive its name
+        ;; a name attribute
+        :name "Bob"}]
+
+   ;; in asparagus when the verb of the expression is a literal keyword, it denotes a method call
+   ;; this syntax comes from the Janet language (which you should check if you haven't already)
+   (is (:greet obj "Joe")
+       "Hello Joe my name is Bob")
+
+   ;; (:greet obj "Joe") it is compiled roughly to
+   ;; notice that the method receives the object as first argument
+   (§ (c/get obj :greet) obj "Joe")
+
+   ;; since it compile to an explicit invocation
+   ;; anything with an § impl can be fetch with this syntax
+
+   (is (:name obj) "Bob")
+
+   ;; (:name obj) will be compiled to
+   (§ (c/get obj :name) obj)
+
+   ;; it can seems problematic at first, but strings are constant and constants returns them self when invoked
+   ;; so it returns "Bob" as we want
+
+   (throws (:bark obj))
+
+   ::ok
+
+   )
+
+
+ )
 
 
 

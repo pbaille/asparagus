@@ -874,7 +874,7 @@
           #_(pp 'will-sort-u u)
           (let [filtype
                 (fn [t] (shrink+ u #(= t (car %))))]
-            (doall (mapcat filtype [:link :declare #_:clj :fx :def]))))
+            (doall (mapcat filtype [:link :declare :clj :fx :def]))))
 
         (defn env-upd_upd-expr? [e x]
           (cs [? (seq? x)
@@ -955,7 +955,7 @@
                [(condp = (.mkey from)
                   :links [:link (epath (ppath from)) x]
                   :fx [:fx (epath (ppath from)) x]
-                  ;;:clj [:clj nil x]
+                  :clj [:clj nil x]
                   [:def (epath from) x])])))
 
         (_ :tries
@@ -998,7 +998,7 @@
                          :link (env-add-member e (path at :links) x)
                          :declare (env-declare-member e at)
                          :fx (do (eval (mv e at) x) e)
-                         ;;:clj (do (c/eval x) e)
+                         :clj (do (c/eval x) e)
                          :def (env-member-add-compiled e at x))
                        (catch Exception err
                          (error "\nenv-upd error compiling:\n"
@@ -1993,10 +1993,20 @@
            '{:val ~gsym
              inspect:val
              (fn [] (@g/reg '~gsym))
+             ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
+             extension-form:mac
+             (fn [e bod]
+               (g/extension-form
+                (generic.spec e '~gsym bod)))
+             ;; now entend:upd just emit a macro call that will wait expansion time
              extend:upd
              (fn [e bod]
+               {:fx (lst* 'extension-form bod)})
+             ;; this is the previous code (problems with type+)
+             #_(fn [e bod]
                {:fx (g/extension-form
                      (generic.spec e '~gsym bod))})
+
              })
 
          spec
@@ -4523,34 +4533,27 @@
          (f [e [name fields . impls]]
 
             (let [name-sym (sym name)
-                  class-sym (sym name "_USERTYPE")]
+                  class-sym (sym name "_USERTYPE")
+                  map-constructor-sym (sym "map->" name-sym)
+                  guard-sym (sym name-sym "?")]
 
-              ;;TODO
+              ;; TODO
 
-              ;; I would like to be able to put the following form in the update function return
-              ;; but it needs to be executed before the generic.type+ update is processed
               ;; 'vectors returned by an update function' treatment is not lazy enough (in the sense that it process all contained update-expression at the same time)
-
               ;; idealy if an update function returns something like: [form1 form2 ...]
               ;; the behavior should be similar to (E+ form1 form2 ...)
               ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
 
-              (println "impls " impls)
-              (println "emited " '(generic.type+ ~name (type [x] ~name ~name) .~impls))
-
-              (c/eval
-               `(do (defrecord ~class-sym ~fields)
-                    (t/prim+ ~name [~class-sym] [:usertypes])))
-
-              [ ;; constructors (positional and from hashmap)
+              [;; clojure side effects
+               :clj '(do (defrecord ~class-sym ~fields)
+                         (t/prim+ ~name [~class-sym] [:usertypes]))
+               ;; constructors (positional and from hashmap)
                name-sym '(f ~fields (~(sym "->" class-sym) .~fields))
-               (sym "map->" name-sym) '(f_ (~(sym "map->" class-sym) _))
-               (sym name-sym "?") '(f_ (instance? ~class-sym _))
+               map-constructor-sym '(f_ (~(sym "map->" class-sym) _))
+               guard-sym '(f_ (instance? ~class-sym _))
 
                ;; generic implementations
-               '(generic.type+ ~name (type [x] ~name ~name) .~impls)
-
-               ]))
+               '(generic.type+ ~name (type [x] ~name ~name) .~impls)]))
 
          :demo
          (__
@@ -4567,7 +4570,7 @@
                                    (+ (:baz a) (:baz b)))))))
 
           (E+ (type+ :fut [bar baz]
-                     (+ [(ks bar baz) (& {:bar !barb :baz bazb} (:fut b) )]
+                     (+ [(ks bar baz) (& {:bar !barb :baz bazb} (:fut b))]
                         (do (pp "here")
                             (fut (+ bar !barb)
                                  (+ baz bazb))))))
@@ -4576,14 +4579,18 @@
 
           ;; instantiation
           (!! (fut 1 2))
-          (!! (fut? (fut 1 2)))
           (!! (map->fut {:bar 1 :baz 2}))
 
+          ;; guard
+          (!! (fut? (fut 1 2))) ;;=> (fut 1 2)
+
           ;; type
-          (!! (type (fut 1 2)))         ;=> :fut
+          (!! (type (fut 1 2))) ;;=> :fut
 
           ;; using generic implmentations
-          (!! (+ (fut 1 2) (fut 1 2) )))])
+          (!! (+ (fut 1 2) (fut 1 2) )))]
+
+        )
 
     (do :object-oriented-syntax
 
@@ -4603,14 +4610,59 @@
                 (cp x
                     seq?
                     (clet [x1 (key? (car x))
-                           [x2 . _xs] (cdr x)
-                           x2 (rec e x2)]
-                          (lst* (exp e '(or (c/get ~x2 ~x1) (.method-not-found ~x2 ~x1)))
-                                x2 (when _xs ($ _xs (p rec e))))
+                           [o . _xs] (cdr x)
+                           o (rec e o)]
+                          (lst* (exp e '§)
+                                (exp e '(or (c/get ~o ~x1) (.method-not-found ~o ~x1)))
+                                o (when _xs ($ _xs (p rec e))))
                           ($ x (p rec e)))
                     holycoll?
                     ($ x (p rec e))
-                    x))])
+                    x))
+
+             :demo
+             (__
+
+              ;; a light way to mimic object oriented programming in clojure is to put methods inside a map
+
+              (let [obj
+                    { ;; the greet method, taking the object has first argument and a name
+                     ;; returning a greet string
+                     :greet
+                     (fn [o name]
+                       (str "Hello " name " my name is "
+                            (c/get o :name))) ;; we use the object to retreive its name
+                     ;; a name attribute
+                     :name "Bob"}]
+
+                ;; in asparagus when the verb of the expression is a literal keyword, it denotes a method call
+                ;; this syntax comes from the Janet language (which you should check if you haven't already)
+                (is (:greet obj "Joe")
+                    "Hello Joe my name is Bob")
+
+                ;; (:greet obj "Joe") it is compiled roughly to
+                ;; notice that the method receives the object as first argument
+                (§ (c/get obj :greet) obj "Joe")
+
+                ;; since it compile to an explicit invocation
+                ;; anything with an § impl can be fetch with this syntax
+
+                (is (:name obj) "Bob")
+
+                ;; (:name obj) will be compiled to
+                (§ (c/get obj :name) obj)
+
+                ;; it can seems problematic at first, but strings are constant and constants returns them self when invoked
+                ;; so it returns "Bob" as we want
+
+                (throws (:bark obj))
+
+                ::ok
+
+                )
+
+
+              )])
 
         ;; we keep a copy of the actual cxp function
         (E+ composite.cxp-old composite.cxp)
@@ -4618,55 +4670,8 @@
         ;; we overide it with one that do the same plus implicit-invoc stuff
         (E+ composite.cxp
             (f [e x]
-               #_(pp "new cxp " (composite.cxp-old e x #_(implicit-invoc x)))
                (compile-method-calls
                 e (composite.cxp-old e x))))
-
-        (_ :scratch
-
-           (!! (cxp @E '(f [a] (:iop a))))
-
-           (exp @E '(f [a b c] (:op a b (:top c))))
-
-           (bubfind @E (path 'cxp))
-
-           (let [o1 {:greet (f [x . [y]] (println "hello" y))}]
-             (:greet o1 "you")
-             (:bark o1 "you"))
-
-           (exp @E '(let [o1 {:greet (f [x . [y]] (println "hello" y))}]
-                      (:greet o1 "you")
-                      (:bark o1 "you")))
-
-           (exp @E '(let [(:coll a) [1 2]] (pp a) ([add sub] [1 2 3] [1 2 3] [1 2 3])))
-
-           (exp @E '(f [x . [y]] (println "hello" y)))
-
-           (exp @E '(f [e x]
-                       (cp x
-                           seq?
-                           (cs [? (key? (car x))
-                                [x1 x2 & _xs] x
-                                x2' (rec e x2)]
-                               (lst* (exp e '(or (c/get ~x2' ~x1)
-                                                 (.method-not-found ~x2' ~x1)))
-                                     x2' (when _xs ($ _xs (p rec e))))
-                               ($ x (p rec e)))
-                           holycoll?
-                           ($ x (p rec e))
-                           x)))
-
-           (macroexpand '(cs [? (key? (car x))
-                              [x1 x2 & _xs] x
-                              x2' (rec e x2)]
-                             (lst* (exp e '(or (c/get ~x2' ~x1)
-                                               (.method-not-found ~x2' ~x1)))
-                                   x2' (when _xs ($ _xs (p rec e))))
-                             ($ x (p rec e)))
-                        )
-
-           (macroexpand '(c/let [[x1 x2 x3 & xs] (range)] [x1 x2 x3 xs]))
-           )
         )
 
     (pp :will-declare-topforms)
