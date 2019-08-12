@@ -2055,24 +2055,6 @@
  ;; using generic implmentations
  (!! (+ (mytyp 1 2) (mytyp 1 2) )))
 
-'((macroexpand '(extend-protocol A B (a ([x] x) ([x y] x))))
- (macroexpand '(clojure.core/extend-type B A (a ([x] x) ([x y] x))))
-
- (exp @E '(cf [a] a
-              [a b] b
-              [a !b (:vec c)] :hey))
-
-  (exp @E '(cf ([a] a)
-               ([a b] b)
-               ([a !b (:vec c)] :hey)))
-
-  (fn []
-    (declare Yo)
-    (defrecord Yo [a b])
-    (t/prim+ :io [Yo] [:pouet])
-    :ok)
-
- )
 ;; ------------------------------------------------------------------------
 ;;                            object orientation
 ;; ------------------------------------------------------------------------
