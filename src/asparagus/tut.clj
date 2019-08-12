@@ -2031,6 +2031,9 @@
 
 (__
 
+ ;; simple
+ (E+ (type+ :split [left right]))
+
  ;; definition
  (E+ (type+ :mytyp ;;typetag
 
@@ -2053,7 +2056,11 @@
  (!! (type (mytyp 1 2))) ;;=> :mytyp
 
  ;; using generic implmentations
- (!! (+ (mytyp 1 2) (mytyp 1 2) )))
+ (!! (+ (mytyp 1 2) (mytyp 1 2) ))
+
+
+
+ )
 
 ;; ------------------------------------------------------------------------
 ;;                            object orientation
@@ -2064,7 +2071,7 @@
  ;; a light way to mimic object oriented programming in clojure is to put methods inside a map
 
  (let [obj
-       { ;; the greet method, taking the object has first argument and a name
+       {;; the greet method, taking the object has first argument and a name
         ;; returning a greet string
         :greet
         (fn [o name]
@@ -2080,7 +2087,7 @@
 
    ;; (:greet obj "Joe") it is compiled roughly to
    ;; notice that the method receives the object as first argument
-   (§ (c/get obj :greet) obj "Joe")
+   (§ (c/get obj :greet) obj "Joe") ;; where § is invocation
 
    ;; since it compile to an explicit invocation
    ;; anything with an § impl can be fetch with this syntax
@@ -2090,14 +2097,45 @@
    ;; (:name obj) will be compiled to
    (§ (c/get obj :name) obj)
 
-   ;; it can seems problematic at first, but strings are constant and constants returns them self when invoked
+   ;; it can seems problematic at first, but strings are constant and constants returns themselves when invoked
    ;; so it returns "Bob" as we want
 
+   ;; on missing method it throw an informative error
    (throws (:bark obj))
 
    ::ok
 
    )
+
+ ;; here's an experimental way to create objects that shares prototypes
+
+ (E+ (obj+ :named
+           [name] ;; fields
+           ;; proto
+           {:greet
+            (fn [o name]
+              (str "Hello " name " my name is "
+                   (c/get o :name)))}))
+
+
+ (!! (named "Bob"))
+
+ (E+ (obj+ :person
+           [firstname name] ;; fields
+           [:named] ;; ancestors (we will inherit from their prototypes)
+           {:walk (f1 o "i'm walking")} ;; proto
+           [] ;; a vector of generic implementations
+           ))
+
+ (env-inspect 'named)
+
+ (!! (let [o (named "Bob")] (:greet o "Joe")))
+
+ (!! (let [o (person "Bob" "Wallace")]
+       (lst (:greet o "Joe")
+            (:walk o)
+            person.proto)))
+
 
 
  )

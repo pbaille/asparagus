@@ -4544,7 +4544,7 @@
               ;; the behavior should be similar to (E+ form1 form2 ...)
               ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
 
-              [;; clojure side effects
+              [ ;; clojure side effects
                :clj '(do (defrecord ~class-sym ~fields)
                          (t/prim+ ~name [~class-sym] [:usertypes]))
                ;; constructors (positional and from hashmap)
@@ -4589,6 +4589,52 @@
 
           ;; using generic implmentations
           (!! (+ (fut 1 2) (fut 1 2) )))]
+
+        obj+
+        ["an update to declare a new object"
+
+         :upd
+         (cf
+
+          [e (tup name fields (:map proto))]
+          (rec e [name fields [] proto []])
+
+          [e (tup name fields (:map proto) impls)]
+          (rec e [name fields [] proto impls])
+
+          [e (tup name fields (:vec parents) (:vec impls))]
+          (rec e [name fields parents {} []])
+
+          [e (tup name fields (:vec parents) (:map proto))]
+          (rec e [name fields parents proto []])
+
+          [e [name fields parents proto impls]]
+          (let [ ;;_ (pp "main")
+                name-sym (sym name)
+                class-sym (sym name "_USERTYPE")
+                map-constructor-sym (sym "map->" name-sym)
+                guard-sym (sym name-sym "?")
+                proto-sym (sym name-sym ".proto:val")
+                proto-val
+                (red proto
+                     (f [p x]
+                        (clet [path (path (sym x ".proto:val"))
+                               [at v] (env-relfind e path)]
+                              (+ p v)
+                              p))
+                     parents)]
+
+            [ ;; clojure side effects
+             :clj '(do (defrecord ~class-sym ~fields)
+                       (t/prim+ ~name [~class-sym] ~parents))
+             ;; constructors (positional and from hashmap)
+             name-sym '(f ~fields (merge ~proto-sym (~(sym "->" class-sym) .~fields)))
+             proto-sym proto-val
+             map-constructor-sym '(f_ (~(sym "map->" class-sym) (merge ~proto-sym _)))
+             guard-sym '(f_ (instance? ~class-sym _))
+
+             ;; generic implementations
+             '(generic.type+ ~name (type [x] ~name ~name) .~impls)]))]
 
         )
 
