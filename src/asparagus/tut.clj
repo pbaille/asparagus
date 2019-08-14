@@ -9,6 +9,12 @@
      clet clut !clet !clut
      case casu !case !casu)
 
+(defmacro is [& xs]
+  `(!! (check (~'eq ~@xs))))
+
+(defmacro isnt [& xs]
+  `(!! (check ~@($ xs (f_ (lst `nil? _))))))
+
 ;; ------------------------------------------------------------------------
 ;;                               Rational
 ;; ------------------------------------------------------------------------
@@ -1386,10 +1392,6 @@
   ;; * for application 
   ;; § for invocation
 
-  ;; a little help for better readibility
-  (defmacro is [& xs]
-    `(!! (check (~'eq ~@xs))))
-
   ;; invocation
 
   ;; for function it is trivial
@@ -1469,7 +1471,7 @@
  (_
 
   ;; one other thing that ease function composition is what I call guards (for lack of better name)
-  ;; guards differs from predicate by the fact that they can either return nil or something (in most case thr 'object' unchanged)
+  ;; guards differs from predicate by the fact that they can either return nil or something (in most case the given 'object' unchanged)
   ;; so they can be used like predicates, but do not stop the flowing data
   ;; therefore they can be chained via function composition
 
@@ -1487,9 +1489,9 @@
   (let [g (+ num? pos? (gt_ 2))]
     (g 3))
 
-  ;; collection guards
+  ;; collection guards ----------------------
 
-  ;; ?$
+  ;; $?
   ;; check if all values of a datastructure are not nil (see 'iterables section)
   (is ($? [1 2 3])
       [1 2 3])
@@ -1526,112 +1528,143 @@
    ;; succeed
    (?deep {:a {:b 1 :c [1 2 3]}}))
 
+  ;; creating guards --------------------------
+
+  (let [g (guard.unary c/odd?)]
+    (g 1)) ;;=> 1
+
+  (let [g (guard.binary c/>=)]
+    (g 2 1)) ;;=> 2
+
+  (let [g (guard.variadic c/>=)]
+    (g 8 8 7 6 5 2)) ;;=> 8
+
+  ;; or simply
+  (let [g (guard:fn c/>=)]
+    (g 8 8 7 6 5 2))
+
+  ;; the guard macro
+  ;; it has the same syntax than the f macro
+  ;; but the resulting function will return the first argument unchanged if its body succeeds, otherwise nil
+  (is ::ok
+      (let [g (guard [x] (odd? (count x)))]
+        (and
+         (eq (g [1 2 3]) [1 2 3])
+         (nil? (g [1 2 3 4]))
+         ::ok)))
+
+  ;; wrapping and importing predicates 
+
+  (E+ (guards.import [odd? 1] [even? 1]))
+
+  (is 1 (odd? 1))
+  (isnt (even? 1))
+
   )
 
  ;; flow
 
  (_
 
-  ;; ?< and ?>
+  ;; ?> --------------------------------------------------------------
+  ;; thread the object thru guards shorting on first nil result
 
-  ;; ?> thread the object thru guards shorting on first nil result
+  (is 1 (?> 1 num? pos?))
+  (isnt (?> 1 num? neg?))
 
-  ;; ?< trying all given guards against x until first non nil result
+  ;; we can modify the seed too
+  (eq 2 (?> 1 num? pos? inc))
 
-  (check
-   ;; success
-   (eq 1 (?> 1 num? pos?))
-   ;; failure
-   (nil? (?> 1 num? neg?))
-   ;; shorts after str? (else it would be an error)
-   (nil? (?> 1 str? (+_ "aze")))
-   ;; more exemples
-   (eq 3 (?> [1 2 3] (guard:fn (+ c/count c/odd?)) last))
-   (nil? (?> [1 2] (guard [x] ((+ c/count c/odd?) x)) last))
-   ;; more composed exemple
-   ;; use § under the hood,
-   ;; applicable data structure can be used
-   (eq {:-a 3 :a -3}
-       (?> -1
-           num?
-           (c/juxt (p add -2) (?>_ (p add 2) pos?))
-           car
-           neg?
-           #(do {:a % :-a (mul % -1)})
-           #_{:-a pos?} ;; no map application for now
-           ))
+  ;; shorts after str? (else it would be an error)
+  (isnt (?> 1 str? (+_ "aze")))
 
-   ;; build a guard
-   ;; that succeed for numbers or strings
-   (let [f (?<_ num? str?)]
-     (eq [1 "a" nil]
-         [(f 1) (f "a") (f :a)]))
+  ;; more exemples
+  (eq 3 (?> [1 2 3] (guard:fn (+ c/count c/odd?)) last))
+  (nil? (?> [1 2] (guard [x] ((+ c/count c/odd?) x)) last))
 
-   ;; basic composition with ?< and ?>_
-   (eq 42
-       (?< 44
-           str?
-           (?>_ num? (gt_ 10) dec dec)))
+  ;; more composed exemple
+  ;; ?> use § under the hood,
+  ;; so anything that implement invocation is allowed
+  (!! (?> -1
+          num? ;;=> -1
+          (c/juxt (add_ -2) (add_ 2)) ;;=> [-3 1]
+          [neg? (?>_ num? pos?)] ;; using _ version
+          ))
 
-   )
 
-  ;; ?c> and ?c
-  ;; conditional functions
-  ;; ?c> is like a scheme-cond(ish) function
-  ;; ?c is like a clojure-cond(ish) function
+  ;; ?< --------------------------------------------------------------
+  ;; trying all given guards against x until first non nil result
 
-  (check
+  (is 1 (?< 1 coll? num?))
+  (isnt (?< 1 str? coll? sym?))
 
-   (eq 2
-       (?c 1
-           ;; like clojure cond
-           ;; works by couples
-           str? :pouet ;; if str? succeed :pouet is called
-           pos? inc
-           neg? dec))
+  ;; build a guard
+  ;; that succeed for numbers or strings
+  (let [f (?<_ num? str?)]
+    (eq [1 "a" nil]
+        [(f 1) (f "a") (f :a)]))
 
-   (eq 10
-       (?c 10
-           num? (lt_ 3) ;; if the second pred fail, we go to next couple
-           num? (gt_ 7) ;; this line succeed
-           ))
+  ;; basic composition with ?< and ?>_
+  (is 42
+      (?< 44
+          str?
+          (?>_ num? (gt_ 10) dec dec)))
 
-   ;; (non function values act as constant functions)
-   (eq :pouet
-       (?c "a"
-           str? :pouet
-           pos? inc
-           neg? dec))
+  ;; ?c --------------------------------------------------------------
+  ;; a clojure-cond(ish) function
 
-   ;; same with ?c_
-   (eq -2
-       ((?c_
-         str? :pouet
-         pos? inc
-         neg? dec)
-        -1))
+  (is 2
+      (?c 1
+          ;; like clojure cond
+          ;; works by couples
+          str? :pouet ;; if str? succeed :pouet is called
+          pos? inc
+          neg? dec))
 
-   (eq -8
-       (?c> -2
-            ;; like scheme cond
-            ;; several vecs of guards
-            [str? :pouet]
-            [pos? inc inc inc]
-            [neg? dec dec (p mul 2)]))
+  (is 10
+      (?c 10
+          num? (lt_ 3) ;; if the second pred fail, we go to next couple
+          num? (gt_ 7) ;; this line succeed
+          ))
 
-   (?c> 1
-        ;; here too, if the line does not succeed entirely,
-        ;; skip to the next line
-        [pos? dec pos? :gt1]
-        [pos? :1])
+  ;; (non function values act as constant functions)
+  (is :pouet
+      (?c "a"
+          str? :pouet
+          pos? inc
+          neg? dec))
 
-   (eq 5
-       ((?c>_
-         [str? :pouet]
-         [pos? inc inc inc]
-         [neg? dec dec (p mul 2)])
-        2))
-   )
+  ;; same with ?c_
+  (is -2
+      (let [f (?c_
+               str? :pouet
+               pos? inc
+               neg? dec)]
+       (f -1)))
+
+  ;; ?c> --------------------------------------------------------------
+  ;; a scheme-cond(ish) function
+
+  (is -8
+      (?c> -2
+           ;; like scheme cond
+           ;; several vecs of guards
+           [str? :pouet]
+           [pos? inc inc inc]
+           [neg? dec dec (p mul 2)]))
+
+  (?c> 1
+       ;; here too, if the line does not succeed entirely,
+       ;; skip to the next line
+       [pos? dec pos? :gt1]
+       [pos? :1])
+
+  (is 5
+      (let [f (?c>_
+               [str? :pouet]
+               [pos? inc inc inc]
+               [neg? dec dec (p mul 2)])]
+        (f 2)))
 
   )
 
@@ -1689,6 +1722,38 @@
   ;;=> [(1 2 3 4 5 6) [5 -3 18]]
 
   )
+
+ ;; composing data flow
+
+ ;; with guards, shortcircuiting binding/lambda forms (?let, clet, cf, ?f...) ,
+ ;; invocable datastructures, data functions, conditional functions (?c and ?c>),
+ ;; guard connectors (?< and ?>)
+
+ (!!
+  (?> ["foo" 0]
+      ;; with invocable data we can go inside the flowing data
+      [
+       ;; we check if the first idx is a :word (str, sym or keyword),
+       ;; if yes cast it to keyword
+       (?>_ word? key)
+
+       ;; with data functions we can do sort of the opposite (wrapping instead of going inside)
+       ;; (here we receiving 0 and returning {:val 0, :inc 1, :dec -1}
+       (df {:val id :++ inc :-- dec})]
+
+      (case_ [:bar x] {:bar x}
+             [:foo (& x (ks val))] ;; we check that data idx 0 is :foo, and that the idx 1 has a :val key
+             (case x
+               pos? {:positive-foo x}
+               neg? {:negative-foo x}
+               {:zero-foo x})
+             x {:fail x})
+
+      (?c_ (?f1 {:fail x}) (f_ (pp "fail: " _) _) ;; shortcircuiting lambdas can be useful in those contexts
+           (?f1 {:zero-foo x}) (f_ (pp "zero-foo " _) _)
+           (f_ (pp "num-foo " _) _))
+
+      ))
  )
 
 ;; ------------------------------------------------------------------------
@@ -2029,7 +2094,7 @@
 ;;                                types
 ;; ------------------------------------------------------------------------
 
-(__
+(_
 
  ;; simple
  (E+ (type+ :split [left right]))
@@ -2039,7 +2104,7 @@
 
             [bar baz] ;; fields
 
-            ;; generic implementations
+            ;; generic implementations ...
             (+ [a b]
                (!let [(:mytyp b) b]
                      (mytyp (+ (:bar a) (:bar b))
@@ -2057,8 +2122,6 @@
 
  ;; using generic implmentations
  (!! (+ (mytyp 1 2) (mytyp 1 2) ))
-
-
 
  )
 
@@ -2140,11 +2203,100 @@
 
  )
 
+;; ------------------------------------------------------------------------
+;;                              dive and tack
+;; ------------------------------------------------------------------------
+
+;; dive
+
+;; the dive generic function, let you get something inside something else
+;; its first argument represent the address of what you want to get
+;; the second is the thing in which you want to find it
+;;
+;; it is like core/get but with arguments reversed, and being a generic function, it can be extended.
+
+;; for key and syms it does what core/get had done
+(is 1 (dive :a {:a 1}))
+(is 1 (dive 'a {'a 1}))
+
+;; for nums it search an idx
+(is :io (dive 2 [0 0 :io 0]))
+;; negative idxs supported
+(is :io (dive -1 [0 0 :io]))
+
+;; for vector it goes deep
+(is :io (dive [:a :b] {:a {:b :io}}))
+;; but any valid diving-address can be used
+(is :io (dive [:a -1] {:a [0 0 0 :io]}))
+
+;; maps let you compose a return value
+(is (dive {:one [:a :b] :two [:c 1 :d]}
+          {:a {:b :io} :c [0 {:d 42} 0]})
+    {:one :io
+     :two 42})
+
+;; it also accpets raw functions
+(is 1 (dive inc 0))
+;; which does not seems to really make sense at first but it can be handy in more complex dives
+(is 1
+    (dive [:a num? inc]
+          {:a 0}))
+
+;; Also, we can mention that it is a concrete exemple of something that is a function and a macro at the same time
+;; here we use a technique that is analog to the one we used in bind (binding operators)
+;; the dive module holds a map of operations implementations in dive.ops
+;; At expansion time, if the first argument to dive is an sexpr, the verb will be searched in dive.ops
+;; if an implementation is found, it will be executed (at expansion time) and the return value will take the place of the original expression
+;;
+;; as an exemple, we use the 'ks operation
+(!! (dive (ks a b) {:a 1 :b 2 :c 2}))
+;; ks is resolved in dive.ops and applied to the given args (here :a and :b), producing this form
+(dive (fn [y] (select-keys y [:a :b]))
+      {:a 1 :b 2 :c 2})
+
+;; functions implement dive so the expansion time work is done, the form will now ready for runtime
+
+;; As you may have deduced by yourself, dive.ops can be extended with new operations
+;; Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :))
 
 
+(E+ dive.ops:val
+    {:wtf
+     (f1 [x] '(f_ [:wtf ~x _]))})
 
+(is (dive (wtf 42) {:a 1 :b 2})
+    [:wtf 42 {:a 1 :b 2}])
 
+(E+ (dive.op+ wtf [a]
+              '(f_ [:wtf ~a _])))
 
+(exp @E '(dive (wtf 43) {:a 1 :b 2}))
+(!! (dive (wtf 43) {:a 1 :b 2}))
 
+(env-inspect 'dive.ops)
+(is (!! (dive (wtf3 43) {:a 1 :b 2}))
+    [:wtf3 43 {:a 1 :b 2}])
 
+(E+ foo 42)
+(exp @E '(f1 [arg1] '(f1 sd [:wtf3 ~arg1 sd])))
 
+(bubfind @E (path 'f1))
+
+;; quoting -----------------------------------------
+
+(E+ foo 42)
+
+(exp @E 'foo)
+
+(E+ foo:sub (f_ 'foo:val))
+
+(defmacro expquote [x]
+  `(exp @E ''~x))
+
+(exp @E ''(f [a b c] a))
+
+(expquote (f [a b c] a))
+
+(c/eval (exp @E (c/eval (expquote (f1 [arg1] '(f1 sd [:wtf3 arg1 sd]))))))
+
+(!! '(f1 [arg1] '(f1 sd [:wtf3 arg1 sd])))

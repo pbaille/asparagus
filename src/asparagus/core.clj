@@ -1222,6 +1222,7 @@
              (c/let [at (path (loc e) s1)]
                (env-merge-members
                 e {(path at :sub) (k s2)
+                   (path at :local) true
                    ;; maybe should avoid when no existant macro... perf penality?
                    (path at :mac) (c/fn [e form] ($ (cons s1 form) (p exp e)))})))]
 
@@ -1567,6 +1568,8 @@
           (or (unqualifiable-symbols x)
               (gensym? x)))
 
+        (def qualify-soft qualify)
+
         (defne qualify
 
           "takes an environment e and an expression x
@@ -1758,7 +1761,7 @@
                 cp.dotdot? cp.dotdot
                 ;; if unquote we perform expansion with e
                 unquote? (exp e (second form))
-                ;; handle collections 
+                ;; handle collections
                 seq? (cons `list ($ form (p fun e)))
                 holycoll? ($ form (p fun e))
                 ;; if a symbol can be resolved via bubfind in e
@@ -1766,7 +1769,12 @@
                 ;; if not we just quote it
                 symbol?
                 (cs [p (path form)
-                     [p _] (bubfind e p)]
+                     [p v] (bubfind e p)
+                     ;;_ (pp p v)
+                     ]
+                    #_(if (get v :local)
+                      (.wrap (exp e (path->sym p)))
+                      (.wrap (.rootsym p)))
                     (.wrap (.rootsym p))
                     (.wrap form))
                 ;; else we quote wathever it is
@@ -4012,7 +4020,7 @@
              if an implementation is found, it will be executed (at expansion time) and the return value will take the place of the original expression
 
              as an exemple, we use the 'ks operation
-             (dive (ks :a :b) {:a 1 :b 2 :c 2})
+             (dive (ks a b) {:a 1 :b 2 :c 2})
              ks is resolved in dive.ops and applied to the given args (here :a and :b), producing this form
              (dive (fn [y] (select-keys y [:a :b]))
                    {:a 1 :b 2 :c 2})
@@ -4066,14 +4074,23 @@
              (f [e [x y]]
                 (exp e
                      (lst* 'dive:val
-                           (clet [[v . args] x
-                                  impl (get .ops v)]
+                           (clet [[(:sym v) . args] (seq? x)
+                                  impl (get .ops (key v))]
                                  [(impl args) y]
                                  [x y]))))
              ops:val
-             {'ks
+             {:ks
               (f [xs]
-                 '(fn [y] (select-keys y ~(vec* xs))))}})
+                 '(fn [y] (select-keys y ~(vec* ($ xs key)))))}
+
+             op+:upd
+             (f [e [name argv expr]]
+               (p/prob
+                [(sym "dive.ops:val")
+                 {(key name)
+                  '(f1 ~argv ~expr)
+                  #_'(f1 ~(vec* args)
+                       '(f1 ~seed ~expr))}]))})
 
         #_(!! (dive (ks :a :b) {:a 1 :b 2 :c 2}))
         #_(!! (dive [:a :b :c -1] {:a {:b {:c [42 41 40]}}})))
@@ -4250,7 +4267,7 @@
               (?c 1
                   ;; like clojure cond
                   ;; works by couples
-                  str? :pouet ;; if str? succeed :pouet is called
+                  str? :pouet ;; if str? succeeds, :pouet is called
                   pos? inc
                   neg? dec))
 
@@ -4525,6 +4542,99 @@
                     ($ (chunk body 2)
                        (f1 [t impl]
                            [t (exp e '(let ~binding-form ~impl))]))))))
+
+    (E+ tack
+        [
+         "not intended to be used directly
+          prefer using put and upd
+          semantically similar to assoc with different arg order
+          like in dive the first argument is the address (and is used to dispatch)"
+
+         (generic [k x v]
+
+                  :vec
+                  (clet [[k . _ks] k]
+                        (tack k x
+                              (tack  _ks (dive k x) v))
+                        v)
+
+                  :num
+                  (when (assert (or (line? x) (nil? x)))
+                    (cs
+                     ;; idx is in bounds
+                     (gt (c/count x) k)
+                     (cp x
+                         seq? (+ (take x k) (vals v) (drop x (inc k)))
+                         vec? (c/assoc x k v))
+
+                     ;; x is nil
+                     (nil? x) (sip (vec* (c/repeat k nil)) v)
+
+                     ;; we fill the missing idxs with nils
+                     (+ x (tack (sub k (c/count x)) nil v))))
+
+                  :any
+                  (when (assert (or (map? x) (c/record? x) (nil? x)))
+                    (c/assoc (or x {}) k v)))]
+
+        put
+        ["analog to assoc, but uses 'tack"
+         (f [x . xs]
+            (red x
+                 (f [x [k v]] (tack k x v))
+                 (chunk xs 2)))]
+
+        upd
+        ["analog to update but uses 'tack"
+         (f [x . xs]
+            (red x
+                 (f [x [k f]]
+                    (tack k x (f (dive k x))))
+                 (chunk xs 2)))]
+
+        (subjectify.definitions put upd)
+
+        :fx
+        (check
+
+         ;; tack
+
+         (eq [[[nil nil 42]]]
+             (tack [0 0 2] nil 42))
+
+         (eq {:a {:b 1}}
+             (tack [:a :b] {} 1))
+
+         (tack :a {:a 1} 2)
+
+         ;; put
+
+         (eq {:a 1}
+             (put nil :a 1))
+
+         (eq {:a {:b 1}}
+             (put {} [:a :b] 1))
+
+         (eq [[[nil nil 42]]]
+             (put nil [0 0 2] 42))
+
+         (eq [nil [nil nil [1]] nil 89]
+             (put [] [1 2 0] 1 3 89))
+
+         (eq {:a {:b 1, :p {:l [0 1 2]}}}
+             (put {} [:a :b] 1 [:a :p :l] [0 1 2]))
+
+         ;; upd
+
+         (eq [0 [1 1]]
+             (upd [0 [0 1]] [1 0] inc))
+
+         (eq {:a {:b [0 2 2], :c {:d 42}}}
+             (upd {:a {:b [0 1 2]}}
+                  [:a :b 1] inc
+                  [:a :c :d] (k 42)))
+
+         ))
 
     (E+ type+
         ["an update to declare a new type"
@@ -5057,3 +5167,5 @@
    (E+ (generic.type+ :key (pure [x] "pouet")))
    (E+ (pure.extend [x] :key "puet" :num (c/zero? x)))
    (!! (pure.inspect)))
+
+
