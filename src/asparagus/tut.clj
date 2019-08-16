@@ -2259,44 +2259,250 @@
 ;; As you may have deduced by yourself, dive.ops can be extended with new operations
 ;; Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :))
 
+;; extension 
 
-(E+ dive.ops:val
-    {:wtf
-     (f1 [x] '(f_ [:wtf ~x _]))})
+(_
 
-(is (dive (wtf 42) {:a 1 :b 2})
-    [:wtf 42 {:a 1 :b 2}])
+ (E+ dive.ops:val
+     {:wtf
+      (f1 [x] '(f_ [:wtf ~x _]))})
 
-(E+ (dive.op+ wtf [a]
-              '(f_ [:wtf ~a _])))
+ (is (dive (wtf 42) {:a 1 :b 2})
+     [:wtf 42 {:a 1 :b 2}])
 
-(exp @E '(dive (wtf 43) {:a 1 :b 2}))
-(!! (dive (wtf 43) {:a 1 :b 2}))
+ (E+ (dive.op+ wtf [a]
+               '(f_ [:wtf ~a _])))
 
-(env-inspect 'dive.ops)
-(is (!! (dive (wtf3 43) {:a 1 :b 2}))
-    [:wtf3 43 {:a 1 :b 2}])
 
-(E+ foo 42)
-(exp @E '(f1 [arg1] '(f1 sd [:wtf3 ~arg1 sd])))
 
-(bubfind @E (path 'f1))
+ (exp @E '(dive (wtf 43) {:a 1 :b 2}))
+ (!! (dive (wtf 43) {:a 1 :b 2}))
+
+ (env-inspect 'dive.ops)
+ (is (!! (dive (wtf3 43) {:a 1 :b 2}))
+     [:wtf3 43 {:a 1 :b 2}])
+
+ (E+ foo 42)
+ (exp @E '(f1 [arg1] '(f1 sd [:wtf3 ~arg1 sd])))
+
+ (bubfind @E (path 'f1)))
 
 ;; quoting -----------------------------------------
 
-(E+ foo 42)
+(_ :xp1
 
-(exp @E 'foo)
+    (E+ foo 42)
 
-(E+ foo:sub (f_ 'foo:val))
+    (exp @E 'foo)
 
-(defmacro expquote [x]
-  `(exp @E ''~x))
+    (E+ foo:sub (f_ 'foo:val))
 
-(exp @E ''(f [a b c] a))
+    (defmacro expquote [x]
+      `(exp @E ''~x))
 
-(expquote (f [a b c] a))
+    (exp @E ''(f [a b c] a))
 
-(c/eval (exp @E (c/eval (expquote (f1 [arg1] '(f1 sd [:wtf3 arg1 sd]))))))
+    (expquote (f [a b c] a))
 
-(!! '(f1 [arg1] '(f1 sd [:wtf3 arg1 sd])))
+    (c/eval (exp @E (c/eval (expquote (f1 [arg1] '(f1 sd [:wtf3 arg1 sd]))))))
+
+    (!! '(f1 [arg1] '(f1 sd [:wtf3 arg1 sd])))
+
+    ;; lambda exp
+    (exp @E '(f [a b c] a))
+    (exp @E '(f1 a a))
+    (exp @E '(f1 _ _))
+    (exp @E '(f_ _))
+
+    (!! ((lambda.compiler) @E '([_a] _a)))
+
+    (!! (hygiene.shadow.gensym? '_))
+
+    (!! (cadr 'abc))
+
+    (E+ quote:mac
+        (fn [e [x]]
+          (pp "exp quot " x)
+          (cp.expand (fun.alt e 0 x))))
+
+    (E+ foo 42)
+
+    (exp @E
+         '(let [foot 12 b :sd c 1 d (quot yop)]
+            #_(quote.fun:alt e 0 (lst ))
+            '(foo ~b '(c ~'~d))))
+
+    (let [foot 12 b :sd c 1 d (quot yop)]
+      #_(quote.fun:alt e 0 (lst ))
+      '(foo ~b '(c ~'~d)))
+
+    (!! '(1 '~(add 1 ~(add 2 3)) 4))
+    (!! (list 1 (list (sym "quote") (list `unquote (list 'add '1 (add 2 3))))))
+
+    (expquote (1 '~(add 1 ~(add 2 3)) 4))
+
+    (do '~a)
+
+    (env-inspect 'b)
+
+    (holycoll? '(a b c))
+
+    (quote? (lst 'quote 1))
+
+    '(a b c `(r t y))
+
+    (!! (hygiene.shadow @E 'aze_123))
+
+    (defmacro xp [x]
+      `(exp @E '~x))
+
+    (xp (f [z_123] z_123))
+
+    (E+ q'
+        [:links {cp composite}
+         (fn [e form]
+           #_(pp "io")
+           (cp form
+               ;; we do not touch dots
+               ;; they will be handled via composite.expand after quoting
+               cp.dot? cp.dot
+               cp.dotdot? cp.dotdot
+               ;; if unquote we perform expansion with e
+               unquote? (exp e (second form))
+               ;; handle collections
+               seq? (cons `list ($ form (p rec e)))
+               holycoll? ($ form (p rec e))
+               ;; else we quote wathever it is
+               (quote.fun.wrap form)))
+         :mac
+         (fn [e [x]]
+           (cp.expand
+            (q':val e x)))])
+
+    (E+ quote:mac q':mac)
+
+    (ppenv quote.fun.wrap)
+
+    (!! (let [a 1] '(a b ~(add 1 2) ~{a a})))
+
+    (first (first '(~r)))
+    )
+
+(_ :uncomplected-quotes
+
+  ;; quoting, qualifying, splicing, unquoting
+
+  'sq   ;; quasiquote
+  'sqq  ;; quasiquote qualified
+  'sqq! ;; quasiquote qualified strict
+
+  (E+ quotes
+      [:links {cp composite}
+
+       wrap
+       (fn [x] (list (symbol "quote") x))
+       rootsym
+       (fn [p] (path->sym (path (symbol "_") p)))
+
+       mk
+       (fn [{:keys [strict qualified]}]
+         (fn [e form]
+           #_(pp "io")
+           (cp form
+               ;; we do not touch dots
+               ;; they will be handled via composite.expand after quoting
+               cp.dot? cp.dot
+               cp.dotdot? cp.dotdot
+               ;; if unquote we perform expansion with e
+               unquote? (cxp e (second form))
+               ;; handle collections
+               seq? (cons `list ($ form (p rec e)))
+               holycoll? ($ form (p rec e))
+               symbol?
+               (cs strict
+                   (let [[p _] (assert (bubfind e (path form))
+                                       (str "unqualifiable symbol: " form " "))]
+                     (quotes.wrap (quotes.rootsym (path form))))
+                   qualified
+                   (cs [p (path form)
+                        [p v] (bubfind e p)]
+                       (quotes.wrap (quotes.rootsym p))
+                       (quotes.wrap form))
+                   (quotes.wrap form))
+               ;; else we quote wathever it is
+               (quotes.wrap form))))
+
+       sq:mac  (fn [e [x]] (let [f (quotes.mk {})] (cp.expand (f e x))))
+       sqq:mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e x))))
+       sq!:mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e x))))
+
+       quote?
+       (fn [e x]
+         #_(pp "quote?" x
+               (and (seq? x)
+                    (#{(path 'quotes.sq:mac)
+                       (path 'quotes.sqq:mac)
+                       (path 'quotes.sq!:mac)}
+                     (or (qualsym e (car x))
+                         (qualsym e (sym (car x) :mac)))))
+               "_")
+         (and (seq? x)
+              (#{(path 'quotes.sq:mac)
+                 (path 'quotes.sqq:mac)
+                 (path 'quotes.sq!:mac)}
+               (or (qualsym e (car x))
+                   (qualsym e (sym (car x) :mac))))))
+
+       mk2
+       (fn [{:keys [strict qualified]}]
+         (fn [e lvl form]
+           #_(pp "mk2 in" lvl form "_")
+           (cp form
+               ;; we do not touch dots
+               ;; they will be handled via composite.expand after quoting
+               cp.dot? cp.dot
+               cp.dotdot? cp.dotdot
+               ;; if unquote we perform expansion with e
+               unquote?
+               (cs (zero? lvl)
+                   (cxp e (second form))
+                   (list `list (quotes.wrap `unquote) (rec e (dec lvl) (second form))))
+
+               ;; if nested quote 
+               (p quotes.quote? e)
+               (list `list (quotes.wrap (car form)) (rec e (inc lvl) (second form)))
+               ;; handle collections
+               seq? (cons `list ($ form (p rec e lvl)))
+               holycoll? ($ form (p rec e lvl))
+
+               symbol?
+               (cs strict
+                   (let [[p _] (assert (bubfind e (path form))
+                                       (str "unqualifiable symbol: " form " "))]
+                     (quotes.wrap (quotes.rootsym (path form))))
+                   qualified
+                   (cs [p (path form)
+                        [p v] (bubfind e p)]
+                       (quotes.wrap (quotes.rootsym p))
+                       (quotes.wrap form))
+                   (quotes.wrap form))
+               ;; else we quote wathever it is
+               (quotes.wrap form))))
+
+       sq:mac  (fn [e [x]] (let [f (quotes.mk2 {})] (cp.expand (f e 0 x))))
+       sqq:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true})] (cp.expand (f e 0 x))))
+       sq!:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true :strict true})] (cp.expand (f e 0 x))))]
+
+      (import quotes [sq sqq sq!])
+
+      :fx
+      (check
+       (sq (add 1 2 ~(+ [] (lst 1 2))))
+       (sqq (add 1 2 a ~(sip [] . (lst 1 2))))
+       ;; (throws (sq! (add 1 2 a ~(+ [] (lst 1 2)))))
+       (sqq (add 1 2 a ~(sip [] . (lst 1 2))
+                 (sqq (a b c ~(add 1 2 ~(add 3 4)))))))
+
+      ))
+
+

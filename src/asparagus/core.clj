@@ -1221,10 +1221,11 @@
            (c/fn [e [s1 s2]]
              (c/let [at (path (loc e) s1)]
                (env-merge-members
-                e {(path at :sub) (k s2)
-                   (path at :local) true
-                   ;; maybe should avoid when no existant macro... perf penality?
-                   (path at :mac) (c/fn [e form] ($ (cons s1 form) (p exp e)))})))]
+                e (c/merge
+                   {(path at :sub) (k s2)
+                    (path at :local) true}
+                   (when (bubfind e (path s1 :mac))
+                     {(path at :mac) (c/fn [e form] ($ (cons s1 form) (p exp e)))})))))]
 
           add-subs
           (c/fn [e submap]
@@ -1232,7 +1233,7 @@
 
          hygiene
          {shadow
-          [ ;; helpers
+          [;; helpers
            expand-keys-pattern
            ["transform the clojure :keys syntax into regular map pattern
              because all symbol will be made uniq and it will no longer work as is"
@@ -1769,20 +1770,86 @@
                 ;; if not we just quote it
                 symbol?
                 (cs [p (path form)
-                     [p v] (bubfind e p)
-                     ;;_ (pp p v)
-                     ]
-                    #_(if (get v :local)
-                      (.wrap (exp e (path->sym p)))
-                      (.wrap (.rootsym p)))
+                     [p v] (bubfind e p)]
                     (.wrap (.rootsym p))
                     (.wrap form))
                 ;; else we quote wathever it is
-                (.wrap form)))]
+                (.wrap form)))
+
+          alt
+          {:doc "an attempt to handle nested quotes and unquote levels... hairy..."
+
+           unquote-quote?
+           (fn [x]
+             (and (unquote? x)
+                  (quote? (second x))))
+
+           unquote-lvl
+           (fn [e lvl form]
+             (pp "unquote lvl " form lvl (unquote? form) (holycoll? form) (seq? form))
+             (cp form
+
+                 unquote-quote?
+                 (unquote-lvl e (dec lvl) (second (second form)))
+
+                 unquote?
+                 (cs (zero? lvl)
+                     (exp e (second form))
+                     (list (wrap `unquote) (unquote-lvl e (dec lvl) (second form))))
+
+                 seq?
+                 ($ form (p rec e lvl))
+
+                 holycoll?
+                 (do (pp "coll " form)
+                     ($ form (fn [x] (pp "inner " x) (unquote-lvl e lvl x))))
+
+                 form
+                 ))
+
+           :val
+           (fn
+             [e lvl form]
+             (pp "qalt" lvl form)
+             (cp form
+                 ;; we do not touch dots
+                 ;; they will be handled via composite.expand after quoting
+                 cp.dot? cp.dot
+                 cp.dotdot? cp.dotdot
+                 ;; if unquote we perform expansion with e
+                 unquote?
+                 (let [nxt (unquote-lvl e lvl form)]
+                   (cs (zero? lvl)
+                       nxt
+                       (alt e (dec lvl) nxt)))
+                 ;; quote
+                 quote?
+                 (list `list
+                       (..wrap (symbol "quote"))
+                       (alt e lvl (unquote-lvl e (inc lvl) (second form))))
+                 ;; handle collections
+                 seq? (cons `list ($ form (p rec e lvl)))
+                 holycoll? ($ form (p rec lvl e))
+                 ;; if a symbol can be resolved via bubfind in e
+                 ;; we qualify it and quote it
+                 ;; if not we just quote it
+                 symbol?
+                 (cs [p (path form)
+                      [p v] (bubfind e p)
+                      ? (not (get v :local))] ;; is not a local binding
+                     (..wrap (..rootsym p))
+                     ;; else we don't qualify
+                     (..wrap form))
+                 ;; else we quote wathever it is
+                 (..wrap form)))}]
 
          :mac
          (fn [e [x]]
-           (cp.expand (fun e x)))]
+           (cp.expand (fun e x)))
+
+         #_(fn [e [x]]
+           #_(pp "exp quot " x)
+           (cp.expand (fun.alt e 0 x)))]
 
         )
 
@@ -3437,6 +3504,7 @@
                       (str* "variadic arities count mismatch\n"
                             (interleave ($ xs #(:pat %)) (repeat "\n")))))]
 
+           ;; main
            (fn [[fst & nxt :as form]]
              #_(pp "cased-lambda-parse" form)
              (let [[name . cases]
@@ -4090,7 +4158,8 @@
                  {(key name)
                   '(f1 ~argv ~expr)
                   #_'(f1 ~(vec* args)
-                       '(f1 ~seed ~expr))}]))})
+                         '(f1 ~seed ~expr))}]))
+             })
 
         #_(!! (dive (ks :a :b) {:a 1 :b 2 :c 2}))
         #_(!! (dive [:a :b :c -1] {:a {:b {:c [42 41 40]}}})))
