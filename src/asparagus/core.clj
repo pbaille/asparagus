@@ -1590,6 +1590,9 @@
                   (c/resolve x) (ns-resolve-sym x) ;; else we use clojure/resolve
                   (error "not resolvable: " x))    ;; and fail if nothing works
 
+              ;; fullquote we do nothing
+              p/quote? x
+
               seq?
               (cs
                ;; if x is a macro call, we qualify the verb (the macro identifier)
@@ -1734,7 +1737,7 @@
         ;; we put cxp at the root
         :links {cxp composite.cxp})
 
-    (E+ quote
+    #_(E+ quote
 
         ["the quoting macro
           behaves like clojure's quasiquote, qualify symbols if possible,
@@ -1849,6 +1852,118 @@
 
         )
 
+    (E+ quotes
+      [:links {cp composite}
+
+       wrap
+       (fn [x] (list (symbol "quote") x))
+       rootsym
+       (fn [p] (path->sym (path (symbol "_") p)))
+
+       quote?
+       (fn [e x]
+         (or ;; (p/quote? x) ;; TODO when fullquote is restored it will be removed
+             (and (seq? x)
+                  (sym? (car x))
+                  (#{(path (sym "quotes.sq:mac"))
+                     (path (sym "quotes.qq:mac"))
+                     (path (sym "quotes.qq!:mac"))}
+                   (or (qualsym e (car x))
+                       (qualsym e (sym (car x) :mac)))))))
+
+       unquote-quote?
+       (fn [e x]
+         (and (unquote? x)
+              (quotes.quote? e (second x))))
+
+       mk
+       (fn [{:keys [strict qualified]}]
+         (fn [e lvl form]
+           #_(pp "mk2 in" lvl form "_")
+           (cp form
+
+               ;; we do not touch dots
+               ;; they will be handled via composite.expand after quoting
+               cp.dot? cp.dot
+               cp.dotdot? cp.dotdot
+
+               ;; if quote-unquote we strip a lvl
+               (p quotes.unquote-quote? e)
+               (rec e (dec lvl) (second (second form)))
+
+               ;; if unquote we perform expansion with e
+               unquote?
+               (cs (zero? lvl)
+                   (cxp e (second form))
+                   (list `list (quotes.wrap `unquote) (rec e (dec lvl) (second form))))
+
+               ;; if nested quote
+               (p quotes.quote? e)
+               (list `list (quotes.wrap (car form)) (rec e (inc lvl) (second form)))
+
+               ;; handle collections
+               seq? (cons `list ($ form (p rec e lvl)))
+               holycoll? (p/$ form (p rec e lvl))
+
+               symbol?
+               (do #_(pp "quote sym " form)
+                   (cs (not qualified)
+                       (quotes.wrap form)
+
+                       [pth (path form)
+                        [p v] (bubfind e pth)]
+                       (cs (get v :local)
+                           (quotes.wrap (exp e form))
+                           (quotes.wrap (quotes.rootsym p)))
+
+                       [s (do #_(pp "ns-res-sym " form) (ns-resolve-sym form))]
+                       (quotes.wrap s)
+
+                       (cs strict
+                           (error "unqualifiable symbol: " form)
+                           (quotes.wrap form))))
+
+               #_(cs strict
+                   (let [[p _] (assert (bubfind e (path form))
+                                       (str "unqualifiable symbol: " form " "))]
+                     (quotes.wrap (quotes.rootsym (path form))))
+
+                   qualified
+                   (cs [p (path form)
+                        [p v] (bubfind e p)]
+                       ;; if symbol is a local binding we substitute it
+                       (if (get v :local)
+                         (quotes.wrap (exp e form))
+                         ;; else we just qualifies it
+                         (quotes.wrap (quotes.rootsym p)))
+                       (quotes.wrap form))
+
+                   (quotes.wrap form))
+
+               ;; else we quote wathever it is
+               (quotes.wrap form))))
+
+       sq:mac  (fn [e [x]] (let [f (quotes.mk {})] (cp.expand (f e 0 x))))
+       qq:mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e 0 x))))
+       qq!:mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e 0 x))))
+
+       :demo
+       (__
+        (sq (add 1 2 ~(+ [] (lst 1 2))))
+        (qq (add 1 2 a ~(sip [] . (lst 1 2))))
+        ;; (throws (qq! (add 1 2 a ~(+ [] (lst 1 2)))))
+        (qq (add 1 2 a ~(sip [] . (lst 1 2))
+                 (qq (a b c ~'(add 1 2 . ~(lst 3 4)))))))
+       ]
+
+      
+
+      {:links {sq quotes.sq
+               qq quotes.qq
+               qq! quotes.qq!}}
+
+      )
+
     ;; misc
     (E+
 
@@ -1860,31 +1975,31 @@
      mul c/*
      eq c/= ;; eq will be rebound later, but is needed for check blocks
 
-     quot:mac
-     (fn [_ [x]]
+     #_quot:mac
+     #_(fn [_ [x]]
        (lst (sym "quote") x))
 
      and:mac
      (fn [e xs]
        (let [xs' ($ xs (p cxp e))]
-         '(c/when (c/and .~(c/butlast xs')) ~(c/last xs'))))
+         (qq (c/when (c/and .~(c/butlast xs')) ~(c/last xs')))))
 
      or:mac
      (fn [e xs]
-       '(c/or .~($ xs (p exp e)) nil))
+       (qq (c/or .~($ xs (p exp e)) nil)))
 
      check
      {:doc "a quick way to assert things"
       :mac
       (fn [e xs]
-        (cxp e '(p/asserts . ~xs)))
+        (cxp e (qq (p/asserts . ~xs))))
 
       thunk
       {:mac
        (fn [e xs]
-         (cxp e '(fn [] (p/asserts . ~xs))))
+         (cxp e (qq (fn [] (p/asserts . ~xs)))))
        :upd
-       (fn [e xs] {:check '(check.thunk . ~xs)})}
+       (fn [e xs] {:check (qq (check.thunk . ~xs))})}
 
       :demo
       (__
@@ -2044,41 +2159,43 @@
          (fn [e body]
            (let [gsym (generic.symbol (loc e))]
              (assoc (generic.module gsym)
-                    :fx '(generic.init ~gsym ~body)
+                    :fx (qq (generic.init ~gsym ~body))
                     #_(lst 'generic.init gsym body))))
 
          reduced:upd
          (fn [e [argv & decls]]
            (let [[arg1 varg] (p/gensyms)]
-             '(generic
-               ([~arg1] ~arg1)
-               (~argv . ~decls)
-               (~(conj argv '& varg)
-                . ~(c/mapcat
+             #_(pp "yop" [argv decls])
+             (qq (generic
+                ([~arg1] ~arg1)
+                (~argv . ~decls)
+                (~(conj argv '& varg)
+                 .~(c/mapcat
                     (fn [[t i]]
-                      [t '(reduce (fn ~argv ~i) ~i ~varg)])
-                    (c/partition 2 decls))))))
+                      [t (qq (reduce (fn ~argv ~i) ~i ~varg))])
+                    (c/partition 2 decls))
+                 )))))
 
          module
          (fn [gsym]
-           '{:val ~gsym
-             inspect:val
-             (fn [] (@g/reg '~gsym))
-             ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
-             extension-form:mac
-             (fn [e bod]
-               (g/extension-form
-                (generic.spec e '~gsym bod)))
-             ;; now entend:upd just emit a macro call that will wait expansion time
-             extend:upd
-             (fn [e bod]
-               {:fx (lst* 'extension-form bod)})
-             ;; this is the previous code (problems with type+)
-             #_(fn [e bod]
-               {:fx (g/extension-form
-                     (generic.spec e '~gsym bod))})
+           (qq {:val ~gsym
+                inspect:val
+                (fn [] (@g/reg '~gsym))
+                ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
+                extension-form:mac
+                (fn [e bod]
+                  (g/extension-form
+                   (generic.spec e '~gsym bod)))
+                ;; now entend:upd just emit a macro call that will wait expansion time
+                extend:upd
+                (fn [e bod]
+                  {:fx (lst* (qq extension-form) bod)})
+                ;; this is the previous code (problems with type+)
+                #_(fn [e bod]
+                    {:fx (g/extension-form
+                          (generic.spec e '~gsym bod))})
 
-             })
+                }))
 
          spec
          {:val
@@ -2236,7 +2353,7 @@
 
          :mac
          (fn [e form]
-           (exp e '(fn . ~(fn&.cases form))))])
+           (exp e (qq (fn . ~(fn&.cases form)))))])
 
     (E+ joining
         ["a bunch of function for handling monoidish things"
@@ -2294,12 +2411,12 @@
 
           (check.thunk
            (eq () (iter []))
-           (eq () nil)
-           (eq () "")
+           (eq () (iter nil))
+           (eq () (iter ""))
            (eq '(1 2) (iter [1 2]))
            (eq '(1 2) (iter '(1 2)))
            (eq '([:a 1] [:b 2]) (iter {:a 1 :b 2}))
-           (eq '(\f \o \o) (iter "foo") (iter 'foo) (iter :foo)))]
+           (eq '(\f \o \o) (iter "foo") (iter (sym "foo")) (iter :foo)))]
 
          +
          ["join two things together
@@ -2411,10 +2528,10 @@
               (let [n+ (+ n "+")
                     n* (+ n "*")
                     n+* (+ n "+*")]
-                '[~n (fn& [] (sip ~e ...))
-                  ~n+ (fn& [] (+ ~e ...))
-                  ~n* (fn& [x] (apl ~n x ...))
-                  ~n+* (fn& [x] (apl ~n+ x ...))]))
+                (qq [~n (fn& [] (sip ~e ...))
+                     ~n+ (fn& [] (+ ~e ...))
+                     ~n* (fn& [x] (apl ~n x ...))
+                     ~n+* (fn& [x] (apl ~n+ x ...))])))
              ([x & xs]
               (apl catv ($ (cons x xs) make-upd))))
 
@@ -2507,13 +2624,13 @@
 
           :upd
           (fn [e [[a1 :as argv] expr]]
-            '(generic
-              ~argv
-              :seq
-              ~expr
-              (let [a ~a1
-                    ~a1 (iter ~a1)]
-                (wrap* a ~expr))))]
+            (qq (generic
+                 ~argv
+                 :seq
+                 ~expr
+                 (let [a ~a1
+                       ~a1 (iter ~a1)]
+                   (wrap* a ~expr)))))]
 
          car (generic [x] (c/first (iter x)))
          last (generic [x] (c/last (iter x)))
@@ -2674,11 +2791,11 @@
          ;; type generic
          (upd.mk
           (let [arg1 (gensym)]
-            {(quot type)
-             '(generic
-               [~arg1]
-               .~(c/interleave prims prims)
-               :any (c/type ~arg1))}))]
+            {'ty
+             (qq (generic
+                  [~arg1]
+                  .~(c/interleave prims prims)
+                  :any (c/type ~arg1)))}))]
 
         (import types [type]))
 
@@ -2702,7 +2819,7 @@
                     (lst* arg1 argv)
                     (lst `apply arg1 (car argv) (nth argv 2)))
                   form
-                  '(fn [~arg1] (fn ~argv (when ~test ~(car argv))))]
+                  (qq (fn [~arg1] (fn ~argv (when ~test ~(car argv)))))]
               form))
 
           builder:mac
@@ -2725,8 +2842,8 @@
           build-upd
           (fn
             ([[name arity original-name]]
-             {name '(~(guard.template arity)
-                     ~(ns-resolve-sym (or original-name name)))})
+             {name (qq (~(guard.template arity)
+                        ~(ns-resolve-sym (or original-name name))))})
             ([x & xs]
              ($ (vec* x xs) rec)))
 
@@ -2788,13 +2905,13 @@
          throws:mac
          (fn [e [x m]]
            (let [expr (c/str x)]
-             '(c/or
-               (c/get
-                (try ~(exp e x)
-                     (catch Exception err {::catched err}))
-                ::catched)
-               (p/error ~(c/or m "this should throws")
-                        ":\n" ~expr))))
+             (qq (c/or
+                  (c/get
+                   (try ~(exp e x)
+                        (catch Exception err {::catched err}))
+                   ::catched)
+                  (p/error ~(c/or m "this should throws")
+                           ":\n" ~expr)))))
 
          assertion
          ["a generic to turn something into an assertion expression"
@@ -2819,7 +2936,7 @@
 
           mapdo:mac
           (fn [e [x f]]
-            (exp e '(lst* 'do (c/map ~f ~x))))
+            (exp e (qq (lst* 'do (c/map ~f ~x)))))
 
           vec-split
           (fn [x]
@@ -2843,12 +2960,12 @@
                 ::ok)
 
            :nil
-           '(p/error (error-str "nil" ~m))
+           (qq (p/error (error-str "nil" ~m)))
 
            :string nil
 
            :any
-           '(c/or ~x (p/error (error-str '~x ~m)))
+           (qq (c/or ~x (p/error (error-str '~x ~m)))) ;; TODO fullquote waiting
            )]
 
          assert
@@ -2857,17 +2974,17 @@
             (exp e (assertion x m)))
           :upd
           (fn [_ xs]
-            {:fx '(assert .~xs)})}
+            {:fx (qq (assert .~xs))})}
 
          eq!:mac
          (fn [e xs]
-           (exp e '(assert (eq .~xs) "must be equal")))
+           (exp e (qq (assert (eq .~xs) "must be equal"))))
 
          tests:upd
          (fn [e xs]
-           {(quot tests)
-            {:form '(quot ~(vec* (assertion.vec-split xs)))
-             :do '(fn [] (assert ~(vec* xs) ~(path->str (loc e))))}})
+           {'tests
+            {:form (qq '~(vec* (assertion.vec-split xs)))
+             :do (qq (fn [] (assert ~(vec* xs) ~(path->str (loc e)))))}})
 
          ;; testing this module with itself
 
@@ -2915,7 +3032,7 @@
            :vec (bind.vec x y)
            :map (bind.map x y)
            :seq (bind.seq x y)
-           [(gensym "?match") (lst 'eq x y)])
+           [(gensym "?match") (lst 'eq x y)]) ;; TODO suspicious (non modal) check in strict form: (!let [42 43] "iop") -> nil ?#@!
 
           vec
           {:val
@@ -2927,7 +3044,7 @@
            body
            (fn [x y]
              (mapcat
-              (fn [v i] (bind v '(c/nth ~y ~i nil)))
+              (fn [v i] (bind v (qq (c/nth ~y ~i nil))))
               x (range)))
 
            raw
@@ -2935,7 +3052,7 @@
              (let [[ysym checkline checkcount] (gensyms)]
                (+
                 [ysym y
-                 checkline '(line? ~ysym)
+                 checkline (qq (line? ~ysym))
                  ;; checkcount '(= ~(count x) (count ~ysym))
                  ]
                 (bind.vec.body x ysym))))
@@ -2949,13 +3066,13 @@
                    [ysym qsym checkline cdr' cars'] (gensyms)]
                (+
                 [ysym y
-                 checkline '(line? ~ysym)]
-                (bind eli '(drop ~ysym ~doti))
+                 checkline (qq (line? ~ysym))]
+                (bind eli (qq (drop ~ysym ~doti)))
                 (bind.vec.body cars ysym)
                 (when-not (zero? qcnt)
                   (+ [cdr' eli]
-                     (bind eli '(dropend ~cdr' ~qcnt))
-                     [qsym '(takend ~cdr' ~qcnt)]
+                     (bind eli (qq (dropend ~cdr' ~qcnt)))
+                     [qsym (qq (takend ~cdr' ~qcnt))]
                      (bind.vec.body queue qsym))))))}
 
           map
@@ -2969,7 +3086,7 @@
            (fn [x y]
              (mapcat
               (fn [[k v]]
-                (bind v '(get ~y ~k)))
+                (bind v (qq (get ~y ~k))))
               x))
 
            raw
@@ -2977,7 +3094,7 @@
              (let [[checkmap ysym] (gensyms)]
                (+
                 [ysym y
-                 checkmap '(map? ~ysym)]
+                 checkmap (qq (map? ~ysym))]
                 (bind.map.keys x ysym))))
 
            dotted
@@ -2989,7 +3106,7 @@
                (+
                 [msym y]
                 (bind.map.keys m msym)
-                (bind rs '(c/dissoc ~msym . ~ks)))))}
+                (bind rs (qq (c/dissoc ~msym . ~ks))))))}
 
           seq
           (fn [[v & args] y]
@@ -3007,9 +3124,9 @@
                  (cs (key? v)
                      [s y (gensym "?typecheck")
                       (cs [pred (t/guards v)]
-                          '(~(sym v "?") ~s)
-                          '(or (eq (type ~s) ~v)
-                               (t/>= ~v (type ~s))))]
+                          (qq (~(sym v "?") ~s))
+                          (qq (or (eq (type ~s) ~v)
+                                   (t/>= ~v (type ~s)))))]
                      [s (lst* v y args)]
                                         ;(bind s (lst* v y args))
                      )
@@ -3018,7 +3135,7 @@
 
            #_(!! (bindings.bind '(:vec a) 'x))
 
-           table
+           table ;; TODO does we really need an atom here?
            (atom
             {'&
              (fn [xs y]
@@ -3036,9 +3153,9 @@
                      [ysym checkline checkcount countable?] (gensyms)]
                  (+
                   [ysym y
-                   checkline '(line? ~ysym)
-                   countable? '(c/counted? ~ysym)
-                   checkcount '(= ~(count xs) (count ~ysym))]
+                   checkline (qq (line? ~ysym))
+                   countable? (qq (c/counted? ~ysym))
+                   checkcount (qq (= ~(count xs) (count ~ysym)))]
                   (bind.vec.body xs ysym))))
 
              '!
@@ -3056,7 +3173,7 @@
                   [a b & nxt] (bindings xs)]
              (if a
                (if (seen a)
-                 (recur (conj ret (gensym) '(eq ~a ~b)) seen nxt)
+                 (recur (conj ret (gensym) (qq (eq ~a ~b))) seen nxt)
                  (recur (conj ret a b) (conj seen a) nxt))
                ret)))
 
@@ -3303,15 +3420,15 @@
                  ($ cases
                     (fn [[h e]]
                       (if (vec? h)
-                        (lst (if unified 'lut '?let)
+                        (lst (if unified (qq lut) (qq ?let))
                              h {::return e})
                         (lst `when h {::return e}))))
 
                  retform
-                 '(get ~(exp e (lst* `or cs)) ::return)]
+                 (qq (get ~(exp e (lst* `or cs)) ::return))]
              (if strict
                #_'(assert ~retform "clet no match!")
-               '(c/or ~retform ~(exp e '(error "clet no match!")))
+               (qq (c/or ~retform ~(exp e (qq (error "clet no match!")))))
                retform)))
 
          compiler
@@ -3413,11 +3530,11 @@
          binding-verb
          ["given compile opts, determine the needed verb for inner bindings"
           (fn [{:keys [unified strict short]}]
-            ({[nil nil nil] 'let
-              [nil true nil] '?let
-              [true nil nil] '!let
-              [nil true true] 'lut
-              [true nil true] '!lut}
+            ({[nil nil nil] (qq let)
+              [nil true nil] (qq ?let)
+              [true nil nil] (qq !let)
+              [nil true true] (qq lut)
+              [true nil true] (qq !lut)}
              [strict short unified]))]
 
          compile
@@ -3451,7 +3568,7 @@
                       :else ['& fs])]
 
                (cxp e
-                    (lst 'primitives.fn . (if name [name] [])
+                    (lst (qq primitives.fn) . (if name [name] [])
                          binding-form
                          (lst (binding-verb opts) bs body)))
                ))
@@ -3541,8 +3658,8 @@
           compile
           {:val
            (fn [e {:as opts :keys [arity-map name]}]
-             (exp e '(fn .~(when name [name])
-                       .~($ (iter arity-map) (p .arity opts)))))
+             (exp e (qq (fn .~(when name [name])
+                          .~($ (iter arity-map) (p .arity opts))))))
            arity
            {:val
             (fn [opts [n cases]]
@@ -3554,15 +3671,15 @@
             verb
             (fn [{:keys [unified short strict]} cases]
               (cs (not (next cases))
-                  (cs (and unified strict) '!lut
-                      unified 'lut
-                      short '?let
-                      strict '!let
-                      'let)
-                  (cs (and unified strict) '!clut
-                      unified 'clut
-                      strict '!clet
-                      'clet)))
+                  (cs (and unified strict) (qq !lut)
+                      unified (qq lut)
+                      short (qq ?let)
+                      strict (qq !let)
+                      (qq let))
+                  (cs (and unified strict) (qq !clut)
+                      unified (qq clut)
+                      strict (qq !clet)
+                      (qq clet))))
 
             fixed
             (fn [verb arity cases]
@@ -3637,7 +3754,7 @@
         (E+ guard:mac
             (f [e (& form [argv . _])]
                (let [(& parsed (ks pat body)) (lambda.parse form)
-                     body '(when ~body ~(car pat))]
+                     body (qq (when ~body ~(car pat)))]
                  (lambda.compile e (assoc parsed :body body))))
             guard:fn
             (f [g] (fn& [x] (when (g x ...) x))))
@@ -3672,8 +3789,8 @@
          {wrapper:mac
           (f [e [builder]]
              (let [[[a1 [e1]] . cs]
-                   (fn&.cases '([x] ((~builder x) ...)))]
-               (exp e '(fn (~a1 (p ~e1)) . ~cs))
+                   (fn&.cases (qq ([x] ((~builder x) ...))))]
+               (exp e (qq (fn (~a1 (p ~e1)) . ~cs)))
                #_(exp e (lst 'fn '(~a1 (p ~e1)) . cs))))}
 
          invocation
@@ -3801,12 +3918,12 @@
              (fn& [] (f1 s (f s ...))))
          :mac
          (f [e [g]]
-            (exp e '(fn& [] (f1 s (~g s ...)))))
+            (exp e (qq (fn& [] (f1 s (~g s ...))))))
          definitions:upd
          (f [e xs]
             (zipmap
              ($ xs #(sym % '_))
-             ($ xs (p lst 'subjectify))))}
+             ($ xs (p lst (qq subjectify)))))}
 
         ;; here we are defining subjectified versions of some important functions
         (subjectify.definitions
@@ -4053,8 +4170,8 @@
              (f [e _]
                 ($ (linear-accesses.mk 5)
                    (f_ {(sym 'c _ 'r)
-                        '(+ . ~($ (> _ iter rev)
-                                  (p c/get {\a 'car \d 'cdr})))})))}
+                        (qq (+ . ~($ (> _ iter rev)
+                                     (p c/get {\a (qq car) \d (qq cdr)}))))})))}
 
             (linear-accesses.definitions))
 
@@ -4137,7 +4254,7 @@
             {:mac
              (f [e [x y]]
                 (exp e
-                     (lst* 'dive:val
+                     (lst* (qq dive:val)
                            (clet [[(:sym v) . args] (seq? x)
                                   impl (get .ops (key v))]
                                  [(impl args) y]
@@ -4147,8 +4264,8 @@
               (f [xs]
                  '(fn [y] (select-keys y ~(vec* ($ xs key)))))}
 
-             op+:upd
-             (f [e [name argv expr]]
+             #_op+:upd
+             #_(f [e [name argv expr]]
                (p/prob
                 [(sym "dive.ops:val")
                  {(key name)
@@ -4407,14 +4524,14 @@
               ;=> (G__198743 G__198744 G__198745)"
              :mac
              (fn [e [xs & bod]]
-               (exp e '(let [~xs (gensyms)] . ~bod)))])
+               (exp e (qq (let [~xs (gensyms)] . ~bod))))])
 
         (E+ mac
             ["let you define a macro that behave as regular lisps ones do
               e.g: no need to manually thread expansion"
              :mac
              (f [e [pat . body]]
-                (exp e '(f [e' ~pat] (exp e' ~(lst* 'do body)))))])
+                (exp e (qq (f [e' ~pat] (exp e' ~(lst* 'do body))))))])
 
         (_ :tries
            (exp @E '(mac [p f t] (lst 'if p t f)))
@@ -4427,7 +4544,7 @@
 
             at_
             ["subjectified version of at"
-             :mac (mac [x] '(f_ (at _ ~x)))])
+             :mac (mac [x] (qq (f_ (at _ ~x))))])
 
         (_ :tries
            (!! (at {:a 1 :b 2 :c 2} (ks :a :b)))
@@ -4445,32 +4562,34 @@
          (f [verb symseed xs]
             (if (even? (count xs))
               (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
-              (rec verb symseed [.(butlast xs) (quot _) (last xs)])))
+              (rec verb symseed [.(butlast xs) '_ (last xs)])))
 
          verb
          (f1 (ks strict unified)
-             (cs (and strict unified) '!clut
-                 strict '!clet
-                 unified 'clut
-                 'clet))
+             (cs (and strict unified) (qq !clut)
+                 strict (qq !clet)
+                 unified (qq clut)
+                 (qq clet)))
 
          compile
          (f [e [seed . xs] opts]
             (let-syms [symseed]
               (exp e
-                   '(c/let ~[symseed seed]
-                      ~(form (verb opts) symseed xs)))))
+                   (qq (c/let ~[symseed seed]
+                         ~(form (verb opts) symseed xs))))))
 
          def:upd
          (f [_e [name . flags]]
             (let [mac-sym (sym name :mac)
                   smac-sym (sym name "_" :mac)]
               {mac-sym
-               '(f [e bod]
-                   (compile e bod ~(flagmap . flags)))
+               (qq (f [e bod]
+                      (compile e bod ~(flagmap . flags))))
                smac-sym
-               '(f [e xs]
-                   (exp e (lst 'f_ (lst* '~name '_ xs))))
+               (qq (f [e xs]
+                      (exp e (lst (qq f_) (lst* '~name '_ xs))))
+                   #_(f [e xs]
+                      (exp e (lst (qq f_) (lst* '~name '_ xs)))))
                }))
 
          builtins
@@ -4598,17 +4717,18 @@
 
     (E+ generic.spec.exp-case
         (f [e [argv . body]]
-           (let [amp (quot &)
+           (let [amp '&
                  argv ($ argv (f_ (if (= _ composite.dot) amp _)))
-                 syms ($ argv (f_ (if (= _ (quot &)) amp (gensym))))
+                 syms ($ argv (f_ (if (= _ amp) amp (gensym))))
                  binding-form (vec* (braid (rem argv (eq amp))
                                            (rem syms (eq amp))))]
              (lst+* [syms]
                     ($ (chunk body 2)
                        (f1 [t impl]
-                           [t (exp e '(let ~binding-form ~impl))]))))))
+                           [t (exp e (qq (let ~binding-form ~impl)))]))))))
 
     (E+ tack
+        ;; TODO should have an op table and a macro like dive
         [
          "not intended to be used directly
           prefer using put and upd
@@ -4720,15 +4840,15 @@
               ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
 
               [ ;; clojure side effects
-               :clj '(do (defrecord ~class-sym ~fields)
-                         (t/prim+ ~name [~class-sym] [:usertypes]))
+               :clj (qq (do (defrecord ~class-sym ~fields)
+                          (t/prim+ ~name [~class-sym] [:usertypes])))
                ;; constructors (positional and from hashmap)
-               name-sym '(f ~fields (~(sym "->" class-sym) .~fields))
-               map-constructor-sym '(f_ (~(sym "map->" class-sym) _))
-               guard-sym '(f_ (instance? ~class-sym _))
+               name-sym (qq (f ~fields (~(sym "->" class-sym) .~fields)))
+               map-constructor-sym (qq (f_ (~(sym "map->" class-sym) _)))
+               guard-sym (qq (f_ (instance? ~class-sym _)))
 
                ;; generic implementations
-               '(generic.type+ ~name (type [x] ~name ~name) .~impls)]))
+               (qq (generic.type+ ~name (type [x] ~name ~name) .~impls))]))
 
          :demo
          (__
@@ -4800,16 +4920,16 @@
                      parents)]
 
             [ ;; clojure side effects
-             :clj '(do (defrecord ~class-sym ~fields)
-                       (t/prim+ ~name [~class-sym] ~parents))
+             :clj (qq (do (defrecord ~class-sym ~fields)
+                        (t/prim+ ~name [~class-sym] ~parents)))
              ;; constructors (positional and from hashmap)
-             name-sym '(f ~fields (merge ~proto-sym (~(sym "->" class-sym) .~fields)))
+             name-sym (qq (f ~fields (merge ~proto-sym (~(sym "->" class-sym) .~fields))))
              proto-sym proto-val
-             map-constructor-sym '(f_ (~(sym "map->" class-sym) (merge ~proto-sym _)))
-             guard-sym '(f_ (instance? ~class-sym _))
+             map-constructor-sym (qq (f_ (~(sym "map->" class-sym) (merge ~proto-sym _))))
+             guard-sym (qq (f_ (instance? ~class-sym _)))
 
              ;; generic implementations
-             '(generic.type+ ~name (type [x] ~name ~name) .~impls)]))]
+             (qq (generic.type+ ~name (type [x] ~name ~name) .~impls))]))]
 
         )
 
@@ -4833,8 +4953,8 @@
                     (clet [x1 (key? (car x))
                            [o . _xs] (cdr x)
                            o (rec e o)]
-                          (lst* (exp e '§)
-                                (exp e '(or (c/get ~o ~x1) (.method-not-found ~o ~x1)))
+                          (lst* (exp e (qq §))
+                                (exp e (qq (or (c/get ~o ~x1) (.method-not-found ~o ~x1))))
                                 o (when _xs ($ _xs (p rec e))))
                           ($ x (p rec e)))
                     holycoll?
