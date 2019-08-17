@@ -1872,9 +1872,9 @@
                        (qualsym e (sym (car x) :mac)))))))
 
        unquote-quote?
-       (fn [e x]
+       (fn [x]
          (and (unquote? x)
-              (quotes.quote? e (second x))))
+              (p/quote? (second x))))
 
        mk
        (fn [{:keys [strict qualified]}]
@@ -1888,7 +1888,7 @@
                cp.dotdot? cp.dotdot
 
                ;; if quote-unquote we strip a lvl
-               (p quotes.unquote-quote? e)
+               quotes.unquote-quote?
                (rec e (dec lvl) (second (second form)))
 
                ;; if unquote we perform expansion with e
@@ -1923,23 +1923,6 @@
                            (error "unqualifiable symbol: " form)
                            (quotes.wrap form))))
 
-               #_(cs strict
-                   (let [[p _] (assert (bubfind e (path form))
-                                       (str "unqualifiable symbol: " form " "))]
-                     (quotes.wrap (quotes.rootsym (path form))))
-
-                   qualified
-                   (cs [p (path form)
-                        [p v] (bubfind e p)]
-                       ;; if symbol is a local binding we substitute it
-                       (if (get v :local)
-                         (quotes.wrap (exp e form))
-                         ;; else we just qualifies it
-                         (quotes.wrap (quotes.rootsym p)))
-                       (quotes.wrap form))
-
-                   (quotes.wrap form))
-
                ;; else we quote wathever it is
                (quotes.wrap form))))
 
@@ -1955,8 +1938,6 @@
         (qq (add 1 2 a ~(sip [] . (lst 1 2))
                  (qq (a b c ~'(add 1 2 . ~(lst 3 4)))))))
        ]
-
-      
 
       {:links {sq quotes.sq
                qq quotes.qq
@@ -1984,9 +1965,25 @@
        (let [xs' ($ xs (p cxp e))]
          (qq (c/when (c/and .~(c/butlast xs')) ~(c/last xs')))))
 
-     or:mac
-     (fn [e xs]
-       (qq (c/or .~($ xs (p exp e)) nil)))
+     or
+     ["same as the clojure or macro but returns nil when failing
+       (the clojure's or macro can return false, which may conflict with some nil based shortcircuiting forms)"
+      :mac
+      (fn [e xs]
+        (qq (c/or .~($ xs (p exp e)) nil)))]
+
+     exp
+     ["importing the asparagus.core/exp function
+       adding a macro version of it that perform the expansion at compile time using the compiling environment"
+
+      :val asparagus.core/exp ;; TODO we have to put the :val, else it throws a cryptic error...
+
+      :mac
+      (fn [e xs]
+        (let [arity (count xs)]
+          (if (= 1 arity)
+            (exp:val e (car xs))
+            (exp:val e (qq (exp:val .~xs))))))]
 
      check
      {:doc "a quick way to assert things"
@@ -4264,14 +4261,11 @@
               (f [xs]
                  '(fn [y] (select-keys y ~(vec* ($ xs key)))))}
 
-             #_op+:upd
-             #_(f [e [name argv expr]]
-               (p/prob
-                [(sym "dive.ops:val")
+             op+:upd
+             (f [e [name argv expr]]
+                ['dive.ops:val
                  {(key name)
-                  '(f1 ~argv ~expr)
-                  #_'(f1 ~(vec* args)
-                         '(f1 ~seed ~expr))}]))
+                  (qq (f1 ~argv ~expr))}])
              })
 
         #_(!! (dive (ks :a :b) {:a 1 :b 2 :c 2}))
@@ -4728,7 +4722,7 @@
                            [t (exp e (qq (let ~binding-form ~impl)))]))))))
 
     (E+ tack
-        ;; TODO should have an op table and a macro like dive
+
         [
          "not intended to be used directly
           prefer using put and upd
@@ -4745,22 +4739,53 @@
 
                   :num
                   (when (assert (or (line? x) (nil? x)))
-                    (cs
-                     ;; idx is in bounds
-                     (gt (c/count x) k)
-                     (cp x
-                         seq? (+ (take x k) (vals v) (drop x (inc k)))
-                         vec? (c/assoc x k v))
 
-                     ;; x is nil
-                     (nil? x) (sip (vec* (c/repeat k nil)) v)
+                    (let [cnt (c/count x)
+                          negidx (and (neg? k) (c/- k))
+                          inbound (gt cnt (or negidx k))]
 
-                     ;; we fill the missing idxs with nils
-                     (+ x (tack (sub k (c/count x)) nil v))))
+                      (cs
+
+                       inbound
+                       (cs negidx
+
+                           ;; I could recur here but, take is low level, had to check perfs
+                           (let [idx (sub cnt negidx)]
+                             (cp x
+                                 seq? (c/concat (take x idx) (cons v (drop x (inc idx))))
+                                 vec? (c/assoc x idx v)))
+
+                           (cp x
+                               seq? (c/concat (take x k) (cons v (drop x (inc k))))
+                               vec? (c/assoc x k v)))
+
+                       (nil? x)
+                       (sip (vec* (c/repeat k nil)) v) 
+
+                       ;; we fill the missing idxs with nils
+                       (+ x (tack (sub k (c/count x)) nil v)))))
 
                   :any
                   (when (assert (or (map? x) (c/record? x) (nil? x)))
                     (c/assoc (or x {}) k v)))]
+
+        tack
+        {:mac
+         (f [e [x y z]]
+            (exp e
+                 (lst* (qq tack:val)
+                       (clet [[(:sym v) . args] (seq? x)
+                              impl (get .ops (key v))]
+                             [(impl args) y z]
+                             [x y z]))))
+
+         ops:val {}
+
+         op+:upd
+         (f [e [name argv expr]]
+            ['tack.ops:val
+             {(key name)
+              (qq (f1 ~argv ~expr))}])}
 
         put
         ["analog to assoc, but uses 'tack"

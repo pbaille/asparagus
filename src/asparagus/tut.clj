@@ -1,6 +1,8 @@
 (in-ns 'asparagus.core)
 
-(init-top-forms
+(do :init
+
+    (init-top-forms
      let lut ?let !let !lut
      ?f !f f fu !fu
      f1 !f1 ?f1 !fu1 fu1
@@ -9,11 +11,11 @@
      clet clut !clet !clut
      case casu !case !casu)
 
-(defmacro is [& xs]
-  `(!! (check (~'eq ~@xs))))
+    (defmacro is [& xs]
+      `(!! (check (~'eq ~@xs))))
 
-(defmacro isnt [& xs]
-  `(!! (check ~@($ xs (f_ (lst `nil? _))))))
+    (defmacro isnt [& xs]
+      `(!! (check ~@($ xs (f_ (lst `nil? _)))))))
 
 ;; ------------------------------------------------------------------------
 ;;                               Rational
@@ -21,7 +23,7 @@
 
 (_
  ;; asparagus is my last experience in language design
- ;; after several attempt, i've compiled some of the ideas I like, found in other languages/books/papers
+ ;; after several attempt, i've compiled some of the ideas I like, found in other languages/books/papers/altered-states-of-mind
 
  ;; it is embedded in clojure, but at the same time is quite far from it.
  ;; it has its own environment/namespaces mecanism, and another kind of macro system.
@@ -107,7 +109,8 @@
 
   (E+
 
-   ;; our intent is to implement a stat function that takes any number of mumeric arguments and return a map holding some statistics
+   ;; our intent is to implement a stat function that takes any number of numeric arguments and return a map holding some statistics
+
    ;; first we are defining some helpers, that will be scoped under the stats identifier
    stats.sum
    (fn [xs] (apl add xs))
@@ -129,7 +132,7 @@
   ;; it could be defined with a map literal to
 
   (E+ stats
-      { ;; for now i've hidden an important detail,
+      {;; for now i've hidden an important detail,
        ;; each identifier can have any number of what we will call attributes (or meta-keys, not really sure about the naming yet...)
        ;; attributes are stored and accessible using clojure keywords
        ;; for instance an identifier 'foo can have an attribute :size
@@ -177,7 +180,7 @@
   ;; we also could have used vector syntax to define stats
 
   (E+ stats
-      [ ;; in vector literal definitions occurs sequentially
+      [;; in vector literal definitions occurs sequentially
        ;; so we have to define helpers before 
        sum
        (fn [xs] (apl add xs))
@@ -323,7 +326,7 @@
   (!! (links.demo.mod2.f))
 
   ;; with this we can acheive some of the things we do with :require and :use in clojure ns's form
-  ;; it will not oftenly used directly, but will be used under the hood by higher level macros...
+  ;; it will not be oftenly used directly, but will be used under the hood by higher level macros...
 
 
   ;; the asparagus environment is holded by the asparagus.core/E atom
@@ -354,26 +357,16 @@
 
   {:a 1}
   [1 2 3]
+  '(1 2 3)
   #{1 2}
   "hello"
   :iop
+  'mysym
+  \A
+  42
+  1.8
+  1e-7
 
-  ;; the quote is different from clojure's one, it is more like quasiquote, it qualifies its operand
-  ;; so symbols and list litterals will not be written as in clojure
-
-  ;; a quoted sym
-  (quot mysym)                          ;=> 'mysym
-  (sym "mysym")                         ;=> 'mysym
-
-  ;; it can seem like an heavy syntax for literal symbols, but I think that keywords can replace them in much use cases.
-  ;; literal symbols are used mainly for meta programming. Introducing an unqualified symbol is not a trivial thing, so it deserve a bit of syntax
-  ;; at the opposite, having to write qualified symbol is much more common/trivial and deverses better the quote reader syntax
-  ;; clojure's quasiquote have special treatment that prevents me to overide it to my purposes, this is why asparagus has to make this choice.
-
-  ;; a list
-  (lst 1 2 3)
-  ;;or if we want full quote
-  (quot (a b c)) ;; which is not pretty I agree
   )
 
  ;; collections -------------------------------------
@@ -422,24 +415,24 @@
   ;; constructors
   ;; symbols and keywords have their core/str(ish) construtors
 
-  (sym "foo")                           ;=> 'foo
-  (key "foo")                           ;=> :foo
+  (sym "foo") ;;=> 'foo
+  (key "foo") ;;=> :foo
 
-  (sym :foo "bar")                      ;=> 'foobar
-  (key "foo" :bar "baz")                ;=> :foobarbaz
+  (sym :foo "bar") ;;=> 'foobar
+  (key "foo" :bar "baz") ;;=> :foobarbaz
 
   ;; star variants
 
-  (sym* "ab" (lst "cd" "ef" "gh"))          ;=> 'abcdefgh
-  (key* "my" :keyword "_" [:foo :bar "baz"]) ;=> :mykeyword_foobarbaz
-  (str* "mystr_" ["a" "b"])                  ;=> "mystr_ab"
+  (sym* "ab" (lst "cd" "ef" "gh")) ;;=> 'abcdefgh
+  (key* "my" :keyword "_" [:foo :bar "baz"]) ;;=> :mykeyword_foobarbaz
+  (str* "mystr_" ["a" "b"]) ;;=> "mystr_ab"
 
   ;; guards
   ;; as for collections, we use guards instead of preds
 
-  (key? :iop)                           ;=> :iop
-  (sym? (quot bob))                     ;=> 'bob
-  (str? "hi")                           ;=> "hi"
+  (key? :iop) ;;=> :iop
+  (sym? 'bob) ;;=> 'bob
+  (str? "hi") ;;=> "hi"
   )
  )
 
@@ -451,6 +444,9 @@
 
  ;; joining things together with +
  ;; ------------------------------
+
+ ;; as I mentioned in the rational, core operations are generic functions that can be extended
+ ;; + is one of them
 
  (_
 
@@ -574,7 +570,7 @@
 
     (eq {:a 1
          :c 3
-         . b}
+         . b} ;; we are merging b into the host map
 
         ;; if you want to splice several map into your literal use .. []
         {:c 3
@@ -701,6 +697,7 @@
 
   (_
    ;; in a unified let, all symbols that appears several times have to bind to the same value (equal values)
+   ;; otherwise it will shortcircuits
 
    (lut [a 1 a (dec 2)] :success)
 
@@ -1048,7 +1045,7 @@
 
   ;; You may ask yourself what is the price for this expressivity
   ;; i've worked hard on compiling those forms into performant code,
-  ;; there is certainly a price for the shortcircuit, strict and unified binding modes, but certainly not as high as you may expect
+  ;; there is certainly a price for the shortcircuit, strict and unified binding modes, but probably not as high as you may expect
   ;; sometimes it is close to bare clojure's perfs
   )
 
@@ -1205,10 +1202,10 @@
 
   ;; on maps it receives key-value pairs
   ;; given functions has to return only the value
-  (is (!!($i {:a 1 :b 2}
-             (f [idx val]
-                ;; we return the key-value pair as is
-                [idx val])))
+  (is ($i {:a 1 :b 2}
+          (f [idx val]
+             ;; we return the key-value pair as is
+             [idx val]))
       ;; the key-value pair has been put in value position
       ;; the keys cannot be altered with $i,
       ;; if you think about it $i on a vector or sequence cannot alter indexes,
@@ -1237,7 +1234,7 @@
   (is (zip add (range 10) (range 10) (range 10) (range 10))
       (lst 0 4 8 12 16 20 24 28 32 36))
 
-  ;; $+
+  ;; $+ (is to $ what mapcat is to map)
   (is ($+ (range 6) (f_ (c/repeat _ _)))
       (lst 1 2 2 3 3 3 4 4 4 4 5 5 5 5 5))
 
@@ -1263,7 +1260,7 @@
   ;; red
   ;; like core/reduce but with different argument order and variadic arity
   ;; red takes the 'seed as first argument
-  ;; a reducing function and second argument
+  ;; a reducing function as second argument
   ;; and as many iterables as you like (here one)
   (is (red #{} sip [1 2 3 3 4 2 1 5 6 4 5]) ;; 'sip is asparagus conj(ish) function
       #{1 4 6 3 2 5})
@@ -1381,7 +1378,7 @@
   
  ;; one thing we all love in functional programming is the ability to compose functions together
  ;; manipulate them easily, passing them to other functions, partially apply them etc...
- ;; in asparagus I've tried to push all this stuff further than clojure
+ ;; in asparagus I've tried to push all those things further than clojure
 
  ;; application and invocation
 
@@ -1756,6 +1753,91 @@
       ))
  )
 
+
+;; ------------------------------------------------------------------------
+;;                         quoting, templating
+;; ------------------------------------------------------------------------
+
+(_
+
+ ;; asparagus does not have the same quasiquote semantics and syntax than clojure (in clojure, the ` character)
+ ;; inspired by brandon bloom's backtic library, I tried to separate symbol qualification from templating
+ ;; there is 3 tastes of quasiquotes in asparagus (in addition to the normal quote)
+
+ ;; sq (syntax-quote or quasiquote)
+ ;; -----------------------------------------------------------------
+
+ (_
+  ;; quasiquote expressions are useful for constructing datastructures when most but not all of the desired structure is known in advance.
+  ;; If no ~ (unquote) appear within the template (the first and only argument of the quasiquote form),
+  ;; the result of evaluating (sq template) is equivalent to the result of evaluating 'template.
+  (is (sq (a b c))
+      '(a b c))
+
+  ;; If a ~ appears within the template, however, the expression following the ~ is evaluated ("unquoted")
+  ;; and its result is inserted into the structure replacing the ~ and the expression.
+
+  (!! (sq (+ 1 ~(+ 2 3)))) ;;=> (+ 1 5)
+
+  (!! (sq (list ~(+ 1 2) 4))) ;;=>  (list 3 4)
+
+  (let [name 'a]
+    (sq (list ~name '~name))) ;;=>  (list a (quote a))
+
+
+  ;; If a comma appears preceded immediately by a dot, then the following expression must evaluate to an iterable structure;
+  ;; the evaluated iterable structure will be merged into its host structure, replacing the dot, the unquote and the expression.
+  ;; therefore a 'dot unquote expr' (.~expr) structure has to appears only in an iterable structure (in order to be able to be merged into it).
+
+  (!! (sq (0 .~($ [0 1 2] inc) 4))) ;;=> (0 1 2 3 4)
+
+  (let [amap {:b 2 :c 3}]
+    (sq {:a 1 .~amap})) ;;=> {:a 1, :b 2, :c 3}
+
+  ;; Quasiquote forms may be nested.
+  ;; Substitutions are made only for unquoted components appearing at the same nesting level as the outermost backquote.
+  ;; The nesting level increases by one inside each successive quasiquotation, and decreases by one inside each unquotation.
+
+  (!! (sq (a (sq (b ~(+ 1 2) ~(foo ~(+ 1 3) d) e)) f)))
+  ;;=> (a (sq (b ~(+ 1 2) ~(foo 4 d) e)) f)
+
+  (let [name1 'x
+        name2 'y]
+    (sq (a (sq (b ~~name1 ~'~name2 d)) e)))
+  ;;=>  (a (sq (b ~x y d)) e)
+  )
+
+ ;; qq (qualified quasiquote)
+ ;; -----------------------------------------------------------------
+
+ (_
+  ;; is somehow similar to clojure quasiquote, in the sens that it let you template a structure like sq do, but also qualifies symbols
+
+  (!! (qq (+ 1 ~(+ 2 3))))
+  ;;=> (_.joining.+ 1 5)
+
+  ;; word on qulified symbols
+  ;; when qualifying '+ we resolve it to joining.+ (indicating that the '+ function lives in the 'joining module)
+  ;; the underscore prefix simply make explicit that it is an absolute path (preventing any relative or bubling resolution that could occur at a later stage)
+
+  ;; if a symbol is not resolvable it is left as is
+  (!! (qq (+ a b c)))
+  ;;=> (_.joining.+ a b c)
+
+  ;; all the things that we've seen with sq are possible with qq
+  )
+
+ ;; qq! (qualified strict quasiquote)
+ ;; -----------------------------------------------------------------
+
+ (_
+  (!! (qq! (+ 1 ~(+ 2 3)))) ;;=> (_.joining.+ 1 5)
+
+  ;; the following will throw, indicating: "unqualifiable symbol: a"
+  (throws
+   (!! (qq! (+ a b c))))
+  ))
+
 ;; ------------------------------------------------------------------------
 ;;                         environment (continued)
 ;; ------------------------------------------------------------------------
@@ -1819,7 +1901,7 @@
   ;; it is not a high price to pay I think, given the flexibility and power it can provide
 
   ;; You can do many crazy things with this behavior, but you don't have to.
-  ;; I personaly tends to prefer technologies that let the power to the user
+  ;; Those days I personaly tends to prefer technologies that let the power to the user
   ;; even if I agree that strong opinions and good practices enforcement can yield to a powerfull language and strong community (like clojure)
   ;; Its a matter of taste and needs after all (at a point in time)
 
@@ -1835,7 +1917,7 @@
   (E+ fi:mac
       ;; the 'mac macro let you define a macro in a standard way
       (mac [p f t] ;; we do not receive the environment
-           '(if ~p ~t ~f) ;; we don't thread the expansion, it will be automatically done
+           (lst 'if p t f) ;; we don't thread the expansion, it will be automatically done
            ))
 
   (exp @E '(fi (pos? 1)
@@ -2207,352 +2289,483 @@
 ;;                              dive and tack
 ;; ------------------------------------------------------------------------
 
-;; dive
-
-;; the dive generic function, let you get something inside something else
-;; its first argument represent the address of what you want to get
-;; the second is the thing in which you want to find it
-;;
-;; it is like core/get but with arguments reversed, and being a generic function, it can be extended.
-
-;; for key and syms it does what core/get had done
-(is 1 (dive :a {:a 1}))
-(is 1 (dive 'a {'a 1}))
-
-;; for nums it search an idx
-(is :io (dive 2 [0 0 :io 0]))
-;; negative idxs supported
-(is :io (dive -1 [0 0 :io]))
-
-;; for vector it goes deep
-(is :io (dive [:a :b] {:a {:b :io}}))
-;; but any valid diving-address can be used
-(is :io (dive [:a -1] {:a [0 0 0 :io]}))
-
-;; maps let you compose a return value
-(is (dive {:one [:a :b] :two [:c 1 :d]}
-          {:a {:b :io} :c [0 {:d 42} 0]})
-    {:one :io
-     :two 42})
-
-;; it also accpets raw functions
-(is 1 (dive inc 0))
-;; which does not seems to really make sense at first but it can be handy in more complex dives
-(is 1
-    (dive [:a num? inc]
-          {:a 0}))
-
-;; Also, we can mention that it is a concrete exemple of something that is a function and a macro at the same time
-;; here we use a technique that is analog to the one we used in bind (binding operators)
-;; the dive module holds a map of operations implementations in dive.ops
-;; At expansion time, if the first argument to dive is an sexpr, the verb will be searched in dive.ops
-;; if an implementation is found, it will be executed (at expansion time) and the return value will take the place of the original expression
-;;
-;; as an exemple, we use the 'ks operation
-(!! (dive (ks a b) {:a 1 :b 2 :c 2}))
-;; ks is resolved in dive.ops and applied to the given args (here :a and :b), producing this form
-(dive (fn [y] (select-keys y [:a :b]))
-      {:a 1 :b 2 :c 2})
-
-;; functions implement dive so the expansion time work is done, the form will now ready for runtime
-
-;; As you may have deduced by yourself, dive.ops can be extended with new operations
-;; Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :))
-
-;; extension 
-
 (_
 
- (E+ dive.ops:val
-     {:wtf
-      (f1 [x] '(f_ [:wtf ~x _]))})
+ ;; dive
 
- (is (dive (wtf 42) {:a 1 :b 2})
-     [:wtf 42 {:a 1 :b 2}])
+ (_
+
+  ;; the dive generic function, let you get something inside something else
+  ;; its first argument represent the address of what you want to get
+  ;; the second is the thing in which you want to find it
+  ;;
+  ;; it is like core/get but with arguments reversed, and being a generic function, it can be extended.
+
+  ;; for key and syms it does what core/get had done
+  (is 1 (dive :a {:a 1}))
+  (is 1 (dive 'a {'a 1}))
+
+  ;; for nums it search an idx
+  (is :io (dive 2 [0 0 :io 0]))
+  ;; negative idxs supported
+  (is :io (dive -1 [0 0 :io]))
+
+  ;; for vector it goes deep
+  (is :io (dive [:a :b] {:a {:b :io}}))
+  ;; but any valid diving-address can be used
+  (is :io (dive [:a -1] {:a [0 0 0 :io]}))
+
+  ;; maps let you compose a return value
+  (is (dive {:one [:a :b] :two [:c 1 :d]}
+            {:a {:b :io} :c [0 {:d 42} 0]})
+      {:one :io
+       :two 42})
+
+  ;; it also accpets raw functions
+  (is 1 (dive inc 0))
+  ;; which does not seems to really make sense at first but it can be handy in more complex dives
+  (is 1
+      (dive [:a num? inc]
+            {:a 0}))
+
+  ;; Also, we can mention that it is a concrete exemple of something that is a function and a macro at the same time
+  ;; here we use a technique that is analog to the one we used in bind (binding operators)
+  ;; the dive module holds a map of operations implementations in dive.ops
+  ;; At expansion time, if the first argument to dive is an sexpr, the verb will be searched in dive.ops
+  ;; if an implementation is found, it will be executed (at expansion time) and the return value will take the place of the original expression
+  ;;
+  ;; as an exemple, we use the 'ks operation
+  (!! (dive (ks a b) {:a 1 :b 2 :c 2}))
+  ;; ks is resolved in dive.ops and applied to the given args (here :a and :b), producing this form
+  (dive (fn [y] (select-keys y [:a :b]))
+        {:a 1 :b 2 :c 2})
+
+  ;; functions implement dive so the expansion time work is done, the form will now ready for runtime
+
+  ;; As you may have deduced by yourself, dive.ops can be extended with new operations
+  ;; Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :))
 
  
+  ;; extension 
+
+  (_
+
+   ;; adding a wtf op that do something that does not make sense
+   (E+ (dive.op+ wtf [x]
+                 (qq (f_ [:wtf ~x _]))))
+
+   ;; using it
+   (is (dive (wtf 42) {:a 1 :b 2})
+       [:wtf 42 {:a 1 :b 2}])
+
+   ;; inspecting the ops table
+   (ppenv dive.ops)
+
+   (_ :scratch
+
+      (defmacro updxp [[v & args]]
+        `(!! (~(sym v ":upd") @E '~(vec args))))
+
+      (updxp (dive.op+ wtf [x]
+                       (qq (f_ [:wtf ~x _])))))
+
+   ))
+
+ ;; tack
+
+ (_
+
+  ;; tack is not really intended to be used directly
+  ;; in most cases we will use put and upd (that are defined in terms of it)
+  ;; semantically similar to assoc with different arg order
+  ;; like in dive the first argument is the address (and is used to dispatch)
+  ;; the second argument is the object we work on (the tacking-target :) )
+  ;; the third is the thing we want to put at this location
+
+  ;; tack
+  ;; -----------------------------
+
+  (eq  (tack 1      ;; the address
+             [1 2 3] ;; the object (target)
+             :io     ;; what we put
+             )
+       [1 :io 3])
+
+  ;; it supports neg idexes like dive does
+  (eq (tack -1 [1 2 3] :foo))
+  (eq (tack -1 '(1 2 3) :foo))
+
+  ;; vectors denotes nesting
+  (eq (tack [:a :b] {} 42)
+      {:a {:b 42}})
+
+  (eq (tack [:a :b] nil 42)
+      {:a {:b 42}})
+
+  (eq (tack [:a 2] nil 42)
+      {:a [nil nil 42]})
+
+  (eq [[[nil nil 42]]]
+      (tack [0 0 2] [] 42))
+
+  ;; put
+  ;; -----------------------------
+  ;; put is the same as tack but takes the target as first argument, more similar to assoc
+
+  (eq {:a 1}
+      (put nil :a 1))
+
+  (eq {:a {:b 1}}
+      (put {} [:a :b] 1))
+
+  (eq [[[nil nil 42]]]
+      (put nil [0 0 2] 42))
+
+  (eq [nil [nil nil [1]] nil 89]
+      (put [] [1 2 0] 1 3 89))
+
+  (eq {:a {:b 1, :p {:l [0 1 2]}}}
+      (put {} [:a :b] 1 [:a :p :l] [0 1 2]))
+
+  ;; upd
+  ;; -----------------------------
+  ;; like clojure update but using tack under the hood
+
+  (eq [0 [1 1]]
+      (upd [0 [0 1]] [1 0] inc))
+
+  ;; it can take several updates at once
+  (eq {:a {:b [0 2 2], :c {:d 42}}}
+      (upd {:a {:b [0 1 2]}}
+           [:a :b 1] inc
+           [:a :c :d] (k 42)))
+
+  ;; extension
+  ;; -----------------------------
+
+  ;; TODO
+
+  ))
 
 
 
- (exp @E '(dive (wtf 43) {:a 1 :b 2}))
- (!! (dive (wtf 43) {:a 1 :b 2}))
 
- (env-inspect 'dive.ops)
- (is (!! (dive (wtf3 43) {:a 1 :b 2}))
-     [:wtf3 43 {:a 1 :b 2}])
 
- (E+ foo 42)
- (exp @E '(f1 [arg1] '(f1 sd [:wtf3 ~arg1 sd])))
 
- (bubfind @E (path 'f1))
 
- (E+ dive.op+:upd
-     (f [e [name [seed . args] expr]]
-        (sq [dive.ops:val
-             {~(key name)
-              (f1 ~(vec* args)
-                  (qq (f1 ~'~seed ~'~expr)))}])))
 
- (E+ (dive.op+ wtf [sd a] [:wtf a sd]))
 
- (ppenv dive.op+)
- (ppenv dive.ops)
 
- (defmacro updxp [[v & args]]
-   `(!! (~(sym v ":upd") @E '~(vec args))))
 
- (updxp (dive.op+ wtf [sd a] [:wtf a sd]))
 
- )
+
+
+
+
+
+
+
 
 ;; quoting -----------------------------------------
 
-(_ :xp1
+(_ :quote-xp
 
-    (E+ foo 42)
+   (_ :xp1
 
-    (exp @E 'foo)
+      (E+ foo 42)
 
-    (E+ foo:sub (f_ 'foo:val))
+      (exp @E 'foo)
 
-    (defmacro expquote [x]
-      `(exp @E ''~x))
+      (E+ foo:sub (f_ 'foo:val))
 
-    (exp @E ''(f [a b c] a))
+      (defmacro expquote [x]
+        `(exp @E ''~x))
 
-    (expquote (f [a b c] a))
+      (exp @E ''(f [a b c] a))
 
-    (c/eval (exp @E (c/eval (expquote (f1 [arg1] '(f1 sd [:wtf3 arg1 sd]))))))
+      (expquote (f [a b c] a))
 
-    (!! '(f1 [arg1] '(f1 sd [:wtf3 arg1 sd])))
+      (c/eval (exp @E (c/eval (expquote (f1 [arg1] '(f1 sd [:wtf3 arg1 sd]))))))
 
-    ;; lambda exp
-    (exp @E '(f [a b c] a))
-    (exp @E '(f1 a a))
-    (exp @E '(f1 _ _))
-    (exp @E '(f_ _))
+      (!! '(f1 [arg1] '(f1 sd [:wtf3 arg1 sd])))
 
-    (!! ((lambda.compiler) @E '([_a] _a)))
+      ;; lambda exp
+      (exp @E '(f [a b c] a))
+      (exp @E '(f1 a a))
+      (exp @E '(f1 _ _))
+      (exp @E '(f_ _))
 
-    (!! (hygiene.shadow.gensym? '_))
+      (!! ((lambda.compiler) @E '([_a] _a)))
 
-    (!! (cadr 'abc))
+      (!! (hygiene.shadow.gensym? '_))
 
-    (E+ quote:mac
-        (fn [e [x]]
-          (pp "exp quot " x)
-          (cp.expand (fun.alt e 0 x))))
+      (!! (cadr 'abc))
 
-    (E+ foo 42)
+      (E+ quote:mac
+          (fn [e [x]]
+            (pp "exp quot " x)
+            (cp.expand (fun.alt e 0 x))))
 
-    (exp @E
-         '(let [foot 12 b :sd c 1 d (quot yop)]
-            #_(quote.fun:alt e 0 (lst ))
-            '(foo ~b '(c ~'~d))))
+      (E+ foo 42)
 
-    (let [foot 12 b :sd c 1 d (quot yop)]
-      #_(quote.fun:alt e 0 (lst ))
-      '(foo ~b '(c ~'~d)))
+      (exp @E
+           '(let [foot 12 b :sd c 1 d (quot yop)]
+              #_(quote.fun:alt e 0 (lst ))
+              '(foo ~b '(c ~'~d))))
 
-    (let [foot 12 b :sd c 1 d (quot yop)]
-      #_(quote.fun:alt e 0 (lst ))
-      (sq (foo ~b (sq (c ~'~d)))))
+      (let [foot 12 b :sd c 1 d (quot yop)]
+        #_(quote.fun:alt e 0 (lst ))
+        '(foo ~b '(c ~'~d)))
 
-    (!! '(1 '~(add 1 ~(add 2 3)) 4))
-    (!! (list 1 (list (sym "quote") (list `unquote (list 'add '1 (add 2 3))))))
+      (let [foot 12 b :sd c 1 d (quot yop)]
+        #_(quote.fun:alt e 0 (lst ))
+        (sq (foo ~b (sq (c ~'~d)))))
 
-    (expquote (1 '~(add 1 ~(add 2 3)) 4))
+      (!! '(1 '~(add 1 ~(add 2 3)) 4))
+      (!! (list 1 (list (sym "quote") (list `unquote (list 'add '1 (add 2 3))))))
 
-    (do '~a)
+      (expquote (1 '~(add 1 ~(add 2 3)) 4))
 
-    (env-inspect 'b)
+      (do '~a)
 
-    (holycoll? '(a b c))
+      (env-inspect 'b)
 
-    (quote? (lst 'quote 1))
+      (holycoll? '(a b c))
 
-    '(a b c `(r t y))
+      (quote? (lst 'quote 1))
 
-    (!! (hygiene.shadow @E 'aze_123))
+      '(a b c `(r t y))
 
-    (defmacro xp [x]
-      `(exp @E '~x))
+      (!! (hygiene.shadow @E 'aze_123))
 
-    (xp (f [z_123] z_123))
+      (defmacro xp [x]
+        `(exp @E '~x))
 
-    (E+ q'
-        [:links {cp composite}
-         (fn [e form]
-           #_(pp "io")
-           (cp form
-               ;; we do not touch dots
-               ;; they will be handled via composite.expand after quoting
-               cp.dot? cp.dot
-               cp.dotdot? cp.dotdot
-               ;; if unquote we perform expansion with e
-               unquote? (exp e (second form))
-               ;; handle collections
-               seq? (cons `list ($ form (p rec e)))
-               holycoll? ($ form (p rec e))
-               ;; else we quote wathever it is
-               (quote.fun.wrap form)))
-         :mac
-         (fn [e [x]]
-           (cp.expand
-            (q':val e x)))])
+      (xp (f [z_123] z_123))
 
-    (E+ quote:mac q':mac)
+      (E+ q'
+          [:links {cp composite}
+           (fn [e form]
+             #_(pp "io")
+             (cp form
+                 ;; we do not touch dots
+                 ;; they will be handled via composite.expand after quoting
+                 cp.dot? cp.dot
+                 cp.dotdot? cp.dotdot
+                 ;; if unquote we perform expansion with e
+                 unquote? (exp e (second form))
+                 ;; handle collections
+                 seq? (cons `list ($ form (p rec e)))
+                 holycoll? ($ form (p rec e))
+                 ;; else we quote wathever it is
+                 (quote.fun.wrap form)))
+           :mac
+           (fn [e [x]]
+             (cp.expand
+              (q':val e x)))])
 
-    (ppenv quote.fun.wrap)
+      (E+ quote:mac q':mac)
 
-    (!! (let [a 1] '(a b ~(add 1 2) ~{a a})))
+      (ppenv quote.fun.wrap)
 
-    (first (first '(~r)))
-    )
+      (!! (let [a 1] '(a b ~(add 1 2) ~{a a})))
 
-(_ :uncomplected-quotes
+      (first (first '(~r)))
+      )
 
-  ;; quoting, qualifying, splicing, unquoting
+   (_ :uncomplected-quotes
 
-  'sq   ;; quasiquote
-  'qq  ;; quasiquote qualified
-  'qq! ;; quasiquote qualified strict
+      ;; quoting, qualifying, splicing, unquoting
 
-  (E+ quotes
-      [:links {cp composite}
+      'sq ;; quasiquote
+      'qq ;; quasiquote qualified
+      'qq! ;; quasiquote qualified strict
 
-       wrap
-       (fn [x] (list (symbol "quote") x))
-       rootsym
-       (fn [p] (path->sym (path (symbol "_") p)))
+      (E+ quotes
+          [:links {cp composite}
 
-       mk
-       (fn [{:keys [strict qualified]}]
-         (fn [e form]
-           #_(pp "io")
-           (cp form
-               ;; we do not touch dots
-               ;; they will be handled via composite.expand after quoting
-               cp.dot? cp.dot
-               cp.dotdot? cp.dotdot
-               ;; if unquote we perform expansion with e
-               unquote? (cxp e (second form))
-               ;; handle collections
-               seq? (cons `list ($ form (p rec e)))
-               holycoll? ($ form (p rec e))
-               symbol?
-               (cs strict
-                   (let [[p _] (assert (bubfind e (path form))
-                                       (str "unqualifiable symbol: " form " "))]
-                     (quotes.wrap (quotes.rootsym (path form))))
-                   qualified
-                   (cs [p (path form)
-                        [p v] (bubfind e p)]
-                       (quotes.wrap (quotes.rootsym p))
-                       (quotes.wrap form))
-                   (quotes.wrap form))
-               ;; else we quote wathever it is
-               (quotes.wrap form))))
+           wrap
+           (fn [x] (list (symbol "quote") x))
+           rootsym
+           (fn [p] (path->sym (path (symbol "_") p)))
 
-       sq:mac  (fn [e [x]] (let [f (quotes.mk {})] (cp.expand (f e x))))
-       qq:mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e x))))
-       qq!:mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e x))))
-
-       quote?
-       (fn [e x]
-         (or (p/quote? x)
-             (and (seq? x)
-                  (sym? (car x))
-                  (#{(path (sym "quotes.sq:mac"))
-                     (path (sym "quotes.qq:mac"))
-                     (path (sym "quotes.qq!:mac"))}
-                   (or (qualsym e (car x))
-                       (qualsym e (sym (car x) :mac)))))))
-
-       unquote-quote?
-       (fn [e x]
-         (and (unquote? x)
-              (quotes.quote? e (second x))))
-
-       mk2
-       (fn [{:keys [strict qualified]}]
-         (fn [e lvl form]
-           #_(pp "mk2 in" lvl form "_")
-           (cp form
-
-               ;; we do not touch dots
-               ;; they will be handled via composite.expand after quoting
-               cp.dot? cp.dot
-               cp.dotdot? cp.dotdot
-
-               ;; if quote-unquote we strip a lvl
-               (p quotes.unquote-quote? e)
-               (rec e (dec lvl) (second (second form)))
-
-               ;; if unquote we perform expansion with e
-               unquote?
-               (cs (zero? lvl)
-                   (cxp e (second form))
-                   (list `list (quotes.wrap `unquote) (rec e (dec lvl) (second form))))
-
-               ;; if nested quote
-               (p quotes.quote? e)
-               (list `list (quotes.wrap (car form)) (rec e (inc lvl) (second form)))
-
-               ;; handle collections
-               seq? (cons `list ($ form (p rec e lvl)))
-               holycoll? (p/$ form (p rec e lvl))
-
-               symbol?
-               (cs (not qualified)
-                   (quotes.wrap form)
-
-                   [[p v] (bubfind e (path form))]
-                   (cs (get v :local)
-                       (quotes.wrap (exp e form))
-                       (quotes.wrap (quotes.rootsym p)))
-
+           mk
+           (fn [{:keys [strict qualified]}]
+             (fn [e form]
+               #_(pp "io")
+               (cp form
+                   ;; we do not touch dots
+                   ;; they will be handled via composite.expand after quoting
+                   cp.dot? cp.dot
+                   cp.dotdot? cp.dotdot
+                   ;; if unquote we perform expansion with e
+                   unquote? (cxp e (second form))
+                   ;; handle collections
+                   seq? (cons `list ($ form (p rec e)))
+                   holycoll? ($ form (p rec e))
+                   symbol?
                    (cs strict
-                       (error "unqualifiable symbol: " form)
-                       (quotes.wrap form)))
-
-               #_(cs strict
-                   (let [[p _] (assert (bubfind e (path form))
-                                       (str "unqualifiable symbol: " form " "))]
-                     (quotes.wrap (quotes.rootsym (path form))))
-
-                   qualified
-                   (cs [p (path form)
-                        [p v] (bubfind e p)]
-                       ;; if symbol is a local binding we substitute it
-                       (if (get v :local)
-                         (quotes.wrap (exp e form))
-                         ;; else we just qualifies it
-                         (quotes.wrap (quotes.rootsym p)))
+                       (let [[p _] (assert (bubfind e (path form))
+                                           (str "unqualifiable symbol: " form " "))]
+                         (quotes.wrap (quotes.rootsym (path form))))
+                       qualified
+                       (cs [p (path form)
+                            [p v] (bubfind e p)]
+                           (quotes.wrap (quotes.rootsym p))
+                           (quotes.wrap form))
                        (quotes.wrap form))
+                   ;; else we quote wathever it is
+                   (quotes.wrap form))))
 
-                   (quotes.wrap form))
+           sq:mac  (fn [e [x]] (let [f (quotes.mk {})] (cp.expand (f e x))))
+           qq:mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e x))))
+           qq!:mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e x))))
 
-               ;; else we quote wathever it is
-               (quotes.wrap form))))
+           quote?
+           (fn [e x]
+             (or (p/quote? x)
+                 (and (seq? x)
+                      (sym? (car x))
+                      (#{(path (sym "quotes.sq:mac"))
+                         (path (sym "quotes.qq:mac"))
+                         (path (sym "quotes.qq!:mac"))}
+                       (or (qualsym e (car x))
+                           (qualsym e (sym (car x) :mac)))))))
 
-       sq:mac  (fn [e [x]] (let [f (quotes.mk2 {})] (cp.expand (f e 0 x))))
-       qq:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true})] (cp.expand (f e 0 x))))
-       qq!:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true :strict true})] (cp.expand (f e 0 x))))]
+           unquote-quote?
+           (fn [e x]
+             (and (unquote? x)
+                  (quotes.quote? e (second x))))
 
-      (import quotes [sq qq qq!])
+           mk2
+           (fn [{:keys [strict qualified]}]
+             (fn [e lvl form]
+               #_(pp "mk2 in" lvl form "_")
+               (cp form
 
-      :fx
-      (check
-       (sq (add 1 2 ~(+ [] (lst 1 2))))
-       (qq (add 1 2 a ~(sip [] . (lst 1 2))))
-       ;; (throws (qq! (add 1 2 a ~(+ [] (lst 1 2)))))
-       (qq (add 1 2 a ~(sip [] . (lst 1 2))
-                 (qq (a b c ~'(add 1 2 . ~(lst 3 4)))))))
+                   ;; we do not touch dots
+                   ;; they will be handled via composite.expand after quoting
+                   cp.dot? cp.dot
+                   cp.dotdot? cp.dotdot
 
-      ))
+                   ;; if quote-unquote we strip a lvl
+                   (p quotes.unquote-quote? e)
+                   (rec e (dec lvl) (second (second form)))
 
-(sq (sq ~'(aze ~(add 1 2))))
+                   ;; if unquote we perform expansion with e
+                   unquote?
+                   (cs (zero? lvl)
+                       (cxp e (second form))
+                       (list `list (quotes.wrap `unquote) (rec e (dec lvl) (second form))))
 
-(exp (env-add-member env0 (path 'yop:sub) (fn [e] (lst (sym "quote") (sym "yop"))))
-     '(+ [] (yop 9)))
+                   ;; if nested quote
+                   (p quotes.quote? e)
+                   (list `list (quotes.wrap (car form)) (rec e (inc lvl) (second form)))
+
+                   ;; handle collections
+                   seq? (cons `list ($ form (p rec e lvl)))
+                   holycoll? (p/$ form (p rec e lvl))
+
+                   symbol?
+                   (cs (not qualified)
+                       (quotes.wrap form)
+
+                       [[p v] (bubfind e (path form))]
+                       (cs (get v :local)
+                           (quotes.wrap (exp e form))
+                           (quotes.wrap (quotes.rootsym p)))
+
+                       (cs strict
+                           (error "unqualifiable symbol: " form)
+                           (quotes.wrap form)))
+
+                   #_(cs strict
+                         (let [[p _] (assert (bubfind e (path form))
+                                             (str "unqualifiable symbol: " form " "))]
+                           (quotes.wrap (quotes.rootsym (path form))))
+
+                         qualified
+                         (cs [p (path form)
+                              [p v] (bubfind e p)]
+                             ;; if symbol is a local binding we substitute it
+                             (if (get v :local)
+                               (quotes.wrap (exp e form))
+                               ;; else we just qualifies it
+                               (quotes.wrap (quotes.rootsym p)))
+                             (quotes.wrap form))
+
+                         (quotes.wrap form))
+
+                   ;; else we quote wathever it is
+                   (quotes.wrap form))))
+
+           sq:mac  (fn [e [x]] (let [f (quotes.mk2 {})] (cp.expand (f e 0 x))))
+           qq:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true})] (cp.expand (f e 0 x))))
+           qq!:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true :strict true})] (cp.expand (f e 0 x))))]
+
+          (import quotes [sq qq qq!])
+
+          :fx
+          (check
+           (sq (add 1 2 ~(+ [] (lst 1 2))))
+           (qq (add 1 2 a ~(sip [] . (lst 1 2))))
+           ;; (throws (qq! (add 1 2 a ~(+ [] (lst 1 2)))))
+           (qq (add 1 2 a ~(sip [] . (lst 1 2))
+                    (qq (a b c ~'(add 1 2 . ~(lst 3 4)))))))
+
+          ))
+
+   (!! (sq (sq ~'(aze ~(add 1 2)))))
+
+   (exp (env-add-member env0 (path 'yop:sub) (fn [e] (lst (sym "quote") (sym "yop"))))
+        '(+ [] (yop 9)))
+
+   (E+ bob
+       {:mac
+        (fn [e xs]
+          (id ;; cxp e
+           (qq (fn [] (p/asserts . ~xs)))))
+        #_:upd
+        #_(fn [e xs] {:check (qq (bob.thunk . ~xs))})})
+
+   (!! (qq p/asserts))
+
+   (ns-resolve-sym 'p/asserts)
+
+   (let [a (sym "iop")]
+     (qq '~a))
+
+   (updxp (generic.reduced [a b] :num (add a b)))
+
+   (E+ foo (generic.reduced [a b] :num (add a b)))
+
+   `(a b '(c d))
+
+   (!let [42 43] "iop")
+
+   (exp @E ''foo)
+
+   (!! 'foo))
+
+(E+ exp
+    ["importing the asparagus.core/exp function
+       adding a macro version of it that perform the expansion at compile time using the compiling environment"
+
+     :val asparagus.core/exp
+
+     :mac
+     (fn [e xs]
+       (let [arity (count xs)]
+         (if (= 1 arity)
+           (exp:val e (car xs))
+           (exp:val e (qq (exp:val .~xs))))))])
+
+(ppenv exp)
+
+(!! (_.exp:val @E [1 2 ]))
+
+(!! (exp (let [a 1] a)))
+
+(!! (exp @E '(let [a 1] a)))
+
+
