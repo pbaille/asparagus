@@ -1845,11 +1845,7 @@
 
          :mac
          (fn [e [x]]
-           (cp.expand (fun e x)))
-
-         #_(fn [e [x]]
-           #_(pp "exp quot " x)
-           (cp.expand (fun.alt e 0 x)))]
+           (cp.expand (fun e x)))]
 
         )
 

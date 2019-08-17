@@ -2270,8 +2270,7 @@
  (is (dive (wtf 42) {:a 1 :b 2})
      [:wtf 42 {:a 1 :b 2}])
 
- (E+ (dive.op+ wtf [a]
-               '(f_ [:wtf ~a _])))
+ 
 
 
 
@@ -2285,7 +2284,26 @@
  (E+ foo 42)
  (exp @E '(f1 [arg1] '(f1 sd [:wtf3 ~arg1 sd])))
 
- (bubfind @E (path 'f1)))
+ (bubfind @E (path 'f1))
+
+ (E+ dive.op+:upd
+     (f [e [name [seed . args] expr]]
+        (sq [dive.ops:val
+             {~(key name)
+              (f1 ~(vec* args)
+                  (qq (f1 ~'~seed ~'~expr)))}])))
+
+ (E+ (dive.op+ wtf [sd a] [:wtf a sd]))
+
+ (ppenv dive.op+)
+ (ppenv dive.ops)
+
+ (defmacro updxp [[v & args]]
+   `(!! (~(sym v ":upd") @E '~(vec args))))
+
+ (updxp (dive.op+ wtf [sd a] [:wtf a sd]))
+
+ )
 
 ;; quoting -----------------------------------------
 
@@ -2335,6 +2353,10 @@
     (let [foot 12 b :sd c 1 d (quot yop)]
       #_(quote.fun:alt e 0 (lst ))
       '(foo ~b '(c ~'~d)))
+
+    (let [foot 12 b :sd c 1 d (quot yop)]
+      #_(quote.fun:alt e 0 (lst ))
+      (sq (foo ~b (sq (c ~'~d)))))
 
     (!! '(1 '~(add 1 ~(add 2 3)) 4))
     (!! (list 1 (list (sym "quote") (list `unquote (list 'add '1 (add 2 3))))))
@@ -2393,8 +2415,8 @@
   ;; quoting, qualifying, splicing, unquoting
 
   'sq   ;; quasiquote
-  'sqq  ;; quasiquote qualified
-  'sqq! ;; quasiquote qualified strict
+  'qq  ;; quasiquote qualified
+  'qq! ;; quasiquote qualified strict
 
   (E+ quotes
       [:links {cp composite}
@@ -2433,76 +2455,104 @@
                (quotes.wrap form))))
 
        sq:mac  (fn [e [x]] (let [f (quotes.mk {})] (cp.expand (f e x))))
-       sqq:mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e x))))
-       sq!:mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e x))))
+       qq:mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e x))))
+       qq!:mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e x))))
 
        quote?
        (fn [e x]
-         #_(pp "quote?" x
-               (and (seq? x)
-                    (#{(path 'quotes.sq:mac)
-                       (path 'quotes.sqq:mac)
-                       (path 'quotes.sq!:mac)}
-                     (or (qualsym e (car x))
-                         (qualsym e (sym (car x) :mac)))))
-               "_")
-         (and (seq? x)
-              (#{(path 'quotes.sq:mac)
-                 (path 'quotes.sqq:mac)
-                 (path 'quotes.sq!:mac)}
-               (or (qualsym e (car x))
-                   (qualsym e (sym (car x) :mac))))))
+         (or (p/quote? x)
+             (and (seq? x)
+                  (sym? (car x))
+                  (#{(path (sym "quotes.sq:mac"))
+                     (path (sym "quotes.qq:mac"))
+                     (path (sym "quotes.qq!:mac"))}
+                   (or (qualsym e (car x))
+                       (qualsym e (sym (car x) :mac)))))))
+
+       unquote-quote?
+       (fn [e x]
+         (and (unquote? x)
+              (quotes.quote? e (second x))))
 
        mk2
        (fn [{:keys [strict qualified]}]
          (fn [e lvl form]
            #_(pp "mk2 in" lvl form "_")
            (cp form
+
                ;; we do not touch dots
                ;; they will be handled via composite.expand after quoting
                cp.dot? cp.dot
                cp.dotdot? cp.dotdot
+
+               ;; if quote-unquote we strip a lvl
+               (p quotes.unquote-quote? e)
+               (rec e (dec lvl) (second (second form)))
+
                ;; if unquote we perform expansion with e
                unquote?
                (cs (zero? lvl)
                    (cxp e (second form))
                    (list `list (quotes.wrap `unquote) (rec e (dec lvl) (second form))))
 
-               ;; if nested quote 
+               ;; if nested quote
                (p quotes.quote? e)
                (list `list (quotes.wrap (car form)) (rec e (inc lvl) (second form)))
+
                ;; handle collections
                seq? (cons `list ($ form (p rec e lvl)))
-               holycoll? ($ form (p rec e lvl))
+               holycoll? (p/$ form (p rec e lvl))
 
                symbol?
-               (cs strict
+               (cs (not qualified)
+                   (quotes.wrap form)
+
+                   [[p v] (bubfind e (path form))]
+                   (cs (get v :local)
+                       (quotes.wrap (exp e form))
+                       (quotes.wrap (quotes.rootsym p)))
+
+                   (cs strict
+                       (error "unqualifiable symbol: " form)
+                       (quotes.wrap form)))
+
+               #_(cs strict
                    (let [[p _] (assert (bubfind e (path form))
                                        (str "unqualifiable symbol: " form " "))]
                      (quotes.wrap (quotes.rootsym (path form))))
+
                    qualified
                    (cs [p (path form)
                         [p v] (bubfind e p)]
-                       (quotes.wrap (quotes.rootsym p))
+                       ;; if symbol is a local binding we substitute it
+                       (if (get v :local)
+                         (quotes.wrap (exp e form))
+                         ;; else we just qualifies it
+                         (quotes.wrap (quotes.rootsym p)))
                        (quotes.wrap form))
+
                    (quotes.wrap form))
+
                ;; else we quote wathever it is
                (quotes.wrap form))))
 
        sq:mac  (fn [e [x]] (let [f (quotes.mk2 {})] (cp.expand (f e 0 x))))
-       sqq:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true})] (cp.expand (f e 0 x))))
-       sq!:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true :strict true})] (cp.expand (f e 0 x))))]
+       qq:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true})] (cp.expand (f e 0 x))))
+       qq!:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true :strict true})] (cp.expand (f e 0 x))))]
 
-      (import quotes [sq sqq sq!])
+      (import quotes [sq qq qq!])
 
       :fx
       (check
        (sq (add 1 2 ~(+ [] (lst 1 2))))
-       (sqq (add 1 2 a ~(sip [] . (lst 1 2))))
-       ;; (throws (sq! (add 1 2 a ~(+ [] (lst 1 2)))))
-       (sqq (add 1 2 a ~(sip [] . (lst 1 2))
-                 (sqq (a b c ~(add 1 2 ~(add 3 4)))))))
+       (qq (add 1 2 a ~(sip [] . (lst 1 2))))
+       ;; (throws (qq! (add 1 2 a ~(+ [] (lst 1 2)))))
+       (qq (add 1 2 a ~(sip [] . (lst 1 2))
+                 (qq (a b c ~'(add 1 2 . ~(lst 3 4)))))))
 
       ))
 
+(sq (sq ~'(aze ~(add 1 2))))
 
+(exp (env-add-member env0 (path 'yop:sub) (fn [e] (lst (sym "quote") (sym "yop"))))
+     '(+ [] (yop 9)))
