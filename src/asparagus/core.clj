@@ -718,8 +718,6 @@
           ;; else do nothing
           x))
 
-    (def qualify1 qualify)
-
     (defne expand
 
       "takes an environment e and an expression x
@@ -1072,154 +1070,10 @@
       (swap! top-forms into xs)
       `(do ~@($ xs top-form-decl))))
 
-#_(do :quoting
-
-    ;; asparagus has its own quoting mecanism, those simple quoting functions, inspired by bbloom/backtic
-    ;; will be used by the main implementation of quoting at a later point
-
-    (defn simple-quotf
-      "simple quote function,
-       supports unquote only"
-      [form]
-      (cp form
-          unquote? (second form)
-          seq? (cons `list ($ form simple-quotf))
-          holycoll? ($ form simple-quotf)
-          (list 'quote form)))
-
-    (defn env-simple-quotf
-      "env aware version of simple-quotf"
-      [e form]
-      (cp form
-          unquote? (exp e (second form))
-          seq? (cons `list ($ form (p env-simple-quotf e)))
-          holycoll? ($ form (p env-simple-quotf e))
-          (list 'quote form)))
-
-    (do :quote-unquote-xp
-        (defn quote-unquote? [x]
-          (and (quote? x) (unquote? (second x))))
-
-        (defn env-simple-quotf2
-          "env aware version of simplest-quote"
-          [e form]
-          (cp form
-              unquote? (exp e (second form))
-              quote-unquote? (list 'quote (->> form second second (exp e)))
-              seq? (cons `list ($ form (p env-simple-quotf2 e)))
-              holycoll? ($ form (p env-simple-quotf2 e))
-              (list 'quote form))))
-
-    (defn env-quotf
-      "@bbloom/backtic, env aware version"
-      [e form]
-      (cp form
-          unquote? (exp e (second form))
-          unquote-splicing? (error "splice not in list")
-          holycoll?
-          (let [xs (if (map? form) (cat* form) form)
-                parts (for [x xs]
-                        (if (unquote-splicing? x)
-                          (exp e (second x))
-                          [(env-quotf e x)]))
-                cat (doall `(concat ~@parts))]
-            (cp form
-                vec? `(vec ~cat)
-                map? `(apply hash-map ~cat)
-                set? `(set ~cat)
-                seq? `(list* ~cat)
-                (error "Unknown collection type")))
-          (list 'quote form))))
-
 ;; from this point asparagus is built in itself (using E+ macro)
 ;; for a gentle introduction to E+, please refer to ./tut.clj
 
 (do :reboot
-
-    (_ :upd-tries
-       ;; nested vec upd test
-       (E+ iop [v:val [1 2 3] i 1 o {p 1 q [:doc "iop" pop 42]}])
-       ;; vec at mpath are normal vec values
-       (!! iop.v)
-       ;; nested vec updates works
-       (!! iop.o.q:doc)
-
-       ;; dual mac and upd test
-       (E+ um
-           {:mac (fn [e xs] (exp e (lst* 'add xs)))
-            :upd (fn [e xs] {:um (lst* 'um xs)})
-            })
-
-       (E+ iop (um 1 2 3))
-       (!! iop:um)
-
-       ;; an upd does not occur at mpath
-       (E+ iop:val (um 1 2 3))
-       (!! iop)
-
-       (E+ cq:mac
-           (fn [e [x]]
-             #_(pp (env-simple-quotf e x))
-             (exp e (env-simple-quotf e (composite.compile-quote x)))))
-
-       #_(call* '(+ 1 2))
-       #_(!! (let [x 1] (cq (~x . xs))))
-       #_(!! (cxp @E '(cq (a ~. as))))
-
-       ;; define an upd and use it in the same block
-       (E+ 
-        yupd:upd (c/fn [_ xs] {'pouet (vec xs)})
-        baba (yupd 1 2 3)
-        )
-
-       (_ :error
-          (rEset!)
-          (env-upds
-           @E '[op [yupd:upd (fn [_ xs] {'pouet:val (vec xs)})
-                    baba (op.yupd 1 2 3)]])
-
-          (E+ op [yupd:upd (fn [_ xs] {'pouet (vec xs)})
-                  baba (op.yupd 1 2 3)]))
-
-       ;; for macros it works as intended
-       (E+ post [fix:mac (fn [_ xs] (reverse xs))
-                 n (post.fix 1 2 3 +)])
-       (!! post.n)
-
-       ;; lambda upd
-       (E+ l2 (fn lamb1
-                "lamb1 doc"
-                {:some :meta
-                 :demo (fn [] (eq 1 (l2 3 1)))}
-                ([x] x)
-                ([x y] (lamb1 y))))
-
-       (!! (l2:demo))
-
-       ;; links test
-       (E+ a.boo [{:doc "ab doc"} (fn [] 'b) c 1]
-           :links {boo a.boo})
-
-       (into {} @E)
-
-       (!! a.boo:doc)
-       (!! boo:doc)
-
-       (swap! E assoc-in [:members :links '_] root-path)
-
-       (E+ a 1
-           b {a 2 p (add _.a a)})
-
-       (!! b.p)
-
-       (E+ documented-id
-           ["my id function"
-            (fn [x] x)])
-
-       (!! (documented-id 1))
-       (!! documented-id:doc)
-
-)
 
     (rEset!)
 
@@ -1626,9 +1480,6 @@
 
               ;; else do nothing
               x))
-
-        #_(-> (qualify @E '(pos? 1 (hygiene.shadow.pat->submap x)))
-              next next first first type)
         )
 
     (E+ composite
@@ -1754,121 +1605,6 @@
         ;; we put cxp at the root
         :links {cxp composite.cxp})
 
-    #_(E+ quote
-
-        ["the quoting macro
-          behaves like clojure's quasiquote, qualify symbols if possible,
-          supports unquoting (it will expand unquoted expression with the compiling env)
-          and splicing (via composite.expand)"
-
-         :links {cp composite}
-
-         fun
-         ["quoting function,
-           handles unquoting, does not quote dots,
-           qualifies symbols if possible"
-
-          wrap
-          (fn [x] (list (symbol "quote") x))
-          rootsym
-          (fn [p] (path->sym (path (symbol "_") p)))
-
-          (fn
-            [e form]
-            (cp form
-                ;; we do not touch dots
-                ;; they will be handled via composite.expand after quoting
-                cp.dot? cp.dot
-                cp.dotdot? cp.dotdot
-                ;; if unquote we perform expansion with e
-                unquote? (exp e (second form))
-                ;; handle collections
-                seq? (cons `list ($ form (p fun e)))
-                holycoll? ($ form (p fun e))
-                ;; if a symbol can be resolved via bubfind in e
-                ;; we qualify it and quote it
-                ;; if not we just quote it
-                symbol?
-                (cs [p (path form)
-                     [p v] (bubfind e p)]
-                    (.wrap (.rootsym p))
-                    (.wrap form))
-                ;; else we quote wathever it is
-                (.wrap form)))
-
-          alt
-          {:doc "an attempt to handle nested quotes and unquote levels... hairy..."
-
-           unquote-quote?
-           (fn [x]
-             (and (unquote? x)
-                  (quote? (second x))))
-
-           unquote-lvl
-           (fn [e lvl form]
-             (pp "unquote lvl " form lvl (unquote? form) (holycoll? form) (seq? form))
-             (cp form
-
-                 unquote-quote?
-                 (unquote-lvl e (dec lvl) (second (second form)))
-
-                 unquote?
-                 (cs (zero? lvl)
-                     (exp e (second form))
-                     (list (wrap `unquote) (unquote-lvl e (dec lvl) (second form))))
-
-                 seq?
-                 ($ form (p rec e lvl))
-
-                 holycoll?
-                 (do (pp "coll " form)
-                     ($ form (fn [x] (pp "inner " x) (unquote-lvl e lvl x))))
-
-                 form
-                 ))
-
-           :val
-           (fn
-             [e lvl form]
-             (pp "qalt" lvl form)
-             (cp form
-                 ;; we do not touch dots
-                 ;; they will be handled via composite.expand after quoting
-                 cp.dot? cp.dot
-                 cp.dotdot? cp.dotdot
-                 ;; if unquote we perform expansion with e
-                 unquote?
-                 (let [nxt (unquote-lvl e lvl form)]
-                   (cs (zero? lvl)
-                       nxt
-                       (alt e (dec lvl) nxt)))
-                 ;; quote
-                 quote?
-                 (list `list
-                       (..wrap (symbol "quote"))
-                       (alt e lvl (unquote-lvl e (inc lvl) (second form))))
-                 ;; handle collections
-                 seq? (cons `list ($ form (p rec e lvl)))
-                 holycoll? ($ form (p rec lvl e))
-                 ;; if a symbol can be resolved via bubfind in e
-                 ;; we qualify it and quote it
-                 ;; if not we just quote it
-                 symbol?
-                 (cs [p (path form)
-                      [p v] (bubfind e p)
-                      ? (not (get v :local))] ;; is not a local binding
-                     (..wrap (..rootsym p))
-                     ;; else we don't qualify
-                     (..wrap form))
-                 ;; else we quote wathever it is
-                 (..wrap form)))}]
-
-         :mac
-         (fn [e [x]]
-           (cp.expand (fun e x)))]
-
-        )
-
     (E+ quotes
       [:links {cp composite}
 
@@ -1879,14 +1615,13 @@
 
        quote?
        (fn [e x]
-         (or ;; (p/quote? x) ;; TODO when fullquote is restored it will be removed
-             (and (seq? x)
-                  (sym? (car x))
-                  (#{(path (sym "quotes.sq:mac"))
-                     (path (sym "quotes.qq:mac"))
-                     (path (sym "quotes.qq!:mac"))}
-                   (or (qualsym e (car x))
-                       (qualsym e (sym (car x) :mac)))))))
+         (and (seq? x)
+              (sym? (car x))
+              (#{(path (sym "quotes.sq:mac"))
+                 (path (sym "quotes.qq:mac"))
+                 (path (sym "quotes.qq!:mac"))}
+               (or (qualsym e (car x))
+                   (qualsym e (sym (car x) :mac))))))
 
        unquote-quote?
        (fn [x]
@@ -2518,13 +2253,7 @@
 
           (generic [x]
                    :seq (when-not (seq x) ())
-                   (when (c/= x (pure x)) x)
-                   ;; using identical? is suspicious but seems to work...
-                   ;; core/= cannot be used here because (= [] ()) is true...
-                   #_(when (c/identical? x (pure x)) x)
-                   #_(when (if (holycoll? x) (not (seq x))
-                               (c/identical? x (pure x)))
-                       x))
+                   (when (c/= x (pure x)) x))
 
           (check.thunk
            (pure? [])
@@ -2901,13 +2630,13 @@
           (guards.import.types)]
 
          :tries
-         '(do
+         (__
 
             (res @E '(guard.types-definition nil nil))
 
-            #_(!! (map? []))
-            #_(!! (nil? nil))
-            #_(!! (vec? []))
+            (!! (map? []))
+            (!! (nil? nil))
+            (!! (vec? []))
 
             (res @E '(guard.declare-types-guards))
 
@@ -2916,7 +2645,7 @@
                                               [pos? 1]
                                               [gt 2 >])))
 
-            #_(!! (line? [1 2]))
+            (!! (line? [1 2]))
 
             (E+ (guard.import neg? 1))
             (E+ (guard.imports [neg? 1]
@@ -3066,7 +2795,7 @@
            :vec (bind.vec x y)
            :map (bind.map x y)
            :seq (bind.seq x y)
-           [(gensym "?!match") (lst 'eq x y)]) ;; TODO suspicious (non modal) check in strict form: (!let [42 43] "iop") -> nil ?#@!
+           [(gensym "?!match") (lst 'eq x y)])
 
           vec
           {:val
@@ -3086,9 +2815,7 @@
              (let [ysym (gensym)]
                (+
                 [ysym y
-                 (gensym "?!linecheck") (qq (line? ~ysym))
-                 ;; checkcount '(= ~(count x) (count ~ysym))
-                 ]
+                 (gensym "?!linecheck") (qq (line? ~ysym))]
                 (bind.vec.body x ysym))))
 
            dotted
@@ -3188,7 +2915,8 @@
             (fn [[v s & args] y]
               (cs (sym? s)
                   (cs (key? v)
-                      [s y (gensym "?!typecheck") ;; TODO not sure we should emit an hardcoded shortcircuit (if used in strict form it will not throws)
+                      [s y
+                       (gensym "?!typecheck")
                        (cs [pred (t/guards v)]
                            (qq (~(sym v "?") ~s))
                            (qq (or (eq (type ~s) ~v)
@@ -3853,27 +3581,8 @@
             guard:fn
             (f [g] (fn& [x] (when (g x ...) x))))
 
-        #_(check ((guard:fn c/>) 2 1 0)
-                 ((guard [x y] (c/> x y)) 3 2)))
-
-    #_(E+ df
-        {:doc
-         "not sure it is needed, the semantics are the same as datastructure invocation"
-
-         :mac
-         (f [e [x]]
-            (let [all (.walk x (f1 y (lst y (gensym))))
-                  pat (.walk all second)
-                  expr (.walk all (f1 (& x [v s]) (if (= '_ v) s x)))]
-              (exp e '(f1 ~pat ~expr))))
-
-         walk
-         (f [x g]
-            (cp x
-                map? ($vals x #(walk % g))
-                vec? ($ x #(walk % g))
-                dot? x
-                (g x)))})
+        (check ((guard:fn c/>) 2 1 0)
+               ((guard [x y] (c/> x y)) 3 2)))
 
     (do :invoc-apply-map-walk
 
@@ -3884,8 +3593,7 @@
           (f [e [builder]]
              (let [[[a1 [e1]] . cs]
                    (fn&.cases (qq ([x] ((~builder x) ...))))]
-               (exp e (qq (fn (~a1 (p ~e1)) . ~cs)))
-               #_(exp e (lst 'fn '(~a1 (p ~e1)) . cs))))}
+               (exp e (qq (fn (~a1 (p ~e1)) . ~cs)))))}
 
          invocation
          (generic
@@ -4064,7 +3772,7 @@
           (generic.reduced
            [x f]
            :any
-           (* + #_(pure x) ($i x f)))]
+           (* + ($i x f)))]
 
          zip+
          ["core/mapcat(ish)"
@@ -4231,6 +3939,9 @@
          (guard [x y]
                 (nil? (eq x y))))
 
+        ;; a major concern about eq is that sets will use core/= instead of it...
+        ;; don't know how to change that...
+
         (check
          ;; in clojure this would be considered equal
          (nil? (eq [1 2] '(1 2)))
@@ -4364,10 +4075,7 @@
                 ['dive.ops:val
                  {(key name)
                   (qq (f1 ~argv ~expr))}])
-             })
-
-        #_(!! (dive (ks :a :b) {:a 1 :b 2 :c 2}))
-        #_(!! (dive [:a :b :c -1] {:a {:b {:c [42 41 40]}}})))
+             }))
 
     (do :flow
 
@@ -4642,11 +4350,6 @@
            (!! (at {:a 1 :b 2 :c 2} (ks :a :b)))
            (!! ((at_ (ks :a :b)) {:a 1 :b 2 :c 2}))))
 
-    #_(expand @E (qualify @E '(fn [verb symseed xs]
-                                (if (even? (count xs))
-                                  (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
-                                  (rec verb symseed [.(butlast xs) (quot _) (last xs)])))))
-
     (E+ bindings.case
         ["the case form and its variants casu, !case, and !casu"
 
@@ -4679,8 +4382,6 @@
                       (compile e bod ~(flagmap . flags))))
                smac-sym
                (qq (f [e xs]
-                      (exp e (lst (qq f_) (lst* '~name '_ xs))))
-                   #_(f [e xs]
                       (exp e (lst (qq f_) (lst* '~name '_ xs)))))
                }))
 
@@ -4733,6 +4434,7 @@
              (throws (t [:point 1 "io"]))))
           ]))
 
+    ;; this 
     #_(E+ move-members
           {:doc
            "a couple of updates for moving (aliasing is more accurate) members from path to path
@@ -4792,21 +4494,6 @@
               (!! a))})
 
     ;; redefine generic case expansion to follow the asparagus binding syntax
-    #_(E+ generic.spec.exp-case
-        (f [e [argv . body]]
-           (let [syms (vec* (take (gensyms) (count argv)))
-                 ;argv ($ argv (f_ (if (= _ composite.dot) (quot &) _)))
-                 ;_ (pp argv)
-                 binding-form (vec* (braid argv syms))]
-             (pp (lst+* [syms]
-                          ($ (chunk body 2)
-                             (f1 [t impl]
-                                 [t (p/prob  binding-form impl (exp e '(let ~binding-form ~impl)))]))))
-             (lst+* [syms]
-                    ($ (chunk body 2)
-                       (f1 [t impl]
-                           [t (exp e '(let ~binding-form ~impl))]))))))
-
     (E+ generic.spec.exp-case
         (f [e [argv . body]]
            (let [amp '&
@@ -5145,335 +4832,8 @@
      ?f !f f fu !fu
      f1 !f1 ?f1 !fu1 fu1
      f_ !f_ ?f_ !fu_ fu_
-     cf ?cf !cf cfu !cfu 
+     cf ?cf !cf cfu !cfu
      clet clut !clet !clut
      case casu !case !casu)
     )
-
-(defmacro qbench [& xs]
-  `(do ~@(c/map (fn [x]
-                  `(do (println) (println "benching:" '~x) (println)
-                       (cr/quick-bench ~x)))
-                xs)))
-
-(_ :scratch
-
-   (_ :vecbench
-      (require '[modules.benchs :as bs])
-      (let [r (vec (range 1000))]
-        (bs/benchrace 10000
-                      (doall (map inc r))
-                      (mapv inc r)
-                      (loop [v r cnt (count r) i 0]
-                        (if (= i cnt) v
-                            (recur (update v i inc) cnt (inc i)))))
-        )
-
-      (let [r (vec (range 1000))]
-
-        #_(time (dotimes [_ 100000] (c/vec (drop 10 r))))
-        #_(time (dotimes [_ 100000] (!! (drop r 10)))))
-      )
-
-   (_
-    '(destr [a b . c])
-    [a #(get % 0)
-     b #(get % 1)
-     c #(drop % 2)]
-
-    '(destr [[a1 . as al] b . c])
-    [[a1 . as al] #(get % 0)
-     b #(get % 1)
-     c #(drop % 2)]
-
-    '[inc [dec pos?] . butlast zero?]
-    '[[0 inc]
-      [1 [0 dec] [1 pos?]]
-      [(section 2 -1) sum]
-      [-1 zero?]])
-
-   (_
-    #_(env-inspect 'bindings.let.compile)
-    #_(!! (bindings '[[a [x y] . c] y]))
-
-    (!! (let [a 1 b 2] (c/+ a b)))
-
-    (!! (let [[a [b c . popo] . d e] [8 [9 10 11] 24 67 56 999]]
-          #_[a b c d e]
-          [(inc a) [(dec b) (pos? c) . (id popo)] . (butlast d) (zero? e)]))
-
-    #_(pp @E))
-
-   (_
-    (exp @E '(?let [a 1] (c/+ a 1 2)))
-    (!! (?let [(pos? x) 1 (gt y x) 2] (c/+ x y)))
-    (!! ((?f [(pos? x) (gt y x)] (c/+ x y)) 1 2))
-
-    (res @E '(f1 :rec a a)))
-
-   (_
-    (res @E '(df [inc [dec {:a pos? . _}] . _]))
-
-    (!! (§ [inc [dec {:a pos?}]]
-         [1 [0 {:a 2 :b 'io}] 'po :mo]))
-
-    (!! ((df [inc [dec {:a pos? . _}] . _])
-         [1 [0 {:a 2 :b 'io}] 'po :mo])))
-
-   (_
-    #_(!! ((f_ (c/+ _ _)) 1))
-
-    #_(exp @E '(invocation.template invocation 5))
-
-    #_(env-inspect '*')
-
-    #_(!! (let [xs (range)] (take xs 3)))
-
-    #_(!! (invocation c/+))
-
-    (!! (§ c/+ 1 2 3))
-
-    (require '[modules.benchs :as bs])
-
-    (def add c/+)
-
-    (bs/benchrace 1000000
-                  (add 1 2 3)
-                  (!! (§ add 1 2 3)))
-
-    #_(!! (*' add))
-    #_(!! (*' add [4 5 6]))
-
-    (!! (application2.inspect))
-
-    (!! (* c/+ 1 2 3 [4 5 6]))
-
-    (bs/benchrace 1000000
-                  (apl add 1 2 3 [4 5 6])
-                  #_(!! (*' add 1 2 3 [4 5 6]))
-                  (!! (* add 1 2 3 [4 5 6])))
-
-    (qbench (c/vec (range 10))
-            (!! (vec+ (range 10))))
-
-    (let [f0 (!! (applied-lambda [a] (c/+ a)))
-          f1 (fn [& xs] (apl c/+ xs))]
-      (qbench (f0 1 2 3 4)
-              (f1 1 2 3 4)))
-
-    (!! (sip [] 1 2 3))
-
-    (let [a [1 2 3] b [4 5 6]
-          f (fn [x & xs] (reduce conj x xs))]
-      (qbench
-       (f a 1 2 3)
-       (!! (sip a 1 2 3))))
-
-    (let [a [1 2 3] b [4 5 6]
-          f (fn [x & xs] (reduce conj x xs))]
-      (qbench
-       (vector 1 2 3)
-       (!! (vec 1 2 3))))
-
-    (qbench (c/vec (c/map inc (range 10)))
-            #_(c/mapv inc (range 10))
-            (!! (c/vec ($ (range 10) inc))))
-
-    (cr/with-progress-reporting (cr/quick-bench (add 1 2 3) :verbose))
-    (cr/with-progress-reporting (cr/quick-bench (!! (§ add 1 2 3)) :verbose))
-
-    (cr/with-progress-reporting (cr/quick-bench (apl add 1 2 3 [4 5 6]) :verbose))
-    (cr/with-progress-reporting (cr/quick-bench (!! (apl (invocation add) 1 2 3 [4 5 6])) :verbose))
-    (cr/with-progress-reporting (cr/quick-bench (!! ((p apl (invocation add)) 1 2 3 [4 5 6])) :verbose))
-    (cr/with-progress-reporting (cr/quick-bench (!! (* add 1 2 3 [4 5 6])) :verbose))
-
-    )
-
-   (_ :rt-mac-call
-      (!! (let' [a 1] (c/+ a a)))
-      (!! (let':mac @E '([a 1] (c/+ a a))))))
-
-(_ :benchs
-
-   (defmacro mX [x]
-     (list 'quote (exp @E x)))
-
-   (def add c/+)
-
-   (mX (let [f0 (f [a b c] (add a b c))
-                                        ;add c/+
-             f1 (c/fn [a b c] (add a b c))]
-         (qbench (f0 1 2 3)
-                                        ;(§ f0 1 2 3)
-                 (f1 1 2 3)
-                 #_(§ f1 1 2 3))))
-
-   (let [f0 (f [a b c] (add a b c))]
-     (qbench (f0 1 2 3)
-             (apl f0 [1 2 3])
-             (* f0 [1 2 3])))
-
-   (destructure '[[x & xs] y])
-   (c/let [f0 (!! (f2 [x . xs] (* add x xs)))
-           f1 (c/fn [x & xs] (apl add x xs))]
-     (qbench (f0 1 2 3)
-             (f1 1 2 3)))
-
-   (qbench (drop 3 [1 2 3 4 5 6])
-           (nthnext [1 2 3 4 5 6] 3))
-
-   (clojure.walk/macroexpand-all '(c/fn [x & xs] (apl add x xs)))
-
-   (clojure.walk/macroexpand-all '(c/fn [x [y & ys] & xs] (apl add x xs)))
-   (clojure.walk/macroexpand-all '(c/fn [{:a a}] (apl add x xs)))
-
-   (clojure.walk/macroexpand-all '(c/let [[x & xs] y] (apl add x xs)))
-
-   (qbench (drop 3 (range 10))
-           (nthnext (range 10) 3))
-
-   (c/let [s (list 1 2 3 4 5 6 7 8)]
-     (qbench (!! (take s 3))
-             (take 3 s)))
-
-   (qbench (!! (vec? [1 2 3]))
-           (vec? [1 2 3]))
-
-   (c/let [[x & xs] {:a 1 :b 2}] [x xs])
-   (qbench (let [[x . xs] (c/vec (range 10))] [x xs])
-           (c/let [[x & xs] (c/vec (range 10))] [x (c/vec xs)]))
-   (qbench (let [[x . xs] (range 10)] [x xs])
-           (c/let [[x & xs] (range 10)] [x xs]))
-
-   (c/let [f0 (c/fn [& xs] (c/let [x (nth xs 0) xs (drop 1 xs)] (apl add x xs)))
-           f1 (c/fn [x & xs] (apl add x xs))]
-     (qbench (f0 1 2 3)
-             (f1 1 2 3)))
-
-   )
-
-(_ :incub
-
-    (do :partial-macro
-
-        (E+ p':mac
-            (f [e xs]
-               (exp e '(fn& [] ~(sip xs '...)))))
-
-        ;; we don't gain much
-        #_(qbench (!! ((p' take (range 10)) 5))
-                  (!! ((p take (range 10)) 5))))
-
-    (defn attrseq [s]
-      (let [pth (path s)]
-        (-> (cons (ppath pth) (bubbling-paths pth))
-            ($ (p env-get @E))
-            ($ #(shrink+ % (fn [[k _]] (keyword? k)))))))
-
-    (defn attr-pathmap
-      ([x]
-       (into {} (attr-pathmap x root-path)))
-      ([x from]
-       (if (and (map? x) (ppath? from))
-         (cons [from (shrink- x (comp symbol? car))]
-               (mapcat (fn [[k v]] (attr-pathmap v (path from k)))
-                          (shrink+ x (comp symbol? car))))
-         [[from x]])))
-
-    (defn attr-shrink
-      ([f] (attr-shrink @E f))
-      ([e f]
-       (reduce
-        (fn [r [p _]]
-          (let [ps (path-segments p)]
-            (assoc-in r ps (env-get e p))))
-        {} (shrink+ (attr-pathmap (:members e)) (fn [[_ v]] (f v))))))
-
-    #_(attr-shrink #(contains? (:tags %) :wrappable))
-
-    )
-
-(pp :DONE)
-
-(_ :scratch
-
-   (let [f (fn [a b]
-             (cond
-               (and (c/number? a) (c/number? b)) (add a b)
-               (and (c/number? a) (c/= [] b)) a
-               (and (c/number? a) (c/vector? b)) (rec (add a (c/first b)) (c/vec (c/rest b)))))]
-     (qbench (f 1 [1 2 3])))
-
-   (exp @E '(!cf [(:num a) (:num b)] (add a b)
-                 [(:num a) (pure? b)] a
-                 [(:num a) [b1 . bs]] (rec (add a b1) bs)))
-
-   (let [f (!cf [(:num a) (:num b)] (add a b)
-                [(:num a) (pure? b)] a
-                [(:num a) [b1 . bs]] (rec (rec a b1) bs))]
-     (f 1 [1 2 3 :io]))
-
-   (?let [[] [1]] :iop)
-
-   (?let [[a . as] :iop] [a as])
-
-   (_ :qual-with-ctx
-
-      (defne qualify
-
-        [e x]
-
-        (c/let [e (update e :qual-ctx (fnil conj []) x)]
-
-          #_(pp 'ctx= (:qual-ctx e))
-
-          (cp x
-
-              sym?
-              (cs [qs (qualsym e x)] qs
-                  (unqualifiable? x) x
-                  (c/resolve x) (ns-resolve-sym x)
-                  (error "not resolvable: " x))
-
-              seq?
-              (cs [p (-> x car path)
-                   ? (or (ppath? p) (macpath? p))
-                   p (qualsym e (path p :mac))]
-                  (mark-exp (cons p (cdr x)))
-                  ($ x (p qualify e)))
-
-              holycoll?
-              ($ x (p qualify e))
-
-              x)))
-
-      #_(c/let [r (doall (qualify @E '(add 1 2 (add 2 3))))]
-          r)
-
-      ))
-
-
-(_
-
- (E+ generic.spec
-        (fn [e n body]
-          #_(g/generic-spec n body)
-          (pp "generic-spec " body
-              (.exp-cases e (g/generic-spec n body)))
-          (.exp-cases e (g/generic-spec n body))))
-
-   (E+ generic.type+:upd
-       (fn [e [type & body]]
-         ($ (c/vec body)
-            (fn [[n & xs]]
-              (pp "generic.type+-inner " n xs (g/impl-body->cases type xs)
-                  (lst* (p/sym n ".extend")
-                        (g/impl-body->cases type xs)))
-              (lst* (p/sym n ".extend")
-                    (g/impl-body->cases type xs))))))
-
-   (E+ (generic.type+ :key (pure [x] "pouet")))
-   (E+ (pure.extend [x] :key "puet" :num (c/zero? x)))
-   (!! (pure.inspect)))
-
 
