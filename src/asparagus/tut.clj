@@ -784,6 +784,22 @@
    (nil? (?let [(tup a b) [1]] [a b]))
    (nil? (?let [(tup a b) [1 2 3]] [a b]))
 
+   ;; some tests
+   (is
+    :iop
+    (let [(tup a b) [1 2]] :iop)
+    (?let [(tup a b) [1 2]] :iop)
+    (!let [(tup a b) [1 2]] :iop))
+
+   (nil? (let [(tup a b) [1 2 3]] :iop))
+   (nil? (?let [(tup a b) [1 2 3]] :iop))
+   (!! (throws (!let [(tup a b) [1 2 3]] :iop)))
+
+   (nil? (let [(tup a b) [1]] :iop))
+   (nil? (?let [(tup a b) [1]] :iop))
+   (!! (throws (!let [(tup a b) [1]] :iop)))
+
+
    ;; some others builtin bindings exists, see source
 
    ;; defining new binding operators
@@ -870,6 +886,18 @@
    (let [a (inc 2)
          4 a]
      (error "never"))
+
+   ;; some tests
+
+   (is :ok
+       (let [42 42] :ok)
+       (?let [42 42] :ok)
+       (!let [42 42] :ok))
+
+   (nil? (let [42 43] :ok))
+   (nil? (?let [42 43] :ok))
+   (!! (throws (!let [42 43] :ok)))
+
    )
 
   ;; user type patterns ------------------
@@ -1790,7 +1818,6 @@
       ))
  )
 
-
 ;; ------------------------------------------------------------------------
 ;;                          quoting, templating
 ;; ------------------------------------------------------------------------
@@ -1848,12 +1875,12 @@
  ;; -----------------------------------------------------------------
 
  (_
-  ;; is somehow similar to clojure quasiquote, in the sens that it let you template a structure like sq do, but also qualifies symbols
+  ;; is somehow similar to clojure quasiquote, in the sense that it let you template a structure like sq do, but also qualifies symbols
 
   (!! (qq (+ 1 ~(+ 2 3))))
   ;;=> (_.joining.+ 1 5)
 
-  ;; word on qulified symbols
+  ;; word on qualified symbols
   ;; when qualifying '+ we resolve it to joining.+ (indicating that the '+ function lives in the 'joining module)
   ;; the underscore prefix simply make explicit that it is an absolute path (preventing any relative or bubling resolution that could occur at a later stage)
 
@@ -1866,6 +1893,8 @@
 
  ;; qq! (qualified strict quasiquote)
  ;; -----------------------------------------------------------------
+
+ ;; the behavior is the same as 'qq but it throws when encountering an unqualifiable symbol
 
  (_
   (!! (qq! (+ 1 ~(+ 2 3)))) ;;=> (_.joining.+ 1 5)
@@ -2132,6 +2161,7 @@
         :line {:line a :extra-arg b}
         ;; default case
         {:my-generic2-arity2-default-case [a b]})
+       ;; unlike clojure protocols, asparagus genric functions can have a variadic arity
        ([a b . (& c [c1 . cs])] ;; you can put any asparagus binding pattern in arguments
         ;; default case
         {:my-generic2-variadic-arity
@@ -2198,7 +2228,7 @@
  ;; a la carte polymorphism
 
  (_
-  ;; one consideration that came to my mind and that is experimented at the end of asparagus.boot.generis
+  ;; one consideration that came to my mind and that is experimented at the end of asparagus.boot.generics
   ;; is that each implementation should be callable directly when there is no need for polymorphism
   ;; candidate syntaxes would be:
   ;; (my-generic2_vec my-vec arg1 arg2)
@@ -2215,15 +2245,19 @@
 
 (_
 
- ;; simple
- (E+ (type+ :split [left right]))
+ ;; declaring a simple new type
+ (E+ (type+
+       :split ;; type tag
+       [left right] ;; fields
+       ))
 
- ;; definition
- (E+ (type+ :mytyp ;;typetag
+ ;; definition with generic implementations 
+ (E+ (type+ :mytyp ;; type tag
 
             [bar baz] ;; fields
 
             ;; generic implementations ...
+            ;; only one here but there can be several of them
             (+ [a b]
                (!let [(:mytyp b) b]
                      (mytyp (+ (:bar a) (:bar b))
@@ -2233,14 +2267,20 @@
 
  ;; instantiation
  (!! (mytyp 1 2))
- (!! (mytyp? (mytyp 1 2)))
+ 
  (!! (map->mytyp {:bar 1 :baz 2}))
 
+ ;; typecheck
+ (is (mytyp? (mytyp 1 2))
+     (mytyp 1 2))
+
  ;; type
- (!! (type (mytyp 1 2))) ;;=> :mytyp
+ (is (type (mytyp 1 2))
+     :mytyp) ;;=> :mytyp
 
  ;; using generic implmentations
- (!! (+ (mytyp 1 2) (mytyp 1 2) ))
+ (is (+ (mytyp 1 2) (mytyp 1 2))
+     (mytyp 2 4))
 
  )
 
@@ -2510,15 +2550,6 @@
  (updxp (bindings.bind.op+ pouet [[n] x]
                            [(gensym) (qq (c/repeat ~n ~x))]))
 )
-
-
-
-
-
-
-
-
-
 
 
 

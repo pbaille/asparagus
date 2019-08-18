@@ -111,7 +111,7 @@
     (do :build
 
         (defn split-path-name
-          [x]
+          [x] #_(pp "split path name " x)
           (when-not (namespace x)
             (re-find #"^(\.*)([^:]*)(.*)$" (str x))))
 
@@ -1046,7 +1046,7 @@
 
     (defmacro ppdoc [s]
       (c/let [[p v] (bubfind @E (path s :doc))
-              ;; this is emacs related stuff... (the identation of strings in emacs is weird)
+              ;; this is emacs related stuff... (the identation of strings in emacs is wierd)
               indent-first-line? (not (re-find #"^\n.*" v))
               indent-size (count (re-find #"\n\s*" v))
               vs (if indent-first-line?
@@ -2188,14 +2188,14 @@
            (let [[arg1 varg] (p/gensyms)]
              #_(pp "yop" [argv decls])
              (qq (generic
-                ([~arg1] ~arg1)
-                (~argv . ~decls)
-                (~(conj argv '& varg)
-                 .~(c/mapcat
-                    (fn [[t i]]
-                      [t (qq (reduce (fn ~argv ~i) ~i ~varg))])
-                    (c/partition 2 decls))
-                 )))))
+                  ([~arg1] ~arg1)
+                  (~argv . ~decls)
+                  (~(conj argv '& varg)
+                   .~(c/mapcat
+                      (fn [[t i]]
+                        [t (qq (reduce (fn ~argv ~i) ~i ~varg))])
+                      (c/partition 2 decls))
+                   )))))
 
          module
          (fn [gsym]
@@ -2297,6 +2297,16 @@
 
           (!! (pil+.inspect))
           (!! (pil+ 7 9 7))
+
+          ;; type extension
+
+          (E+ (generic.type+
+               :key
+               (pul+ [x y] :keypul+)
+               (pil+ [x y] :keypil+)))
+
+          (eq (pul+ :aze 1) :keypul+)
+          (eq (pil+ :aze 1) :keypil+)
 
           ;; scope checks ------------
 
@@ -2812,7 +2822,7 @@
          ;; type generic
          (upd.mk
           (let [arg1 (gensym)]
-            {'ty
+            {'type
              (qq (generic
                   [~arg1]
                   .~(c/interleave prims prims)
@@ -3056,7 +3066,7 @@
            :vec (bind.vec x y)
            :map (bind.map x y)
            :seq (bind.seq x y)
-           [(gensym "?match") (lst 'eq x y)]) ;; TODO suspicious (non modal) check in strict form: (!let [42 43] "iop") -> nil ?#@!
+           [(gensym "?!match") (lst 'eq x y)]) ;; TODO suspicious (non modal) check in strict form: (!let [42 43] "iop") -> nil ?#@!
 
           vec
           {:val
@@ -3073,10 +3083,10 @@
 
            raw
            (fn [x y]
-             (let [[ysym checkline checkcount] (gensyms)]
+             (let [ysym (gensym)]
                (+
                 [ysym y
-                 checkline (qq (line? ~ysym))
+                 (gensym "?!linecheck") (qq (line? ~ysym))
                  ;; checkcount '(= ~(count x) (count ~ysym))
                  ]
                 (bind.vec.body x ysym))))
@@ -3087,10 +3097,10 @@
                    cars (take x doti)
                    [eli queue] (uncs (drop x (inc doti)))
                    qcnt (count queue)
-                   [ysym qsym checkline cdr' cars'] (gensyms)]
+                   [ysym qsym cdr' cars'] (gensyms)]
                (+
                 [ysym y
-                 checkline (qq (line? ~ysym))]
+                 (gensym "?!linecheck") (qq (line? ~ysym))]
                 (bind eli (qq (drop ~ysym ~doti)))
                 (bind.vec.body cars ysym)
                 (when-not (zero? qcnt)
@@ -3115,10 +3125,10 @@
 
            raw
            (fn [x y]
-             (let [[checkmap ysym] (gensyms)]
+             (let [ysym (gensym)]
                (+
                 [ysym y
-                 checkmap (qq (map? ~ysym))]
+                 (gensym "?!mapcheck") (qq (map? ~ysym))]
                 (bind.map.keys x ysym))))
 
            dotted
@@ -3126,7 +3136,7 @@
              (let [rs (get x cp.dot)
                    m (dissoc x cp.dot)
                    ks (c/keys m)
-                   [checkmap msym] (gensyms)]
+                   msym (gensym)]
                (+
                 [msym y]
                 (bind.map.keys m msym)
@@ -3159,12 +3169,12 @@
             :tup
             (fn [xs y]
               (let [xs (vec* xs)
-                    [ysym checkline checkcount countable?] (gensyms)]
+                    [ysym] (gensyms)]
                 (+
                  [ysym y
-                  checkline (qq (line? ~ysym))
-                  countable? (qq (c/counted? ~ysym))
-                  checkcount (qq (= ~(count xs) (count ~ysym)))]
+                  (gensym "?!line") (qq (line? ~ysym))
+                  (gensym "?!countable") (qq (c/counted? ~ysym))
+                  (gensym "?!countcheck") (qq (= ~(count xs) (count ~ysym)))]
                  (bind.vec.body xs ysym))))
 
             :!
@@ -3178,7 +3188,7 @@
             (fn [[v s & args] y]
               (cs (sym? s)
                   (cs (key? v)
-                      [s y (gensym "?typecheck") ;; TODO not sure we should emit an hardcoded shortcircuit (if used in strict form it will not throws)
+                      [s y (gensym "?!typecheck") ;; TODO not sure we should emit an hardcoded shortcircuit (if used in strict form it will not throws)
                        (cs [pred (t/guards v)]
                            (qq (~(sym v "?") ~s))
                            (qq (or (eq (type ~s) ~v)
@@ -3264,11 +3274,27 @@
 
           sym->mode
           (fn [s]
-            (condp = (car (str s))
-              \! :strict
-              \? :short
-              \_ :opt
-              nil))
+            (or (maybe-strict-sym? s)
+                (condp = (car (str s))
+                  \! :strict
+                  \? :short
+                  \_ :opt
+                  nil)))
+
+          maybe-strict-sym?
+          ["when a symbol starts by ?! it indicates that the resulting binding mode
+            cannot be :opt, if current mode is strict it will be strict else it will be :short"
+           (fn [s]
+             (and (= '(\? \!) (c/take 2 (str s)))
+                  :maybe-strict))]
+
+          next-mode
+          (fn [m1 s]
+            (let [m2 (sym->mode s)]
+              (cs (= :maybe-strict m2)
+                  (cs (= :opt m1) :short m1)
+                  m2 m2
+                  m1)))
 
           step-form
           (fn [s e1 e2 mode]
@@ -3287,16 +3313,20 @@
              ;; we also check if p1 has not a different mode (have to think of this further)
              [? (sym? e1)
               ? (or (not (sym->mode p1))
-                    (eq (sym->mode p1) (sym->mode e1)))
+                    (eq (next-mode mode p1) (next-mode mode e1))
+                    #_(eq (sym->mode p1) (sym->mode e1))
+                    )
               e' (env.add-sub e [p1 (exp e e1)])]
              (form e' bs expr mode)
              ;; else we add a binding
-             [step-mode (or (sym->mode p1) mode)
+             [;; step-mode (or (sym->mode p1) mode)
               [e' pat] (hygiene.shadow e p1)]
              (step-form
               pat (cxp e e1)
               (form e' bs expr mode)
-              step-mode)))
+              (next-mode mode p1)
+              #_step-mode
+              )))
 
           compile
           {:val
@@ -4938,10 +4968,10 @@
                ;; constructors (positional and from hashmap)
                name-sym (qq (f ~fields (~(sym "->" class-sym) .~fields)))
                map-constructor-sym (qq (f_ (~(sym "map->" class-sym) _)))
-               guard-sym (qq (f_ (instance? ~class-sym _)))
+               guard-sym (qq (f_ (and (instance? ~class-sym _) _)))
 
                ;; generic implementations
-               (qq (generic.type+ ~name (type [x] ~name ~name) .~impls))]))
+               (sq (generic.type+ ~name (type [x] ~name) .~impls))]))
 
          :demo
          (__
@@ -5019,10 +5049,10 @@
              name-sym (qq (f ~fields (merge ~proto-sym (~(sym "->" class-sym) .~fields))))
              proto-sym proto-val
              map-constructor-sym (qq (f_ (~(sym "map->" class-sym) (merge ~proto-sym _))))
-             guard-sym (qq (f_ (instance? ~class-sym _)))
+             guard-sym (qq (f_ (and (instance? ~class-sym _) _)))
 
              ;; generic implementations
-             (qq (generic.type+ ~name (type [x] ~name ~name) .~impls))]))]
+             (sq (generic.type+ ~name (type [x] ~name ~name) .~impls))]))]
 
         )
 
