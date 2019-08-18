@@ -1039,6 +1039,23 @@
       [s]
       `(env-inspect '~s))
 
+    (defmacro updxp
+      "expand the given update call, debug purposes"
+      [[v & args]]
+      `(!! (~(sym v ":upd") @E '~(vec args))))
+
+    (defmacro ppdoc [s]
+      (c/let [[p v] (bubfind @E (path s :doc))
+              ;; this is emacs related stuff... (the identation of strings in emacs is weird)
+              indent-first-line? (not (re-find #"^\n.*" v))
+              indent-size (count (re-find #"\n\s*" v))
+              vs (if indent-first-line?
+                   (str (apply str (repeat (dec indent-size) " ")) v)
+                   v)]
+        `(do (println '~p "\n")
+             (println ~vs)
+             (println))))
+
     (defn top-form-decl
       "bring an asparagus macro into the top level,
        making it available as a regular clojure macro in the current ns"
@@ -1926,9 +1943,16 @@
                ;; else we quote wathever it is
                (quotes.wrap form))))
 
-       sq:mac  (fn [e [x]] (let [f (quotes.mk {})] (cp.expand (f e 0 x))))
-       qq:mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e 0 x))))
-       qq!:mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e 0 x))))
+       sq
+       ["syntax-quote, does handle unquote and splicing, but do not qualifies symbols"
+        :mac  (fn [e [x]] (let [f (quotes.mk {})] (cp.expand (f e 0 x))))]
+       qq
+       ["qualified quote, like sq (syntax-quote), but qualifies symbols"
+        :mac
+        (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e 0 x))))]
+       qq!
+       ["strictly qualified quote, a strict version of qq (qualified-quote) that throws on unqualifiable symbols"
+        :mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e 0 x))))]
 
        :demo
        (__
@@ -3022,7 +3046,10 @@
          :links {cp composite}
 
          bind
-         [
+         ["bind is like clojure's 'destructure:
+           it produces a vector of bindings, that can be used as first argument of a let form
+           any type can implement the bind generic function"
+
           (generic
            [x y]
            :sym [x y]
@@ -3107,61 +3134,99 @@
 
           seq
           (fn [[v & args] y]
-            (cs [op (bind.ops.get v)]
+            (cs [k (and (sym? v) (keyword v))
+                 op (c/get bind.ops k)]
                 (op args y)
                 (bind.ops.default (cons v args) y)))
 
           ops
-          {get
-           (fn [x] (c/get @..table x))
+          {:doc
+
+           "the binding operation table
+            can be extended via the bind.op+ update"
+
+           :val
+           {:&
+            (fn [xs y]
+              (let [ysym (gensym)]
+                (cat* [ysym y]
+                      ($ xs #(bind % ysym)))))
+
+            :ks
+            (fn [xs y]
+              (bind (zipmap ($ xs keyword) xs) y))
+
+            :tup
+            (fn [xs y]
+              (let [xs (vec* xs)
+                    [ysym checkline checkcount countable?] (gensyms)]
+                (+
+                 [ysym y
+                  checkline (qq (line? ~ysym))
+                  countable? (qq (c/counted? ~ysym))
+                  checkcount (qq (= ~(count xs) (count ~ysym)))]
+                 (bind.vec.body xs ysym))))
+
+            :!
+            (fn [[f & [p]] y]
+              (bind (or p (gensym)) (lst f y)))}
 
            default
-           (fn [[v s & args] y]
-             (cs (sym? s)
-                 (cs (key? v)
-                     [s y (gensym "?typecheck")
-                      (cs [pred (t/guards v)]
-                          (qq (~(sym v "?") ~s))
-                          (qq (or (eq (type ~s) ~v)
+           [
+            "the default operation, used for unknown binding operations"
+
+            (fn [[v s & args] y]
+              (cs (sym? s)
+                  (cs (key? v)
+                      [s y (gensym "?typecheck") ;; TODO not sure we should emit an hardcoded shortcircuit (if used in strict form it will not throws)
+                       (cs [pred (t/guards v)]
+                           (qq (~(sym v "?") ~s))
+                           (qq (or (eq (type ~s) ~v)
                                    (t/>= ~v (type ~s)))))]
-                     [s (lst* v y args)]
-                                        ;(bind s (lst* v y args))
-                     )
-                 (error "guard binding takes a symbol as first argument"
-                        (lst* v s args))))
+                      [s (lst* v y args)]
+                      ;; considering to let s be any pattern... (does it makes sense? maybe for pure guards)
+                      ;;(bind s (lst* v y args))
+                      )
+                  (error "guard binding takes a symbol as first argument"
+                         (lst* v s args))))]}
 
-           #_(!! (bindings.bind '(:vec a) 'x))
 
-           table ;; TODO does we really need an atom here?
-           (atom
-            {'&
-             (fn [xs y]
-               (let [ysym (gensym)]
-                 (cat* [ysym y]
-                       ($ xs #(bind % ysym)))))
+          op+
+          [
+           "let the user add some new binding operations
+            that will be available for further usages of bind"
 
-             'ks
-             (fn [xs y]
-               (bind (zipmap ($ xs keyword) xs) y))
+           :upd
+           (fn [e [name args expr]]
+             ['bindings.bind.ops:val
+              {(key name)
+               (qq (f ~args ~expr))}])
 
-             'tup
-             (fn [xs y]
-               (let [xs (vec* xs)
-                     [ysym checkline checkcount countable?] (gensyms)]
-                 (+
-                  [ysym y
-                   checkline (qq (line? ~ysym))
-                   countable? (qq (c/counted? ~ysym))
-                   checkcount (qq (= ~(count xs) (count ~ysym)))]
-                  (bind.vec.body xs ysym))))
+           :demo
+           (__
+            ;; as an exemple we are redefining the & operation
+            (E+ (bind.op+ & [xs seed] ;; xs are the arguments passed to the operation, y is the expr we are binding
+                          (bind (zipmap ($ xs keyword) xs) seed)))
 
-             '!
-             (fn [[f & [p]] y]
-               (bind (or p (gensym)) (lst f y)))})
+            ;; when this operation is used
+            '(let [(ks a b) x] ...)
 
-           add
-           (fn [s f]
-             (swap! ..table assoc s f))}
+            ;; at compile time the implementation is called with args: '(a b) and seed: 'x
+            ;; =>
+            (bind {:a 'a :b 'b} 'x) ;; we are using the map impl of bind
+            ;; =>
+            '[G__244129 x
+              G__244128 (_.guards.builtins.map? G__244129)
+              a (clojure.core/get G__244129 :a)
+              b (clojure.core/get G__244129 :b)]
+
+            ;; finally it is substituted in the original form
+            (let [G__244129 x
+                  G__244128 (_.guards.builtins.map? G__244129)
+                  a (clojure.core/get G__244129 :a)
+                  b (clojure.core/get G__244129 :b)]
+              ...))]
+
           ]
 
          unified
@@ -3494,7 +3559,9 @@
          ]
 
         (import bindings.let.builtins
-                [clet clut !clet !clut])
+                [clet clut !clet !clut]
+                bindings
+                [bind])
         )
 
     (E+ lambda
@@ -4185,7 +4252,8 @@
 
             [
 
-             "the dive generic function, let you get something inside something else
+             "
+             the dive generic function, let you get something inside something else
              its first argument represent the address of what you want to get
              the second is the thing in which you want to find it
 

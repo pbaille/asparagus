@@ -614,6 +614,7 @@
         (add . nums . nums . nums)
         27)
     ))
+
  )
 
 ;; ------------------------------------------------------------------------
@@ -773,10 +774,46 @@
    (eq (let [(& mymap (ks a b)) {:a 1 :b 2 :c 3}] [mymap a b])
        [{:a 1 :b 2 :c 3} 1 2])
 
+   ;; tup (tuple)
+   ;; sometimes we want to be more strict than regular sequential binding (vector syntax)
+
+   (eq (?let [(tup a b) [1 2]] [a b])
+       [a b])
+
+   ;; here it does not pass because length are different
+   (nil? (?let [(tup a b) [1]] [a b]))
+   (nil? (?let [(tup a b) [1 2 3]] [a b]))
+
    ;; some others builtin bindings exists, see source
 
-   ;; new binding operators can be defined by the user
-   ;; TODO
+   ;; defining new binding operators
+   ;; ------------------------------------------------
+
+   ;; we can extend binding ops like this
+
+   ;; as an exemple we are redefining the & operation
+   (E+ (bind.op+ & [xs seed] ;; xs are the arguments passed to the operation, y is the expr we are binding
+                 (bind (zipmap ($ xs keyword) xs) seed)))
+
+   ;; when this operation is used
+   '(let [(ks a b) x] ...)
+
+   ;; at compile time the implementation is called with args: '(a b) and seed: 'x
+   ;; =>
+   (bind {:a 'a :b 'b} 'x) ;; we are using the map impl of bind
+   ;; =>
+   '[G__244129 x
+     G__244128 (_.guards.builtins.map? G__244129)
+     a (clojure.core/get G__244129 :a)
+     b (clojure.core/get G__244129 :b)]
+
+   ;; finally it is substituted in the original form
+   (let [G__244129 x
+         G__244128 (_.guards.builtins.map? G__244129)
+         a (clojure.core/get G__244129 :a)
+         b (clojure.core/get G__244129 :b)]
+     ...)
+
    )
 
   ;; special bindings --------------------
@@ -2446,6 +2483,45 @@
   ;; TODO
 
   ))
+
+
+;; ------------------------------------------------------------------------
+;;                             dev utilities
+;; ------------------------------------------------------------------------
+
+(_
+
+ ;; inspecting the environment
+
+ ;; function
+ (env-inspect 'take)
+ ;; macro
+ (ppenv take)
+
+ ;; printing documentation
+
+ (ppdoc bind.ops)
+ (ppdoc dive)
+
+ ;; expanding an update call
+
+ (updxp (generic.reduced [a b] :num (add a b)))
+
+ (updxp (bindings.bind.op+ pouet [[n] x]
+                           [(gensym) (qq (c/repeat ~n ~x))]))
+)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
