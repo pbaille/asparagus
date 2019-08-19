@@ -2,15 +2,6 @@
 
 (do :init
 
-    (init-top-forms
-     let lut ?let !let !lut
-     ?f !f f fu !fu
-     f1 !f1 ?f1 !fu1 fu1
-     f_ !f_ ?f_ !fu_ fu_
-     cf ?cf !cf cfu !cfu 
-     clet clut !clet !clut
-     case casu !case !casu)
-
     (defmacro is [& xs]
       `(!! (check (~'eq ~@xs))))
 
@@ -18,19 +9,19 @@
       `(!! (check ~@($ xs (f_ (lst `nil? _)))))))
 
 ;; ------------------------------------------------------------------------
-;;                               Rational
+;;                              Introduction
 ;; ------------------------------------------------------------------------
 
 (_
  ;; asparagus is my last experience in language design
- ;; after several attempt, i've compiled some of the ideas I like, found in other languages/books/papers/altered-states-of-mind
+ ;; after several attempt, i've compiled some of the ideas I like, found in other languages/books/papers
 
  ;; it is embedded in clojure, but at the same time is quite far from it.
  ;; it has its own environment/namespaces mecanism, and another kind of macro system.
  ;; it is far from being production ready, but I hope that it can be interesting as an experiment for some of you
 
  ;; I'm an autodidact with no proper computer science degree, my approch to programming is quite empirical.
- ;; first of all I'm seeking for feedback, advices, discussions and even people to work with (and I'm also searching for a real job)
+ ;; first of all I'm seeking for feedback, advices, discussions and even people to work with (and I'm also searching for a real job!)
 
  ;; for now the main goals are:
 
@@ -46,6 +37,12 @@
  ;; functional control flow (heavy use of function composition and guards, nil based shortcuiting constructs)
  ;; generic functions at heart (all core operations of the language will be implementable by user types and implemented meaningfully by core types)
  ;; holy datastructures's litterals (maps, vecs, lists and sets) at the heart (giving them more usages and extra syntax sugar)
+
+ ;; this tutorial assumes familiarity with clojure. or at least another Lisp.
+
+ ;; in order to be able to evaluate the forms contained in this file,
+ ;; you should start a REPL and load asparagus.core
+
  )
 
 ;; ------------------------------------------------------------------------
@@ -335,18 +332,6 @@
   ))
 
 ;; ------------------------------------------------------------------------
-;;                           compilation steps
-;; ------------------------------------------------------------------------
-
-(_
- ;; there is three fundamentals compilation steps in asparagus
-
- ;; qualify ;; will try to turn all symbols of the given expression into path objects
- ;; expand ;; macro and substitutions will be executed here (see environment(continued) section)
- ;; resolve ;; paths are turned to their corresponding var syms
- )
-
-;; ------------------------------------------------------------------------
 ;;                            data primitives
 ;; ------------------------------------------------------------------------
 
@@ -376,30 +361,36 @@
   ;; constructor functions
   ;; compared to clojure, the API have been uniformized
 
-  (vec 1 2 3)                           ;=> [1 2 3]
-  (lst 1 2 3)                           ;=> '(1 2 3)
-  (set 1 2 3)                           ;=> #{1 2 3}
-  (map [:a 1] [:b 2])                   ;=> {:a 1 :b 2}
+  (is (vec 1 2 3) [1 2 3])
+  (is (lst 1 2 3) '(1 2 3))
+  (is (set 1 2 3) #{1 2 3})
+  (is (map [:a 1] [:b 2]) {:a 1 :b 2})
 
   ;; with sequential last argument (like core/list*)
 
-  (vec* (lst 1 2 3 4)) ;; with one argument it behaves like core.vec
-  (vec* 1 2 [3 4])
+  (is (vec* (lst 1 2 3 4)) ;; with one argument it behaves like core.vec
+      (vec* 1 2 [3 4])
+      [1 2 3 4]) 
 
-  (lst* [1 2 3 4])
-  (lst* 1 2 [3 4])
+  (is (lst* [1 2 3 4])
+      (lst* 1 2 [3 4])
+      (lst* 1 2 3 4 [])
+      '(1 2 3 4))
 
-  (set* 1 2 [3 4])
+  (is #{1 2 3 4}
+      (set* 1 2 [3 4]))
 
-  (map* [:a 1] [:b 2] {:c 2 :d 5}) ;; same as (map* [:a 1] [:b 2] [[:c 2] [:d 5]])
+  (is (map* [:a 1] [:b 2] {:c 3 :d 4})
+      (map* [:a 1] [[:b 2] [:c 3] [:d 4]])
+      {:a 1 :b 2 :c 3 :d 4})
 
   ;; preds
   ;; each collection have its pred, that returns the given collection on success or nil otherwise
 
-  (vec? [1 2 3])                        ;=> [1 2 3]
-  (lst? (lst 1 2 3))                    ;=> '(1 2 3)
-  (set? #{1 2 3})                       ;=> #{1 2 3}
-  (map? {:a 1})                         ;=> {:a 1}
+  (is (vec? [1 2 3]) [1 2 3])
+  (is (lst? (lst 1 2 3)) (lst 1 2 3))
+  (is (set? #{1 2 3}) #{1 2 3})
+  (is (map? {:a 1}) {:a 1})
 
   ;; we will see that in asparagus we avoid predicates (functions that returns booleans)
   ;; in favor of guards (functions that can return nil indicating failure, or data)
@@ -415,26 +406,30 @@
   ;; constructors
   ;; symbols and keywords have their core/str(ish) construtors
 
-  (sym "foo") ;;=> 'foo
-  (key "foo") ;;=> :foo
+  (is (sym "foo") 'foo)
+  (is (key "foo") :foo)
 
-  (sym :foo "bar") ;;=> 'foobar
-  (key "foo" :bar "baz") ;;=> :foobarbaz
+  (is (sym :foo "bar") 'foobar)
+  (is (key "foo" :bar "baz") :foobarbaz)
 
   ;; star variants
 
-  (sym* "ab" (lst "cd" "ef" "gh")) ;;=> 'abcdefgh
-  (key* "my" :keyword "_" [:foo :bar "baz"]) ;;=> :mykeyword_foobarbaz
-  (str* "mystr_" ["a" "b"]) ;;=> "mystr_ab"
+  (is (sym* "ab" (lst "cd" "ef" "gh"))
+      'abcdefgh)
+  (is (key* "my" :keyword "_" [:foo :bar "baz"])
+      :mykeyword_foobarbaz)
+  (is (str* "mystr_" ["a" "b"])
+      "mystr_ab") 
 
   ;; guards
   ;; as for collections, we use guards instead of preds
 
-  (key? :iop) ;;=> :iop
-  (sym? 'bob) ;;=> 'bob
-  (str? "hi") ;;=> "hi"
+  (is (key? :iop) :iop)
+  (is (sym? 'bob) 'bob)
+  (is (str? "hi") "hi")
+
   )
- )
+)
 
 ;; ------------------------------------------------------------------------
 ;;                            joining things
@@ -548,15 +543,15 @@
         d [5 6]]
 
     ;; with a dot you can do splicing
-    (eq [a b . c] [1 2 3 4])
+    (is [a b . c] [1 2 3 4])
     ;; the spliced part can be anywhere
-    (eq [a b . c b a] [1 2 3 4 2 1])
+    (is [a b . c b a] [1 2 3 4 2 1])
     ;; several spliced parts
-    (eq [a b . c . d] [1 2 3 4 5 6])
+    (is [a b . c . d] [1 2 3 4 5 6])
     ;; shortcut (everything after the double dot is spliced)
-    (eq [a b .. c d] [1 2 3 4 5 6])
+    (is [a b .. c d] [1 2 3 4 5 6])
     ;; nested
-    (eq [a b [42 . d] . c]
+    (is [a b [42 . d] . c]
         [1 2 [42 5 6] 3 4])
     ))
 
@@ -568,7 +563,7 @@
         b {:b 2}
         c [1 2 3]]
 
-    (eq {:a 1
+    (is {:a 1
          :c 3
          . b} ;; we are merging b into the host map
 
@@ -580,7 +575,7 @@
 
     ;; it can be nested
 
-    (eq
+    (is
      {:foo [0 . c 4] ;; a composite vector
       :bar {:baz 1 . b}
       . a}
@@ -597,20 +592,20 @@
   (let [nums [2 3 4]]
 
     ;; in conjunction with 'lst you can do the same things that we have shown with vectors
-    (eq (lst 1 . nums)
+    (is (lst 1 . nums)
         (lst 1 2 3 4))
 
     ;; but more interesting is this
     ;; you can achieve apply semantics with dot notation
-    (eq (add 1 . nums)
+    (is (add 1 . nums)
         (c/apply add 1 nums)
         10)
 
     ;; but unlike with apply it does not have to be the last argument that is a collection
-    (eq (add 1 . nums 5) 15)
+    (is (add 1 . nums 5) 15)
 
     ;; we have doubledot also
-    (eq (add .. nums nums nums)
+    (is (add .. nums nums nums)
         (add . nums . nums . nums)
         27)
     ))
@@ -631,14 +626,14 @@
 
   ;; let form is similar to clojure's one but with extra capabilities
 
-  (eq (let [a 1] a)
+  (is (let [a 1] a)
       1)
 
-  (eq (let [a 1 b 2] (add a b))
+  (is (let [a 1 b 2] (add a b))
       3)
 
   ;; refer earlier binding
-  (eq (let [a 1 b a] (add a b))
+  (is (let [a 1 b a] (add a b))
       2)
 
   ;; binding symbols can be prepended by special character to indicate special behavior
@@ -647,13 +642,13 @@
   ;; if a binding symbol is prefixed by ?,
   ;; it has to bind to a not nil value else the whole let form is shortcircuited and return nil
 
-  (nil? (let [?a nil ;; this binding fail, therefore the next line will never be evaluated
+  (isnt (let [?a nil ;; this binding fail, therefore the next line will never be evaluated
               b (error "never evaluated")] 42))
 
   ;; strict bindings
   ;; binding symbol's prepended by ! must bind to non nil value, else an error is thrown
 
-  (eq :catched
+  (is :catched
       (try (let [!a (pos? -1)] :never)
            (catch Exception _ :catched)))
 
@@ -673,13 +668,13 @@
    ;; is equivalent to
    (let [?a 1 ?b 2] (add ?a ?b))
    ;; we can use strict bindings in a ?let form, it will behave as in let
-   (eq :catched
+   (is :catched
        (try (?let [a 1
                    !b (pos? -1)] (add a !b))
             (catch Exception _ :catched)))
    ;; if we want to allow regular bindings (as normal symbols in a classic let)
    ;; we use the _ prefix
-   (eq (?let [a 1
+   (is (?let [a 1
               _b nil] ;; _b is bound to nil but this does not shorts
              a)
        1)
@@ -689,7 +684,7 @@
 
   (_
    ;; is like ?let but with implicit prefix !, it support ? and _ prefixes
-   (eq :catched
+   (is :catched
        (try (!let [a nil] :never)
             (catch Exception _ :catched)))
    )
@@ -700,17 +695,19 @@
    ;; in a unified let, all symbols that appears several times have to bind to the same value (equal values)
    ;; otherwise it will shortcircuits
 
-   (lut [a 1 a (dec 2)] :success)
+   (is (lut [a 1 a (dec 2)] :success)
+       :success)
 
-   (lut [a 1
-         a 2] ;; this will shorts because a is already bound to 1
-        (error "never thrown"))
+   (isnt
+    (lut [a 1
+          a 2] ;; this will shorts because a is already bound to 1
+         (error "never thrown")))
    )
 
   ;; !lut (unified strict let) ----------
 
   (_
-   (eq :catched
+   (is :catched
        (try (!lut [a 1
                    a 2] ;; this will throw because a is already bound to 1
                   :never)
@@ -729,31 +726,31 @@
    ;; the user can define its own destructuration special forms
 
    ;; sequential bindings
-   (eq (let [[x . xs] (range 5)] [x xs])
+   (is (let [[x . xs] (range 5)] [x xs])
        [0 (range 1 5)])
 
    ;; preserve collection type
-   (eq (let [[x . xs] (vec 1 2 3)] [x xs])
+   (is (let [[x . xs] (vec 1 2 3)] [x xs])
        [1 [2 3]]) ;; in clojure [2 3] would be a seq
 
    ;; post rest pattern
    ;; in clojure the rest pattern has to be the last binding, here we can bind the last element easily
-   (eq (let [[x . xs lastx] (range 6)] [x xs lastx])
+   (is (let [[x . xs lastx] (range 6)] [x xs lastx])
        [0 (range 1 5) 5])
 
    ;; (we could also have bound several things after the rest pattern)
-   (eq (let [[x . xs y1 y2 y3] (range 6)] [x xs y1 y2 y3])
+   (is (let [[x . xs y1 y2 y3] (range 6)] [x xs y1 y2 y3])
        [0 (lst 1 2) 3 4 5])
 
    ;; maps
-   (eq (let [{:a aval :b bval} {:a 1 :b 2 :c 3}] [aval bval])
+   (is (let [{:a aval :b bval} {:a 1 :b 2 :c 3}] [aval bval])
        [1 2])
 
    ;; in clojure the same is acheived like this (I don't really understand why)
    (c/let [{aval :a bval :b} {:a 1 :b 2 :c 3}] [aval bval])
 
    ;; maps have rest patterns to
-   (eq (let [{:a aval . xs} {:a 1 :b 2 :c 3}] [aval xs])
+   (is (let [{:a aval . xs} {:a 1 :b 2 :c 3}] [aval xs])
        [1 {:b 2 :c 3}])
 
    ;; as you may think, all binding modes are supported in destructuration bindings forms
@@ -764,25 +761,25 @@
   (_
    ;; ks is a builtin binding operator
    ;; it behaves like clojure's :keys
-   (eq (let [(ks a b) {:a 1 :b 2 :c 3}] (add a b))
+   (is (let [(ks a b) {:a 1 :b 2 :c 3}] (add a b))
        3)
 
 
    ;; & (parrallel bindings)
    ;; several patterns can be bound to the same seed
    ;; something that i've sometimes missed in clojure (lightly)
-   (eq (let [(& mymap (ks a b)) {:a 1 :b 2 :c 3}] [mymap a b])
+   (is (let [(& mymap (ks a b)) {:a 1 :b 2 :c 3}] [mymap a b])
        [{:a 1 :b 2 :c 3} 1 2])
 
    ;; tup (tuple)
    ;; sometimes we want to be more strict than regular sequential binding (vector syntax)
 
-   (eq (?let [(tup a b) [1 2]] [a b])
-       [a b])
+   (is (?let [(tup a b) [1 2]] [a b])
+       [1 2])
 
    ;; here it does not pass because length are different
-   (nil? (?let [(tup a b) [1]] [a b]))
-   (nil? (?let [(tup a b) [1 2 3]] [a b]))
+   (isnt (?let [(tup a b) [1]] [a b]))
+   (isnt (?let [(tup a b) [1 2 3]] [a b]))
 
    ;; some tests
    (is
@@ -841,7 +838,7 @@
    ;; a guard pattern is an expression with a binding symbol as first argument
 
    (?let [(pos? a) 1] ;; if 1 is pos then the return value of (pos? 1) which is 1 is bound to the symbol a
-         a)
+         a) ;;=> 1
 
    ;; is equivalent to
    (?let [a 1
@@ -851,27 +848,27 @@
    ;; this syntax is really making sense whith guards that returns their first argument unchanged in case of success
 
    (?let [(gt a 3) 4] ;; guards can have more than one arg
-         a)
+         a) ;;=> 4
 
    (?let [(gt a 3) 2] ;; shorts
-         (error "never touched"))
+         (error "never touched")) ;; nil
 
    ;; type guards
    ;; an sexpr starting with a type keyword (see asparagus.boot.types) indicates a type guard pattern
    (?let [(:vec v) [1 2 3]]
-         v)
+         v) ;;=> [1 2 3]
 
    (?let [(:seq v) [1 2 3]]
-         (error "never"))
+         (error "never")) ;;=> nil
 
    ;; guard syntax
-   (eq (?let [(pos? a) 1
+   (is (?let [(pos? a) 1
               (neg? b) -1] (add a b))
        0)
 
    (?let [(pos? a) 1
           (neg? b) 1]
-         (error "never thrown"))
+         (error "never thrown")) ;;=> nil
    )
 
   ;; value patterns ----------------------
@@ -879,13 +876,14 @@
   (_
    ;; any value can be used in pattern position,
 
-   (eq :ok (let [a (inc 2)
+   (is :ok (let [a (inc 2)
                  3 a] ;; 3 is in binding position, therefore the seed (a) is tested for equality against it, and it shorts if it fails
              :ok))
 
-   (let [a (inc 2)
-         4 a]
-     (error "never"))
+   (isnt
+    (let [a (inc 2)
+          4 a]
+      (error "never")))
 
    ;; some tests
 
@@ -894,8 +892,10 @@
        (?let [42 42] :ok)
        (!let [42 42] :ok))
 
-   (nil? (let [42 43] :ok))
-   (nil? (?let [42 43] :ok))
+   (isnt 
+    (let [42 43] :ok)
+    (?let [42 43] :ok))
+
    (!! (throws (!let [42 43] :ok)))
 
    )
@@ -916,7 +916,7 @@
   ;; it can be be compared to cond-let but is more powerful
 
   ;;simple
-  (eq (clet [x (pos? -1)] {:pos x}      ;first case
+  (is (clet [x (pos? -1)] {:pos x}      ;first case
             [x (neg? -1)] {:neg x}      ;second case
             )
       {:neg -1})
@@ -925,12 +925,12 @@
   (let [f (fn [seed]
             (clet [x (num? seed) x++ (inc x)] x++
                   [x (str? seed) xbang (+ x "!")] xbang))]
-    (and (eq 2 (f 1))
-         (eq "yo!" (f "yo"))
-         (nil? (f :pop))))
+    (is 2 (f 1))
+    (is "yo!" (f "yo"))
+    (isnt (f :pop)))
 
   ;; default-case
-  (eq (clet [x (pos? 0) n (error "never touched")] :pos
+  (is (clet [x (pos? 0) n (error "never touched")] :pos
             [x (neg? 0) n (error "never touched")] :neg
             :nomatch)
       :nomatch)
@@ -962,7 +962,7 @@
  )
 
 ;; ------------------------------------------------------------------------
-;;                                lambdas
+;;                               lambdas
 ;; ------------------------------------------------------------------------
 
 (_
@@ -975,52 +975,53 @@
   ;; regular monoarity lambda
 
   (let [fun (f [a b] (add a b))]
-    (eq 3 (fun 1 2)))
+    (is 3 (fun 1 2)))
 
   ;; variadic syntax
   (let [fun (f [x . xs] (add x . xs))]
-    (fun 1 2 3 4))
+    (is 10 (fun 1 2 3 4)))
 
   ;; all binding patterns are available
   (let [fun (f [x (ks a b)]
                (+ x {:a a :b b}))]
-    (fun {:foo 1 :bar 2}
-         {:a 1 :b 2 :c 3}))
-  ;;=> {:foo 1, :bar 2, :a 1, :b 2}
+    (is (fun {:foo 1 :bar 2}
+             {:a 1 :b 2 :c 3})
+        {:foo 1, :bar 2, :a 1, :b 2}))
 
 
   (let [fun (f [(& x [x1 . xs])
                 (& y [y1 . ys])]
                {:x x :y y :cars [x1 y1] :cdrs [xs ys]})]
-    (fun [1 2 3 4] [7 8 9]))
-  ;;=> {:x [1 2 3 4], :y [7 8 9], :cars [1 7], :cdrs [[2 3 4] [8 9]]}
+    (is (fun [1 2 3 4] [7 8 9])
+        {:x [1 2 3 4],
+         :y [7 8 9],
+         :cars [1 7],
+         :cdrs [[2 3 4] [8 9]]}))
 
   ;; like let, different binding modes are available via prefix syntax
 
   (let [fun (f [!a ?b] (lst !a ?b))] ;; a is mandatory, and b can short the execution
-    (and
-     (eq (fun 1 2) (lst 1 2))
-     (nil? (fun 1 nil))
-     (throws (fun nil 2))
-     :ok))
+    (is (fun 1 2) (lst 1 2))
+    (isnt (fun 1 nil))
+    (throws (fun nil 2)))
 
   ;; for recursion, like clojure/fn we can give a name to a lambda
   ;; we use keyword litteral to indicate a name
-  ((f :mylambda [x . xs]
-      (if-not (c/seq xs) x
-              (add x (mylambda . xs))))
-   1 2 3 4)                             ;=> 10
+  (let [g (f :mylambda [x . xs]
+             (if-not (c/seq xs) x
+                     (add x (mylambda . xs))))]
+    (is (g 1 2 3 4) 10))
 
   ;; the same can be acheive with 'rec
-  ((f [x . xs]
-      (if-not (c/seq xs) x
-              (add x (rec . xs))))
-   1 2 3 4)                             ;=> 10
+  (let [g (f [x . xs]
+             (if-not (c/seq xs) x
+                     (add x (rec . xs))))]
+    (is (g 1 2 3 4) 10))
 
   ;; like in scheme, binding pattern can be a simple symbol
   ;; this is the reason why we need keyword litteral to name lambdas (to disambiguate)
-  ((f xs (add . xs))
-   1 2 3 4)                             ;=> 10
+  (let [g (f xs (add . xs))]
+    (is (g  1 2 3 4) 10))
   )
 
  ;; variants -----------------------------------
@@ -1031,22 +1032,20 @@
 
   (let [fun (?f [(vec? a) (num? b)] ;; this is guard patterns (see previous section)
                 (sip a b))]
-    (and
-     ;; the binding succeed
-     (eq (fun [1 2 3] 4) [1 2 3 4])
-     ;; first arg is not a vector so it shorts
-     (nil? (fun 1 2))))
+    ;; the binding succeed
+    (is (fun [1 2 3] 4) [1 2 3 4])
+    ;; first arg is not a vector so it shorts
+    (isnt (fun 1 2)))
 
   ;; and also unified variants: fu and !fu
 
   (let [fun (fu [a b a] :ok)]
-    (and (eq (fun 1 0 1) :ok)
-         (nil? (fun 1 2 3))))
+    (is (fun 1 0 1) :ok)
+    (isnt (fun 1 2 3)))
 
   (let [fun (!fu [a a] :ok)]
-    (and (eq (fun 1 1) :ok)
-         (throws (fun 1 2))
-         :yeah)))
+    (is (fun 1 1) :ok)
+    (throws (fun 1 2))))
 
  ;; syntactic sugar ----------------------------
 
@@ -1056,13 +1055,12 @@
   ;; function that takes one argument are so common that it deserves, i think, some syntactic sugar
 
   (let [double (f1 a (add a a))]
-    (eq (double 2) 4))
+    (is (double 2) 4))
 
   ;; you can use any binding pattern
   (let [fun (f1 (:vec a) (+ a a))] ;; we use a type guard (check if the given arg is a vector)
-    (and
-     (eq (fun [1 2 3]) [1 2 3 1 2 3])
-     (nil? (fun 42))))
+    (is (fun [1 2 3]) [1 2 3 1 2 3])
+    (isnt (fun 42)))
 
   ;; it has all the common variations: !f1 ?f1 !fu1 fu1
   ;; that do what you should expect (if you have not skip previous parts of this file)
@@ -1070,7 +1068,7 @@
   ;; we also have f_ that is a bit more concise than f1, if you don't need destructuring
 
   (let [double (f_ (add _ _))]
-    (eq (double 2) 4))
+    (is (double 2) 4))
 
   ;; it also have common variations, f_, ?f_ , !f_ (unification variants are useless here)
   )
@@ -1084,23 +1082,22 @@
                 [a b] 2
                 [(:num a) b c . xs] :var1
                 [a b c . d] :var2)]
-    (and (eq (fun "iop") 1)
-         (eq (fun 1 2) 2)
-         (eq (fun 1 2 3 4 5) :var1)
-         (eq (fun "iop" 1 2 3) :var2)))
+    (is (fun "iop") 1)
+    (is (fun 1 2) 2)
+    (is (fun 1 2 3 4 5) :var1)
+    (is (fun "iop" 1 2 3) :var2))
 
   ;; it can have several implementaion with the same arity
 
   (let [fun (cf [(num? a)] {:num a}
                 [(str? a)] {:str a})]
-
-    (and (eq (fun 1) {:num 1})
-         (eq (fun "aze") {:str "aze"})))
+    (is (fun 1) {:num 1})
+    (is (fun "aze") {:str "aze"}))
 
   ;; note that variadic cases must have the same length
 
-  (cf [x . xs] :one
-      [x y . zs] :two) ;;compile time error
+  '(cf [x . xs] :one
+       [x y . zs] :two) ;;compile time error
 
   (cf [(:vec x) . xs] :one
       [(:num x) . xs] :two) ;; is ok
@@ -1119,7 +1116,7 @@
  (_
 
   (let [x (range 12)]
-    ;; try those values too:  42 "iop" :pouet
+    ;; try those values:  42 "iop" :pouet
     (case x
       (num? x) {:num x}         ;; first clause, x is a number
       (str? x) {:str x}         ;; second clause, x is a string
@@ -1135,12 +1132,11 @@
                    [:point (:num x) (:num x)] :twin
                    [:point (:num x) (:num y)] [x y]
                    :pouet))]
-    (and
-     (eq :y0 (t [:point 1 0]))
-     (eq :x0 (t [:point 0 1]))
-     (eq :twin (t [:point 1 1]))
-     (eq [1 2] (t [:point 1 2]))
-     (eq :pouet (t [:point 1 "io"]))))
+    (is :y0 (t [:point 1 0]))
+    (is :x0 (t [:point 0 1]))
+    (is :twin (t [:point 1 1]))
+    (is [1 2] (t [:point 1 2]))
+    (is :pouet (t [:point 1 "io"])))
 
   ;; there is also !case and !casu that throws if nothing match the input
 
@@ -1148,7 +1144,9 @@
     (throws
      (!case x
             (str? x) :str
-            (vec? x) :vec)))))
+            (vec? x) :vec))))
+
+ )
 
 ;; ------------------------------------------------------------------------
 ;;                              iterables
@@ -1161,80 +1159,80 @@
  (_
 
   ;; car (is like Lisp's car or clojure.core/first)
-  (!! (eq 1 (car (lst 1 2))))
-  (!! (eq 1 (car [1 2])))
-  (!! (eq [:a 1] (car {:a 1 :b 2})))
+  (is 1 (car (lst 1 2)))
+  (is 1 (car [1 2]))
+  (is [:a 1] (car {:a 1 :b 2}))
 
   ;; cdr (is like clojure.core/rest but preserve collection type)
-  (!! (eq (cdr [1 2 3]) [2 3]))
-  (!! (eq (cdr (lst 1 2 3)) (lst 2 3)))
-  (!! (eq (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3})) ;; on map it does not make much sense but...
+  (is (cdr [1 2 3]) [2 3])
+  (is (cdr (lst 1 2 3)) (lst 2 3))
+  (is (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3}) ;; on map it does not make much sense but...
 
   ;; last
-  (!! (eq 2 (last (lst 1 2))))
-  (!! (eq 2 (last [1 2])))
-  (!! (eq [:b 2] (last {:a 1 :b 2}))) ;; same here...
+  (is 2 (last (lst 1 2)))
+  (is 2 (last [1 2]))
+  (is [:b 2] (last {:a 1 :b 2})) ;; same here...
 
   ;; butlast (is like clojure.core/butlast but preserve collection type)
-  (!! (eq (cdr [1 2 3]) [2 3]))
-  (!! (eq (cdr (lst 1 2 3)) (lst 2 3)))
-  (!! (eq (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3}))
+  (is (cdr [1 2 3]) [2 3])
+  (is (cdr (lst 1 2 3)) (lst 2 3))
+  (is (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3})
 
   ;; take (like clojure.core/take with arguments reversed and preserving collection type)
-  (!! (eq (take (lst 1 2 3) 2) (lst 1 2)))
-  (!! (eq (take [1 2 3] 2) [1 2]))
-  (!! (eq (take {:a 1 :b 2 :c 3} 2) {:a 1 :b 2}))
+  (is (take (lst 1 2 3) 2) (lst 1 2))
+  (is (take [1 2 3] 2) [1 2])
+  (is (take {:a 1 :b 2 :c 3} 2) {:a 1 :b 2})
 
   ;; drop
-  (!! (eq (drop (lst 1 2 3) 2) (lst 3)))
-  (!! (eq (drop [1 2 3] 2) [3]))
-  (!! (eq (drop {:a 1 :b 2 :c 3} 2) {:c 3}))
+  (is (drop (lst 1 2 3) 2) (lst 3))
+  (is (drop [1 2 3] 2) [3])
+  (is (drop {:a 1 :b 2 :c 3} 2) {:c 3})
 
   ;; takend
-  (!! (eq (takend (lst 1 2 3) 2) (lst 2 3)))
-  (!! (eq (takend [1 2 3] 2) [2 3]))
-  (!! (eq (takend {:a 1 :b 2 :c 3} 2) {:b 2 :c 3}))
+  (is (takend (lst 1 2 3) 2) (lst 2 3))
+  (is (takend [1 2 3] 2) [2 3])
+  (is (takend {:a 1 :b 2 :c 3} 2) {:b 2 :c 3})
 
   ;; dropend
-  (!! (eq (dropend (lst 1 2 3) 2) (lst 1)))
-  (!! (eq (dropend [1 2 3] 2) [1]))
-  (!! (eq (dropend {:a 1 :b 2 :c 3} 2) {:a 1}))
+  (is (dropend (lst 1 2 3) 2) (lst 1))
+  (is (dropend [1 2 3] 2) [1])
+  (is (dropend {:a 1 :b 2 :c 3} 2) {:a 1})
 
   ;; rev
-  (!! (eq (rev [1 2 3]) [3 2 1]))
-  (!! (eq (rev (lst 1 2 3)) (lst 3 2 1)))
+  (is (rev [1 2 3]) [3 2 1])
+  (is (rev (lst 1 2 3)) (lst 3 2 1))
 
   ;; section (select a subsection of a sequantial data structure)
-  (!! (eq (section [1 2 3 4 5 6] 2 5) [3 4 5]))
-  (!! (eq (section (lst 1 2 3 4 5 6) 1 5) (lst 2 3 4 5)))
+  (is (section [1 2 3 4 5 6] 2 5) [3 4 5])
+  (is (section (lst 1 2 3 4 5 6) 1 5) (lst 2 3 4 5))
 
   ;; splat (split a sequential datastructure at the given index)
-  (!! (eq (splat [1 2 3 4] 2) [[1 2] [3 4]]))
-  (!! (eq (splat (lst 1 2 3 4) 2) [(lst 1 2) (lst 3 4)]))
+  (is (splat [1 2 3 4] 2) [[1 2] [3 4]])
+  (is (splat (lst 1 2 3 4) 2) [(lst 1 2) (lst 3 4)])
 
   ;; uncs (uncons)
-  (!! (eq (uncs [1 2 3]) [1 [2 3]]))
-  (!! (eq (uncs (lst 1 2 3)) [1 (lst 2 3)]))
+  (is (uncs [1 2 3]) [1 [2 3]])
+  (is (uncs (lst 1 2 3)) [1 (lst 2 3)])
 
   ;; runcs
-  (!! (eq (runcs [1 2 3]) [[1 2] 3]))
-  (!! (eq (runcs (lst 1 2 3)) [(lst 1 2) 3]))
+  (is (runcs [1 2 3]) [[1 2] 3])
+  (is (runcs (lst 1 2 3)) [(lst 1 2) 3])
 
   ;; cons
-  (!! (eq (cons 1 [2 3]) [1 2 3]))
-  (!! (eq (cons 1 (lst 2 3)) (lst 1 2 3)))
+  (is (cons 1 [2 3]) [1 2 3])
+  (is (cons 1 (lst 2 3)) (lst 1 2 3))
   ;; it can take more arguments
-  (!! (eq (cons 0 1 [2 3]) [0 1 2 3]))
-  (!! (eq (cons 1 2 3 (lst)) (lst 1 2 3)))
+  (is (cons 0 1 [2 3]) [0 1 2 3])
+  (is (cons 1 2 3 (lst)) (lst 1 2 3))
 
   ;; cons?
-  (!! (eq (cons? [1 2]) [1 2]))
-  (!! (nil? (cons? [])))
-  (!! (cons? (lst 1 2) (lst 1 2)))
-  (!! (nil? (cons? (lst))))
-  (!! (eq (cons? {:a 1}) {:a 1}))
-  (!! (nil? (cons? {})))
-  (!! (nil? (cons? #{}))))
+  (is (cons? [1 2]) [1 2])
+  (isnt (cons? []))
+  (is (cons? (lst 1 2)) (lst 1 2))
+  (isnt (cons? (lst)))
+  (is (cons? {:a 1}) {:a 1})
+  (isnt (cons? {}))
+  (isnt (cons? #{})))
 
  ;; map reduce and friends
 
@@ -1281,7 +1279,7 @@
   ;; with sets, given functions receives a twin pair,
   ;; which seems logical as sets can be viewed as maps with twin entries
   ;; it is pointless to use $i explicetly on a set, but in a ploymorphic context, sets have to have a meaningful implementation
-  (eq ($i #{:a :b :c}
+  (is ($i #{:a :b :c}
           ;; the same function we use above in the map exemple
           (f [idx val] [idx val]))
       #{[:a :a] [:b :b] [:c :c]})
@@ -1338,9 +1336,8 @@
       [3 5 7 9])
 
   ;; filt and rem
-  (check
-   (eq [1 2 3]  (filt [1 2 -1 -2 3] num? pos?))
-   (eq [-1 -2] (rem [1 2 -1 -2 3] pos?)))
+  (is [1 2 3]  (filt [1 2 -1 -2 3] num? pos?))
+  (is [-1 -2] (rem [1 2 -1 -2 3] pos?))
 
   )
 
@@ -1538,18 +1535,18 @@
   ;; therefore they can be chained via function composition
 
   ;; some examples of guards
-  (vec? [1 2])     ;;=> [1 2]
-  (vec? (lst 1 2)) ;;=> nil
-  (pos? 1)         ;;=> 1
-  (pos? -1)        ;;=> nil
+  (is (vec? [1 2]) [1 2])
+  (isnt (vec? (lst 1 2)))
+  (is (pos? 1) 1)
+  (isnt (pos? -1))
 
   ;; as we've seen we can chain them like this
   (let [g (>_ num? pos? (gt_ 2))] ;; gt is greater-than
-    (g 3))                        ;;=> 3
+    (is 3 (g 3)))
 
   ;; but + does the same
   (let [g (+ num? pos? (gt_ 2))]
-    (g 3))
+    (is 3 (g 3)))
 
   ;; collection guards ----------------------
 
@@ -1558,12 +1555,12 @@
   (is ($? [1 2 3])
       [1 2 3])
 
-  (!! (nil? ($? [1 nil 2 3])))
+  (isnt ($? [1 nil 2 3]))
 
   (is ($? {:a 1 :b 2})
       {:a 1 :b 2})
 
-  (nil? ($? {:a 1 :b nil}))
+  (isnt ($? {:a 1 :b nil}))
 
   ;; ?$ is a composition of $ and ?$
   ;; it can be viewed as a map operation that succed if all values of the resulting collection are non nil
@@ -1571,7 +1568,7 @@
   (is (?$ [2 3 4 5] num? inc (gt_ 2))
       [3 4 5 6])
 
-  (!! (nil? (?$ [3 4 1 5] num? inc (gt_ 2))))
+  (isnt (?$ [3 4 1 5] num? inc (gt_ 2)))
 
   ;; ?zip
   ;; the zip variant
@@ -1579,7 +1576,7 @@
   (is (?zip #(pos? (add %1 %2)) [1 2 3] [1 2 3])
       (lst 2 4 6))
 
-  (!! (nil? (?zip #(pos? (add %1 %2)) [1 2 3] [1 2 -3])))
+  (isnt (?zip #(pos? (add %1 %2)) [1 2 3] [1 2 -3]))
 
   ;; ?deep
   ;; a deep variant of $?
@@ -1593,27 +1590,24 @@
   ;; creating guards --------------------------
 
   (let [g (guard.unary c/odd?)]
-    (g 1)) ;;=> 1
+    (is 1 (g 1)))
 
   (let [g (guard.binary c/>=)]
-    (g 2 1)) ;;=> 2
+    (is 2 (g 2 1)))
 
   (let [g (guard.variadic c/>=)]
-    (g 8 8 7 6 5 2)) ;;=> 8
+    (is 8 (g 8 8 7 6 5 2)))
 
   ;; or simply
   (let [g (guard:fn c/>=)]
-    (g 8 8 7 6 5 2))
+    (is 8 (g 8 8 7 6 5 2)))
 
   ;; the guard macro
   ;; it has the same syntax than the f macro
   ;; but the resulting function will return the first argument unchanged if its body succeeds, otherwise nil
-  (is ::ok
-      (let [g (guard [x] (odd? (count x)))]
-        (and
-         (eq (g [1 2 3]) [1 2 3])
-         (nil? (g [1 2 3 4]))
-         ::ok)))
+  (let [g (guard [x] (odd? (count x)))]
+    (is (g [1 2 3]) [1 2 3])
+    (isnt (g [1 2 3 4])))
 
   ;; wrapping and importing predicates 
 
@@ -1635,23 +1629,24 @@
   (isnt (?> 1 num? neg?))
 
   ;; we can modify the seed too
-  (eq 2 (?> 1 num? pos? inc))
+  (is 2 (?> 1 num? pos? inc))
 
   ;; shorts after str? (else it would be an error)
   (isnt (?> 1 str? (+_ "aze")))
 
   ;; more exemples
-  (eq 3 (?> [1 2 3] (guard:fn (+ c/count c/odd?)) last))
-  (nil? (?> [1 2] (guard [x] ((+ c/count c/odd?) x)) last))
+  (is 3 (?> [1 2 3] (guard:fn (+ c/count c/odd?)) last))
+  (isnt (?> [1 2] (guard [x] ((+ c/count c/odd?) x)) last))
 
   ;; more composed exemple
   ;; ?> use § under the hood,
   ;; so anything that implement invocation is allowed
-  (!! (?> -1
+  (is (?> -1
           num? ;;=> -1
           (c/juxt (add_ -2) (add_ 2)) ;;=> [-3 1]
           [neg? (?>_ num? pos?)] ;; using _ version
-          ))
+          )
+      [-3 1])
 
 
   ;; ?< --------------------------------------------------------------
@@ -1663,7 +1658,7 @@
   ;; build a guard
   ;; that succeed for numbers or strings
   (let [f (?<_ num? str?)]
-    (eq [1 "a" nil]
+    (is [1 "a" nil]
         [(f 1) (f "a") (f :a)]))
 
   ;; basic composition with ?< and ?>_
@@ -1715,11 +1710,12 @@
            [pos? inc inc inc]
            [neg? dec dec (p mul 2)]))
 
-  (?c> 1
-       ;; here too, if the line does not succeed entirely,
-       ;; skip to the next line
-       [pos? dec pos? :gt1]
-       [pos? :1])
+  (is :1
+      (?c> 1
+           ;; here too, if the line does not succeed entirely,
+           ;; skip to the next line
+           [pos? dec pos? :gt1]
+           [pos? :1]))
 
   (is 5
       (let [f (?c>_
@@ -1750,7 +1746,8 @@
   (let [f (df [inc dec
                {:doubled (f_ (mul 2 _))
                 :halfed (f_ (div _ 2))}])]
-    (f 1)) ;;=> [2 0 {:doubled 2 :halfed 1/2}]
+    (is (f 1)
+        [2 0 {:doubled 2 :halfed 1/2}]))
 
   ;; is equivalent to write
   ((f1 a [(inc a) (dec a)
@@ -1763,16 +1760,19 @@
   ;; in particular constant values like 42 or :foo return themselves
   ;; to demonstrate that df can handle any invocable we will use some of those
   (let [f (df [inc dec :foo 42])]
-    (f 1)) ;;=> [2 0 :foo 42]
+    (is (f 1)
+        [2 0 :foo 42]))
 
   ;; can take several arguments
-  (let [f (df [add sub])] (f 1 2 3)) ;;=> [6 -4]
+  (let [f (df [add sub])]
+    (is (f 1 2 3)
+        [6 -4]))
 
   ;; you can deeply mix maps and vecs to compose your function
   (let [f (df {:addsub [add sub]
                :average (f xs (div (* add xs) (count xs)))})]
-    (f 1 2 3))
-  ;;=> {:addsub [6 -4], :average 2}
+    (is (f 1 2 3)
+        {:addsub [6 -4], :average 2}))
 
   ;; maybe you are wondering about our vec and map invocation behavior
   ;; this is prevented here because vecs and maps mean something else in this context
@@ -1780,8 +1780,8 @@
   (let [f (df [concat
                (§ [add sub mul]) ;; here
                ])]
-    (f [1 2 3] [4 5 6]))
-  ;;=> [(1 2 3 4 5 6) [5 -3 18]]
+    (is (f [1 2 3] [4 5 6])
+        ['(1 2 3 4 5 6) [5 -3 18]]))
 
   )
 
@@ -1791,7 +1791,8 @@
  ;; invocable datastructures, data functions, conditional functions (?c and ?c>),
  ;; guard connectors (?< and ?>)
 
- (!!
+ (is
+
   (?> ["foo" 0]
       ;; with invocable data we can go inside the flowing data
       [
@@ -1815,7 +1816,9 @@
            (?f1 {:zero-foo x}) (f_ (pp "zero-foo " _) _)
            (f_ (pp "num-foo " _) _))
 
-      ))
+      )
+
+  {:positive-foo {:val 0, :++ 1, :-- -1}})
  )
 
 ;; ------------------------------------------------------------------------
@@ -1841,34 +1844,39 @@
   ;; If a ~ appears within the template, however, the expression following the ~ is evaluated ("unquoted")
   ;; and its result is inserted into the structure replacing the ~ and the expression.
 
-  (!! (sq (+ 1 ~(+ 2 3)))) ;;=> (+ 1 5)
+  (is (sq (+ 1 ~(+ 2 3)))
+      '(+ 1 5))
 
-  (!! (sq (list ~(+ 1 2) 4))) ;;=>  (list 3 4)
+  (is (sq (list ~(+ 1 2) 4))
+      '(list 3 4))
 
   (let [name 'a]
-    (sq (list ~name '~name))) ;;=>  (list a (quote a))
+    (is (sq (list ~name '~name))
+        '(list a (quote a))))
 
 
   ;; If a comma appears preceded immediately by a dot, then the following expression must evaluate to an iterable structure;
   ;; the evaluated iterable structure will be merged into its host structure, replacing the dot, the unquote and the expression.
   ;; therefore a 'dot unquote expr' (.~expr) structure has to appears only in an iterable structure (in order to be able to be merged into it).
 
-  (!! (sq (0 .~($ [0 1 2] inc) 4))) ;;=> (0 1 2 3 4)
+  (is (sq (0 .~($ [0 1 2] inc) 4))
+      '(0 1 2 3 4))
 
   (let [amap {:b 2 :c 3}]
-    (sq {:a 1 .~amap})) ;;=> {:a 1, :b 2, :c 3}
+    (is (sq {:a 1 .~amap})
+        '{:a 1, :b 2, :c 3}))
 
   ;; Quasiquote forms may be nested.
   ;; Substitutions are made only for unquoted components appearing at the same nesting level as the outermost backquote.
   ;; The nesting level increases by one inside each successive quasiquotation, and decreases by one inside each unquotation.
 
-  (!! (sq (a (sq (b ~(+ 1 2) ~(foo ~(+ 1 3) d) e)) f)))
-  ;;=> (a (sq (b ~(+ 1 2) ~(foo 4 d) e)) f)
+  (is (sq (a (sq (b ~(+ 1 2) ~(foo ~(+ 1 3) d) e)) f))
+      '(a (sq (b ~(+ 1 2) ~(foo 4 d) e)) f))
 
   (let [name1 'x
         name2 'y]
-    (sq (a (sq (b ~~name1 ~'~name2 d)) e)))
-  ;;=>  (a (sq (b ~x y d)) e)
+    (is (sq (a (sq (b ~~name1 ~'~name2 d)) e))
+        '(a (sq (b ~x y d)) e)))
   )
 
  ;; qq (qualified quasiquote)
@@ -1877,17 +1885,17 @@
  (_
   ;; is somehow similar to clojure quasiquote, in the sense that it let you template a structure like sq do, but also qualifies symbols
 
-  (!! (qq (+ 1 ~(+ 2 3))))
-  ;;=> (_.joining.+ 1 5)
+  (is (qq (+ 1 ~(+ 2 3)))
+      '(_.joining.+ 1 5))
 
   ;; word on qualified symbols
   ;; when qualifying '+ we resolve it to joining.+ (indicating that the '+ function lives in the 'joining module)
   ;; the underscore prefix simply make explicit that it is an absolute path (preventing any relative or bubling resolution that could occur at a later stage)
 
   ;; if a symbol is not resolvable it is left as is
-  (!! (qq (+ a b c)))
-  ;;=> (_.joining.+ a b c)
-
+  (is (qq (+ a b c))
+      '(_.joining.+ a b c))
+ 
   ;; all the things that we've seen with sq are possible with qq
   )
 
@@ -1897,12 +1905,13 @@
  ;; the behavior is the same as 'qq but it throws when encountering an unqualifiable symbol
 
  (_
-  (!! (qq! (+ 1 ~(+ 2 3)))) ;;=> (_.joining.+ 1 5)
+  (is (qq! (+ 1 ~(+ 2 3)))
+      '(_.joining.+ 1 5))
 
   ;; the following will throw, indicating: "unqualifiable symbol: a"
-  (throws
-   (!! (qq! (+ a b c))))
-  ))
+  '(!! (qq! (+ a b c))) ;;=> throws
+  )
+ )
 
 ;; ------------------------------------------------------------------------
 ;;                         environment (continued)
@@ -1961,8 +1970,8 @@
   (exp @E '(postfix (postfix 5 4 add) 3 2 1 add))
   ;;=> (add:val 1 2 3 (add:val 4 5))
 
-  (!! (postfix (postfix 5 4 add) 3 2 1 add))
-  ;;=> 15
+  (is (postfix (postfix 5 4 add) 3 2 1 add)
+      15)
 
   ;; it is not a high price to pay I think, given the flexibility and power it can provide
 
@@ -2008,12 +2017,13 @@
        (f [e xs]
           (let [lit-nums (shrink+ xs num?) ;; we grab all litteral numbers
                 others (shrink- xs num?)]  ;; and we keep others operands
-            ;; we return the preprocessed form
-            '(fancy-add:val ;; we have to explicitly write the :val suffix in this case
-              ;; we peform the compile time work
-              ~(* add lit-nums)
-              ;; we thread the expansion mapping cxp (composite expand) on others operands and splice the result
-              .~($ others (p cxp e)))))
+            ;; we return the preprocessed form (expanded with e)
+            (exp e
+                 (qq (fancy-add:val ;; we have to explicitly write the :val suffix in this case
+                      ;; we peform the compile time work
+                      ~(* add lit-nums)
+                      ;; we thread the expansion mapping cxp (composite expand) on others operands and splice the result
+                      .~($ others (p cxp e)))))))
 
        ;; runtime behavior, a normal addition
        ;; using the scheme's variadic args syntax and the composite syntax (the dot)
@@ -2026,8 +2036,9 @@
   ;;=> (clojure.core/let [a_152671 1]
   ;;     (fancy-add:val 3 a_152671))
 
-  (!! (let [a 1]
-        (fancy-add 1 a 2))) ;;=> 4
+  (is 4
+      (let [a 1]
+        (fancy-add 1 a 2)))
   )
 
  ;; substitutions --------------
@@ -2067,7 +2078,6 @@
   ;; so now it is substituted by what's in substitution-exemple.bar:val
   (exp @E 'substitution-exemple.bar)    ;=> 42
 
-  (env-inspect 'substitution-exemple.bar)
   )
 
  ;; updates --------------------
@@ -2106,7 +2116,7 @@
   ;; the expression being previously compiled with the current environment
   (E+ fx-demo.foo [:fx (println "defining fx-demo.foo") :val 42])
 
-  ;; in practice it is used for things like, extending a protocol for exemple.
+  ;; in practice it is used for things like, extending a protocol or running tests for exemple.
   ;; see the 'generic section (which wrap clojure's protocols)
 
   ;; all those special attributes may appears abstract at this time,
@@ -2197,10 +2207,15 @@
        [a b]
        :vec {:vec a :extra-arg b}))
 
-  (!! (my-generic2 [1 2 3] "iop"))
+  (is (my-generic2 [1 2 3] "iop")
+      {:vec [1 2 3], :extra-arg "iop"})
+
   ;; we still benefits from the others arity implementations
-  (!! (my-generic2 [1 2 3]))
-  (!! (my-generic2 [1 2 3] 1 2 3))
+  (is (my-generic2 [1 2 3])
+      {:coll [1 2 3]})
+  (is (my-generic2 [1 2 3] 1 2 3)
+      {:my-generic2-variadic-arity
+       {:a [1 2 3], :b 1, :c '(2 3), :c1 2, :cs '(3)}})
 
   ;; the extend form is letting you implement several things at once
   ;; it has the same syntax as the initial definition
@@ -2263,12 +2278,9 @@
                      (mytyp (+ (:bar a) (:bar b))
                           (+ (:baz a) (:baz b)))))))
 
- (!! (+.inspect))
-
  ;; instantiation
- (!! (mytyp 1 2))
- 
- (!! (map->mytyp {:bar 1 :baz 2}))
+ (is (mytyp 1 2)
+     (map->mytyp {:bar 1 :baz 2}))
 
  ;; typecheck
  (is (mytyp? (mytyp 1 2))
@@ -2351,12 +2363,16 @@
 
  (env-inspect 'named)
 
- (!! (let [o (named "Bob")] (:greet o "Joe")))
+ (let [o (named "Bob")]
+   (is (:greet o "Joe")
+       "Hello Joe my name is Bob"))
 
- (!! (let [o (person "Bob" "Wallace")]
-       (lst (:greet o "Joe")
-            (:walk o)
-            person.proto)))
+ (let [o (person "Bob" "Wallace")]
+   (is (:greet o "Joe")
+       "Hello Joe my name is Wallace" )
+   (is (:walk o)
+       "i'm walking")
+   person.proto)
 
 
 
@@ -2414,8 +2430,8 @@
   ;; as an exemple, we use the 'ks operation
   (!! (dive (ks a b) {:a 1 :b 2 :c 2}))
   ;; ks is resolved in dive.ops and applied to the given args (here :a and :b), producing this form
-  (dive (fn [y] (select-keys y [:a :b]))
-        {:a 1 :b 2 :c 2})
+  '(dive (fn [y] (select-keys y [:a :b]))
+         {:a 1 :b 2 :c 2})
 
   ;; functions implement dive so the expansion time work is done, the form will now ready for runtime
 
@@ -2438,14 +2454,6 @@
    ;; inspecting the ops table
    (ppenv dive.ops)
 
-   (_ :scratch
-
-      (defmacro updxp [[v & args]]
-        `(!! (~(sym v ":upd") @E '~(vec args))))
-
-      (updxp (dive.op+ wtf [x]
-                       (qq (f_ [:wtf ~x _])))))
-
    ))
 
  ;; tack
@@ -2462,57 +2470,57 @@
   ;; tack
   ;; -----------------------------
 
-  (eq  (tack 1      ;; the address
+  (is  (tack 1      ;; the address
              [1 2 3] ;; the object (target)
              :io     ;; what we put
              )
        [1 :io 3])
 
   ;; it supports neg idexes like dive does
-  (eq (tack -1 [1 2 3] :foo))
-  (eq (tack -1 '(1 2 3) :foo))
+  (is (tack -1 [1 2 3] :foo))
+  (is (tack -1 '(1 2 3) :foo))
 
   ;; vectors denotes nesting
-  (eq (tack [:a :b] {} 42)
+  (is (tack [:a :b] {} 42)
       {:a {:b 42}})
 
-  (eq (tack [:a :b] nil 42)
+  (is (tack [:a :b] nil 42)
       {:a {:b 42}})
 
-  (eq (tack [:a 2] nil 42)
+  (is (tack [:a 2] nil 42)
       {:a [nil nil 42]})
 
-  (eq [[[nil nil 42]]]
+  (is [[[nil nil 42]]]
       (tack [0 0 2] [] 42))
 
   ;; put
   ;; -----------------------------
   ;; put is the same as tack but takes the target as first argument, more similar to assoc
 
-  (eq {:a 1}
+  (is {:a 1}
       (put nil :a 1))
 
-  (eq {:a {:b 1}}
+  (is {:a {:b 1}}
       (put {} [:a :b] 1))
 
-  (eq [[[nil nil 42]]]
+  (is [[[nil nil 42]]]
       (put nil [0 0 2] 42))
 
-  (eq [nil [nil nil [1]] nil 89]
+  (is [nil [nil nil [1]] nil 89]
       (put [] [1 2 0] 1 3 89))
 
-  (eq {:a {:b 1, :p {:l [0 1 2]}}}
+  (is {:a {:b 1, :p {:l [0 1 2]}}}
       (put {} [:a :b] 1 [:a :p :l] [0 1 2]))
 
   ;; upd
   ;; -----------------------------
   ;; like clojure update but using tack under the hood
 
-  (eq [0 [1 1]]
+  (is [0 [1 1]]
       (upd [0 [0 1]] [1 0] inc))
 
   ;; it can take several updates at once
-  (eq {:a {:b [0 2 2], :c {:d 42}}}
+  (is {:a {:b [0 2 2], :c {:d 42}}}
       (upd {:a {:b [0 1 2]}}
            [:a :b 1] inc
            [:a :c :d] (k 42)))
@@ -2523,7 +2531,6 @@
   ;; TODO
 
   ))
-
 
 ;; ------------------------------------------------------------------------
 ;;                             dev utilities
@@ -2551,328 +2558,21 @@
                            [(gensym) (qq (c/repeat ~n ~x))]))
 )
 
+;; ------------------------------------------------------------------------
+;;                               at last
+;; ------------------------------------------------------------------------
 
+(_
 
+ ;; first of all, If you made it until here, thank you very much :)
 
+ ;; there is much things that are still to be done in order to make asparagus a usable language
+ ;; tooling is lacking
+ ;; error messages are not always so helpful
+ ;; we need a proper inspector for the environment
+ ;; wich will certainly be fun to implement when asparagus will be ported to clojurescript
+ ;; the port to clojurescript will not be trivial, because asparagus rely on eval (but bootstrapped clojurescript is here, so it should be possible)
 
+ ;; TODO
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-;; quoting -----------------------------------------
-
-(_ :quote-xp
-
-   (_ :xp1
-
-      (E+ foo 42)
-
-      (exp @E 'foo)
-
-      (E+ foo:sub (f_ 'foo:val))
-
-      (defmacro expquote [x]
-        `(exp @E ''~x))
-
-      (exp @E ''(f [a b c] a))
-
-      (expquote (f [a b c] a))
-
-      (c/eval (exp @E (c/eval (expquote (f1 [arg1] '(f1 sd [:wtf3 arg1 sd]))))))
-
-      (!! '(f1 [arg1] '(f1 sd [:wtf3 arg1 sd])))
-
-      ;; lambda exp
-      (exp @E '(f [a b c] a))
-      (exp @E '(f1 a a))
-      (exp @E '(f1 _ _))
-      (exp @E '(f_ _))
-
-      (!! ((lambda.compiler) @E '([_a] _a)))
-
-      (!! (hygiene.shadow.gensym? '_))
-
-      (!! (cadr 'abc))
-
-      (E+ quote:mac
-          (fn [e [x]]
-            (pp "exp quot " x)
-            (cp.expand (fun.alt e 0 x))))
-
-      (E+ foo 42)
-
-      (exp @E
-           '(let [foot 12 b :sd c 1 d (quot yop)]
-              #_(quote.fun:alt e 0 (lst ))
-              '(foo ~b '(c ~'~d))))
-
-      (let [foot 12 b :sd c 1 d (quot yop)]
-        #_(quote.fun:alt e 0 (lst ))
-        '(foo ~b '(c ~'~d)))
-
-      (let [foot 12 b :sd c 1 d (quot yop)]
-        #_(quote.fun:alt e 0 (lst ))
-        (sq (foo ~b (sq (c ~'~d)))))
-
-      (!! '(1 '~(add 1 ~(add 2 3)) 4))
-      (!! (list 1 (list (sym "quote") (list `unquote (list 'add '1 (add 2 3))))))
-
-      (expquote (1 '~(add 1 ~(add 2 3)) 4))
-
-      (do '~a)
-
-      (env-inspect 'b)
-
-      (holycoll? '(a b c))
-
-      (quote? (lst 'quote 1))
-
-      '(a b c `(r t y))
-
-      (!! (hygiene.shadow @E 'aze_123))
-
-      (defmacro xp [x]
-        `(exp @E '~x))
-
-      (xp (f [z_123] z_123))
-
-      (E+ q'
-          [:links {cp composite}
-           (fn [e form]
-             #_(pp "io")
-             (cp form
-                 ;; we do not touch dots
-                 ;; they will be handled via composite.expand after quoting
-                 cp.dot? cp.dot
-                 cp.dotdot? cp.dotdot
-                 ;; if unquote we perform expansion with e
-                 unquote? (exp e (second form))
-                 ;; handle collections
-                 seq? (cons `list ($ form (p rec e)))
-                 holycoll? ($ form (p rec e))
-                 ;; else we quote wathever it is
-                 (quote.fun.wrap form)))
-           :mac
-           (fn [e [x]]
-             (cp.expand
-              (q':val e x)))])
-
-      (E+ quote:mac q':mac)
-
-      (ppenv quote.fun.wrap)
-
-      (!! (let [a 1] '(a b ~(add 1 2) ~{a a})))
-
-      (first (first '(~r)))
-      )
-
-   (_ :uncomplected-quotes
-
-      ;; quoting, qualifying, splicing, unquoting
-
-      'sq ;; quasiquote
-      'qq ;; quasiquote qualified
-      'qq! ;; quasiquote qualified strict
-
-      (E+ quotes
-          [:links {cp composite}
-
-           wrap
-           (fn [x] (list (symbol "quote") x))
-           rootsym
-           (fn [p] (path->sym (path (symbol "_") p)))
-
-           mk
-           (fn [{:keys [strict qualified]}]
-             (fn [e form]
-               #_(pp "io")
-               (cp form
-                   ;; we do not touch dots
-                   ;; they will be handled via composite.expand after quoting
-                   cp.dot? cp.dot
-                   cp.dotdot? cp.dotdot
-                   ;; if unquote we perform expansion with e
-                   unquote? (cxp e (second form))
-                   ;; handle collections
-                   seq? (cons `list ($ form (p rec e)))
-                   holycoll? ($ form (p rec e))
-                   symbol?
-                   (cs strict
-                       (let [[p _] (assert (bubfind e (path form))
-                                           (str "unqualifiable symbol: " form " "))]
-                         (quotes.wrap (quotes.rootsym (path form))))
-                       qualified
-                       (cs [p (path form)
-                            [p v] (bubfind e p)]
-                           (quotes.wrap (quotes.rootsym p))
-                           (quotes.wrap form))
-                       (quotes.wrap form))
-                   ;; else we quote wathever it is
-                   (quotes.wrap form))))
-
-           sq:mac  (fn [e [x]] (let [f (quotes.mk {})] (cp.expand (f e x))))
-           qq:mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e x))))
-           qq!:mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e x))))
-
-           quote?
-           (fn [e x]
-             (or (p/quote? x)
-                 (and (seq? x)
-                      (sym? (car x))
-                      (#{(path (sym "quotes.sq:mac"))
-                         (path (sym "quotes.qq:mac"))
-                         (path (sym "quotes.qq!:mac"))}
-                       (or (qualsym e (car x))
-                           (qualsym e (sym (car x) :mac)))))))
-
-           unquote-quote?
-           (fn [e x]
-             (and (unquote? x)
-                  (quotes.quote? e (second x))))
-
-           mk2
-           (fn [{:keys [strict qualified]}]
-             (fn [e lvl form]
-               #_(pp "mk2 in" lvl form "_")
-               (cp form
-
-                   ;; we do not touch dots
-                   ;; they will be handled via composite.expand after quoting
-                   cp.dot? cp.dot
-                   cp.dotdot? cp.dotdot
-
-                   ;; if quote-unquote we strip a lvl
-                   (p quotes.unquote-quote? e)
-                   (rec e (dec lvl) (second (second form)))
-
-                   ;; if unquote we perform expansion with e
-                   unquote?
-                   (cs (zero? lvl)
-                       (cxp e (second form))
-                       (list `list (quotes.wrap `unquote) (rec e (dec lvl) (second form))))
-
-                   ;; if nested quote
-                   (p quotes.quote? e)
-                   (list `list (quotes.wrap (car form)) (rec e (inc lvl) (second form)))
-
-                   ;; handle collections
-                   seq? (cons `list ($ form (p rec e lvl)))
-                   holycoll? (p/$ form (p rec e lvl))
-
-                   symbol?
-                   (cs (not qualified)
-                       (quotes.wrap form)
-
-                       [[p v] (bubfind e (path form))]
-                       (cs (get v :local)
-                           (quotes.wrap (exp e form))
-                           (quotes.wrap (quotes.rootsym p)))
-
-                       (cs strict
-                           (error "unqualifiable symbol: " form)
-                           (quotes.wrap form)))
-
-                   #_(cs strict
-                         (let [[p _] (assert (bubfind e (path form))
-                                             (str "unqualifiable symbol: " form " "))]
-                           (quotes.wrap (quotes.rootsym (path form))))
-
-                         qualified
-                         (cs [p (path form)
-                              [p v] (bubfind e p)]
-                             ;; if symbol is a local binding we substitute it
-                             (if (get v :local)
-                               (quotes.wrap (exp e form))
-                               ;; else we just qualifies it
-                               (quotes.wrap (quotes.rootsym p)))
-                             (quotes.wrap form))
-
-                         (quotes.wrap form))
-
-                   ;; else we quote wathever it is
-                   (quotes.wrap form))))
-
-           sq:mac  (fn [e [x]] (let [f (quotes.mk2 {})] (cp.expand (f e 0 x))))
-           qq:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true})] (cp.expand (f e 0 x))))
-           qq!:mac (fn [e [x]] (let [f (quotes.mk2 {:qualified true :strict true})] (cp.expand (f e 0 x))))]
-
-          (import quotes [sq qq qq!])
-
-          :fx
-          (check
-           (sq (add 1 2 ~(+ [] (lst 1 2))))
-           (qq (add 1 2 a ~(sip [] . (lst 1 2))))
-           ;; (throws (qq! (add 1 2 a ~(+ [] (lst 1 2)))))
-           (qq (add 1 2 a ~(sip [] . (lst 1 2))
-                    (qq (a b c ~'(add 1 2 . ~(lst 3 4)))))))
-
-          ))
-
-   (!! (sq (sq ~'(aze ~(add 1 2)))))
-
-   (exp (env-add-member env0 (path 'yop:sub) (fn [e] (lst (sym "quote") (sym "yop"))))
-        '(+ [] (yop 9)))
-
-   (E+ bob
-       {:mac
-        (fn [e xs]
-          (id ;; cxp e
-           (qq (fn [] (p/asserts . ~xs)))))
-        #_:upd
-        #_(fn [e xs] {:check (qq (bob.thunk . ~xs))})})
-
-   (!! (qq p/asserts))
-
-   (ns-resolve-sym 'p/asserts)
-
-   (let [a (sym "iop")]
-     (qq '~a))
-
-   (updxp (generic.reduced [a b] :num (add a b)))
-
-   (E+ foo (generic.reduced [a b] :num (add a b)))
-
-   `(a b '(c d))
-
-   (!let [42 43] "iop")
-
-   (exp @E ''foo)
-
-   (!! 'foo))
-
-(E+ exp
-    ["importing the asparagus.core/exp function
-       adding a macro version of it that perform the expansion at compile time using the compiling environment"
-
-     :val asparagus.core/exp
-
-     :mac
-     (fn [e xs]
-       (let [arity (count xs)]
-         (if (= 1 arity)
-           (exp:val e (car xs))
-           (exp:val e (qq (exp:val .~xs))))))])
-
-(ppenv exp)
-
-(!! (_.exp:val @E [1 2 ]))
-
-(!! (exp (let [a 1] a)))
-
-(!! (exp @E '(let [a 1] a)))
-
-
+ )

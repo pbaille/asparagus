@@ -23,6 +23,7 @@
 
 (def colls
   {:seq [clojure.lang.ISeq]
+   :lst [clojure.lang.PersistentList]
    :map [clojure.lang.PersistentArrayMap
          clojure.lang.PersistentHashMap]
    :set [clojure.lang.IPersistentSet]
@@ -37,7 +38,7 @@
    :atom (p/kset atoms)
    :coll (p/kset colls)
    :word #{:key :str :sym}
-   :line #{:vec :seq}
+   :line #{:vec :seq :lst}
    :hash #{:map :set}})
 
 ;; state --------------------------------------------
@@ -176,6 +177,7 @@
   {:fun `fn?
    :vec `vector?
    :seq `seq?
+   :lst `list?
    :set `set?
    :map `map?
    :num `number?
@@ -281,91 +283,93 @@
 
 ;; tuto -----------------------------------------------
 
-;; asparagus.boot.type is a thin and simple layer on top of clojure's class hierarchy
-;; lets first inpect the registry, which old the state of the system
+(comment
 
-'(clojure.pprint/pprint  @reg)
+ ;; asparagus.boot.type is a thin and simple layer on top of clojure's class hierarchy
+ ;; lets first inpect the registry, which old the state of the system
 
-;; looks like:
-'{:prims
-  {:num [java.lang.Number],
-   :fun [clojure.lang.Fn],
-   :vec ...},
-  :groups
-  {:prim #{:num :fun :vec :key :sym :str :nil :seq :set :map},
-   :atom #{:num :fun :key :sym :str},
-   :coll ...}}
+ '(clojure.pprint/pprint  @reg)
 
-;; so we use keyword to represent what I will refer from now as 'typetags'
+ ;; looks like:
+ '{:prims
+   {:num [java.lang.Number],
+    :fun [clojure.lang.Fn],
+    :vec ...},
+   :groups
+   {:prim #{:num :fun :vec :key :sym :str :nil :seq :set :map},
+    :atom #{:num :fun :key :sym :str},
+    :coll ...}}
 
-;; it contains 2 keys
+ ;; so we use keyword to represent what I will refer from now as 'typetags'
 
-;; :prims which holds a map of typetag -> [class]
-;; it simply stays that a typetag correspond to some classes
-;; for example, the entry: :map -> [clojure.lang.PersistentArrayMap clojure.lang.PersistentHashMap]
-;; stays that :map type tag correspond to the classes clojure.lang.PersistentArrayMap and clojure.lang.PersistentHashMap
-;; a typetag can correspond to several classes
+ ;; it contains 2 keys
 
-;; :groups which holds a map of typetag -> #{typetag}
-;; it lets you group several typetags together under another typetag
-;; as an example, the entry: :coll -> #{:vec :seq :set :map}
-;; stays that :vec, :seq, :set and :map belong to the :coll group
+ ;; :prims which holds a map of typetag -> [class]
+ ;; it simply stays that a typetag correspond to some classes
+ ;; for example, the entry: :map -> [clojure.lang.PersistentArrayMap clojure.lang.PersistentHashMap]
+ ;; stays that :map type tag correspond to the classes clojure.lang.PersistentArrayMap and clojure.lang.PersistentHashMap
+ ;; a typetag can correspond to several classes
 
-;; you can extend the registry like this
+ ;; :groups which holds a map of typetag -> #{typetag}
+ ;; it lets you group several typetags together under another typetag
+ ;; as an example, the entry: :coll -> #{:vec :seq :set :map}
+ ;; stays that :vec, :seq, :set and :map belong to the :coll group
 
-;; adding a primitive
-(prim+ :char ;; the introduced typetag 
-       [java.lang.Character] ;; the classes that belongs to it
-       [:prim :atom] ;; the groups it belongs to
-       )
+ ;; you can extend the registry like this
 
-;; enriching or declaring a group
-(group+ :hash ;; the introduced or enriched typetag
-        [:map :set] ;; the members that belongs to it
+ ;; adding a primitive
+ (prim+ :char                ;; the introduced typetag 
+        [java.lang.Character] ;; the classes that belongs to it
+        [:prim :atom]         ;; the groups it belongs to
         )
 
-;; inspection utilities
+ ;; enriching or declaring a group
+ (group+ :hash      ;; the introduced or enriched typetag
+         [:map :set] ;; the members that belongs to it
+         )
 
-(childs :hash) ;;=> (:set :map)
+ ;; inspection utilities
 
-(childof :set :hash) ;;=> :set
-(childof :vec :hash) ;;=> nil
+ (childs :hash) ;;=> (:set :map)
 
-;; >= behaves like childof but is also true if the two given typetag are equals
-(<= :hash :hash) ;;=> :hash
-(<= :map :hash) ;;=> :map
-(<= :vec :hash) ;;=> nil
+ (childof :set :hash) ;;=> :set
+ (childof :vec :hash) ;;=> nil
 
-(parents :map) ;;=> (:prim :coll :hash)
+ ;; >= behaves like childof but is also true if the two given typetag are equals
+ (<= :hash :hash) ;;=> :hash
+ (<= :map :hash)  ;;=> :map
+ (<= :vec :hash)  ;;=> nil
 
-(parentof :hash :map) ;;=> :hash
-(parentof :hash :vec) ;;=> nil
+ (parents :map) ;;=> (:prim :coll :hash)
 
-;; >= behaves like parentof but is also true if the two given typetag are equals
-(>= :hash :hash) ;;=> :hash
-(>= :hash :map) ;;=> :hash
-(>= :hash :vec) ;;=> nil
+ (parentof :hash :map) ;;=> :hash
+ (parentof :hash :vec) ;;=> nil
 
-;; you can list all classes that belongs to a typetag
+ ;; >= behaves like parentof but is also true if the two given typetag are equals
+ (>= :hash :hash) ;;=> :hash
+ (>= :hash :map)  ;;=> :hash
+ (>= :hash :vec)  ;;=> nil
 
-(classes :word) ;;=> (clojure.lang.Keyword clojure.lang.Symbol java.lang.String)
+ ;; you can list all classes that belongs to a typetag
 
-(all-types)
-;; #{:num :fun :hash :vec :key :coll :sym
-;;   :str :line :word :nil :seq :set :atom
-;;   :map :prim :char :any}
+ (classes :word) ;;=> (clojure.lang.Keyword clojure.lang.Symbol java.lang.String)
 
-;; isa lets you test if something belongs to a typetag
-(isa :vec []) ;;=> true
-(isa :vec "aze") ;;=> false
+ (all-types)
+ ;; #{:num :fun :hash :vec :key :coll :sym
+ ;;   :str :line :word :nil :seq :set :atom
+ ;;   :map :prim :char :any}
 
-;; isa is kinf of slow, it is enough for non critical application (like compile time stuff)
-;; if you want fast typechecks you can use those, for any registry update (prim+, group+) it is recomputed
+ ;; isa lets you test if something belongs to a typetag
+ (isa :vec [])   ;;=> true
+ (isa :vec "aze") ;;=> false
 
-(let [coll? (:coll guards)]
-  (coll? [1 2]) ;;=> [1 2]
-  (coll? "yo") ;;=> nil
-  )
+ ;; isa is kinf of slow, it is enough for non critical application (like compile time stuff)
+ ;; if you want fast typechecks you can use those, for any registry update (prim+, group+) it is recomputed
+
+ (let [coll? (:coll guards)]
+   (coll? [1 2]) ;;=> [1 2]
+   (coll? "yo")  ;;=> nil
+   ))
 
 
 

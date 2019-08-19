@@ -44,12 +44,14 @@
 ;; keep in mind that two other important namespaces on top of which asparagus is built are asparagus.boot.types and asparagus.boot.generics
 ;; they contain examples and documentation so feel free to study them to
 
-;; ------------------
+;;dev
+;; ------------------------------------------------------------------------------
 
-;; a dev convenience that will reset the asparagus global environment and do some cleaning when the file is reloaded
+;; a convenience that will reset the asparagus global environment and do some cleaning when the file is reloaded
 (when-let [! (c/resolve 'rEset!)] (!))
 
-;; env --------------
+;;env
+;; ------------------------------------------------------------------------------
 
 (do :path
 
@@ -469,11 +471,11 @@
            #_(env-absfind e (path-unprefix p))
 
            ;; p is relative
-           [plvl (.rel p) 
+           [plvl (.rel p)
             loc' (nth-parent-path (ppath (loc e)) plvl)]
            (env-find (cd e loc') (apath p))
 
-           ;; p is absolute, potentially linked 
+           ;; p is absolute, potentially linked
            [ret (env-find e p)] ret
 
            ;; if nothing was found, we bubble up one level, if not already at root
@@ -759,7 +761,7 @@
       #_(pp "exp " x)
       (let [;; this expansion context thing is an attempt to provide better error messages on expansion failure
             ;; used by expand-mcall and expand-subpath via defexpansion
-            e (update e :exp-ctx (fnil conj []) x)] 
+            e (update e :exp-ctx (fnil conj []) x)]
         (->> x (qualify e) (expand e))))
 
     (defne res
@@ -1072,8 +1074,9 @@
 
 ;; from this point asparagus is built in itself (using E+ macro)
 ;; for a gentle introduction to E+, please refer to ./tut.clj
+;; ------------------------------------------------------------------------------
 
-(do :reboot
+(do :asparagus
 
     (rEset!)
 
@@ -1363,7 +1366,7 @@
                (optimize e (lst `first (form xs)))))
 
             :tries
-            '(do (exp @E '(cs [[x & _xs] 1] 1 :nop)) 
+            '(do (exp @E '(cs [[x & _xs] 1] 1 :nop))
                  )]
 
            :demo
@@ -1617,11 +1620,11 @@
        (fn [e x]
          (and (seq? x)
               (sym? (car x))
-              (#{(path (sym "quotes.sq:mac"))
-                 (path (sym "quotes.qq:mac"))
-                 (path (sym "quotes.qq!:mac"))}
+              (#{(path 'quotes.sq:mac)
+                 (path 'quotes.qq:mac)
+                 (path 'quotes.qq!:mac)}
                (or (qualsym e (car x))
-                   (qualsym e (sym (car x) :mac))))))
+                   (qualsym e (sym (car x) ":mac"))))))
 
        unquote-quote?
        (fn [x]
@@ -1865,7 +1868,7 @@
           ;; basic usage --------
 
           (E+
-           ;; declaring some random stuff to work with 
+           ;; declaring some random stuff to work with
            foo.bar {a ["foobar a" (fn [] 'foobara)]}
            foo.qux 42
 
@@ -2069,8 +2072,7 @@
             (apply add a b G__1 G__2 G__3 G__4)))
 
           it would be absolutly painful to write such things by hand, and we gain performance on arity 1..5, and use apply only for larger ones
-          this should looks like a minimal gain, because apply is quite permormant, but for core functions this gain is valuable
-"
+          this should looks like a minimal gain, because apply is quite permormant, but for core functions this gain is valuable"
 
          expansion-size 5
 
@@ -2198,7 +2200,7 @@
            :num (c/+ a b)
            :any (c/reduce sip a (iter b)))
 
-          (check.thunk 
+          (check.thunk
            (eq (+ {:a 1} {:b 2})
                {:a 1 :b 2})
            (eq (+ '(1 2) [3 4])
@@ -2759,7 +2761,7 @@
               "map assertion fail!"))
             (throws
              (assert
-              ["my assert" 
+              ["my assert"
                (pos? 1)
                (gt 3 2)
                [:A1
@@ -3160,7 +3162,7 @@
 
           (nil? (let [(pos? a) 1 (neg? ?b) 0] (div a ?b)))
 
-          ;; type guards 
+          ;; type guards
           (eq [1 2] (let [(:vec v) [1 2]] v))
           (nil? (let [(:map v) [1 2] _ (error "never")] v))
 
@@ -3663,7 +3665,7 @@
               ($ nxt #(walk? % ? f))
               (f x))))
 
-        (_ :tries 
+        (_ :tries
            (!! ($+.inspect))
            (!! #_($ [1 2 3] inc inc)
                ($+ [[1 2 3][5 6 7]] id range)))
@@ -3713,8 +3715,7 @@
           (>_ (take_ 3) (dropend_ 2)) ;; will return a function that wait for its first argument ('myseq in the previous example)
 
           the idea behind this is to ease function composition, the preference for guards over predicates is also a step in this direction
-          the further 'flow section will introduce some useful functional constructs that go even further (in conjunction with this and guards)
-"
+          the further 'flow section will introduce some useful functional constructs that go even further (in conjunction with this and guards)"
          :val
          (f1 f
              (fn& [] (f1 s (f s ...))))
@@ -4015,8 +4016,7 @@
              functions implement dive so the expansion time work is done, the form will now ready for runtime
 
              As you may have deduced by yourself, dive.ops can be extended with new operations
-             Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :))
-"
+             Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :))"
 
              (generic
               [x y]
@@ -4068,7 +4068,7 @@
              ops:val
              {:ks
               (f [xs]
-                 '(fn [y] (select-keys y ~(vec* ($ xs key)))))}
+                 (qq (fn [y] (select-keys y ~(vec* ($ xs key))))))}
 
              op+:upd
              (f [e [name argv expr]]
@@ -4182,7 +4182,7 @@
           ?$ ?$i filt rem ?> ?<)
 
          :fx
-         (check 
+         (check
           ;; success
           (eq 1 (?> 1 num? pos?))
           ;; failure
@@ -4434,67 +4434,8 @@
              (throws (t [:point 1 "io"]))))
           ]))
 
-    ;; this 
-    #_(E+ move-members
-          {:doc
-           "a couple of updates for moving (aliasing is more accurate) members from path to path
-              It is mainly used in order to being able to define related functions in a module
-              which is handy to put documentation tests exemples and helpers
-              then make them available elsewhere (most commonly top level)"
-
-           :usage
-           '[(move-members target-path [mod1.foo mod2.bar])
-             (move-members base-path target-path [m1 m2 m3])
-             "if target-path is nil, root-path is used"]
-
-           ;; helpers
-
-           path-head
-           (fn [p]
-             (let [mk (.mkey p)
-                   ps (path-segments (ppath p))]
-               (path (last ps) mk)))
-
-           switch-prefix
-           (fn [pref p]
-             (let [head (path-head p)]
-               (or (path pref head) head)))
-
-           build-upd
-           (fn ([target-path xs]
-               (let [xs ($ xs path)
-                     ks ($ xs (p switch-prefix target-path))]
-                 (zipmap ($ ks path->sym)
-                         ($ xs path->sym))))
-             ([base-path target-path xs]
-              (build-upd target-path
-                         ($ xs (p path base-path)))))
-
-           ;; update
-
-           :upd
-           (fn [_ xs]
-             (apl build-upd xs))
-
-           to-root:upd
-           (fn [_ [a b]]
-             (if-not b
-               (build-upd nil a)
-               (build-upd a nil b)))
-
-           :tries
-           '(do
-
-              (E+ ffoo.bar {a 1 b 2}
-                  (move-members nil [ffoo.bar.a ffoo.bar.b]))
-
-              (E+ ggoo.bar {a :ggoobara b :ggoobarb}
-                  (move-members ggoo.bar nil [a b]))
-
-              (!! a))})
-
-    ;; redefine generic case expansion to follow the asparagus binding syntax
     (E+ generic.spec.exp-case
+        ;; redefine generic case expansion to follow the asparagus binding syntax
         (f [e [argv . body]]
            (let [amp '&
                  argv ($ argv (f_ (if (= _ composite.dot) amp _)))
@@ -4545,7 +4486,7 @@
                                vec? (c/assoc x k v)))
 
                        (nil? x)
-                       (sip (vec* (c/repeat k nil)) v) 
+                       (sip (vec* (c/repeat k nil)) v)
 
                        ;; we fill the missing idxs with nils
                        (+ x (tack (sub k (c/count x)) nil v)))))
@@ -4834,6 +4775,8 @@
      f_ !f_ ?f_ !fu_ fu_
      cf ?cf !cf cfu !cfu
      clet clut !clet !clut
-     case casu !case !casu)
-    )
+     case casu !case !casu
+     throws)
 
+    (pp :DONE)
+    )
