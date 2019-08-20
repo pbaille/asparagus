@@ -1,6 +1,7 @@
-(ns asparagus.boot.generics
-  (:require [asparagus.boot.prelude :as p :refer [$ $vals sym pp]])
-  (:require [asparagus.boot.types :as t]))
+(ns asparagus.boot2.generics
+  (:require [asparagus.boot2.prelude :as p :refer [$ $vals sym pp]]
+            [asparagus.boot2.types :as t]
+            [asparagus.boot2.state :refer [state]]))
 
 ;; generic function
 ;; based on clojure protocols with some extra features
@@ -15,12 +16,14 @@
 
 (do :state
 
-    ;; hold generics implementations
-    (def reg (atom {}))
+    (swap! state assoc :fns {})
+
+    (defn get-reg []
+      (:fns @state))
 
     (defn get-spec! [name]
-      (p/assert (get @reg name)
-              (str "Cannot find spec " name))))
+      (p/assert (get-in @state [:fns name])
+                (str "Cannot find spec " name))))
 
 (do :impl
 
@@ -137,7 +140,7 @@
          :doc doc})))
 
   (defn registering-form [spec]
-    `(swap! reg assoc '~(:name spec) '~spec))
+    `(swap! state assoc-in [:fns '~(:name spec)] '~spec))
 
   (defn extend-spec
     [spec extension-spec]
@@ -189,6 +192,42 @@
 
   )
 
+(do :refresh
+
+    (defn implementers
+      "given a generic spec,
+       returns a vector of all types that implement the corresponding generic"
+      [spec]
+      (->> (:cases spec)
+           (map (fn [[_ & xs]]
+                  (reduce (fn [a e]
+                            (if (set? e) (into a e) (conj a e)))
+                          #{} (map first (partition 2 xs)))))
+           (reduce into #{})))
+
+    (defn implementers-map []
+      ($vals (get-reg) implementers))
+
+    (defn sync-spec!
+      "recompile and execute the spec of the given name"
+      [name]
+      (println "refreshing generics: " name)
+      (eval (extension-form (get-spec! name))))
+
+    (defn sync-types!
+      "when type registry has been updated,
+       we sometimes need to sync some generics declaration
+       xs: the types that have changed
+       only the generics impacted by this change will be synced"
+      [xs]
+      (let [sync? (partial clojure.set/intersection (set xs))]
+        (doseq [[name ts] (implementers-map)]
+          (when (sync? ts) (sync-spec! name)))))
+
+    #_(sync-types! [:num :str])
+
+    )
+
 (do :api
 
     ;; user API, see concrete usage in tests below
@@ -218,7 +257,7 @@
         (declaration-form spec)))
 
     (defmacro compile-all! []
-      `(do ~@(map protocol-extension-form (vals @reg))))
+      `(do ~@(map protocol-extension-form (vals (get-reg)))))
 
     ;; extend-type
 
@@ -233,157 +272,200 @@
                  (list argv tag (bodify bs)))
                all))))
 
-    (defn implement [tag [name & body]]
+    #_(defn implement [tag [name & body]]
       `(generic+ ~name ~@(impl-body->cases tag body)))
+
+    (defn implement [tag [name & body :as form]]
+      (if (get (get-reg) name)
+        `(generic+ ~name ~@(impl-body->cases tag body))
+        (if-let [p (-> (resolve name) meta :protocol)]
+          `(extend-protocol ~(symbol p)
+             ~@(mapcat (fn [t] [t form]) (t/classes tag))))))
+
+    #_(defmacro type+
+      "like extend type"
+      [tag & impls]
+      `(do ~@(map #(implement tag %) impls)))
 
     (defmacro type+
       "like extend type"
       [tag & impls]
-      `(do ~@(map #(implement tag %) impls))))
+      `(do ~@(map #(implement tag %) impls)))
 
-(do :tests
+    
+    )
 
-  #_(pp (@reg '+))
-  (generic g1 [x]
-           ;; prim type impl
-           :vec :g1vec
-           ;; this type is a group
-           ;; under the hood it implements for all collections
-           :coll [:g1coll x]
-           ;; group litteral can be handy
-           #{:key :sym} :key-or-sym)
+(do
+  :tests
 
-  (p/asserts
+   #_(pp (@reg '+))
+   (generic g1 [x]
+            ;; prim type impl
+            :vec :g1vec
+            ;; this type is a group
+            ;; under the hood it implements for all collections
+            :coll [:g1coll x]
+            ;; group litteral can be handy
+            #{:key :sym} :key-or-sym)
+
+   (p/asserts
     (g1 [])
     (g1 #{})
     (g1 '())
     (g1 'a)
     (g1 :a))
 
-  ;; extension
-  (generic+ g1 [x]
-            ;; str impl
-            :str [:str x]
-            ;; if a last expresion is given it extends Object
-            [:unknown x])
+   ;; extension
+   (generic+ g1 [x]
+             ;; str impl
+             :str [:str x]
+             ;; if a last expresion is given it extends Object
+             [:unknown x])
 
-  (p/asserts
+   (get-spec! 'g1)
+   (implementers (get-spec! 'g1))
+   (get-reg)
+
+   (p/asserts
     (g1 "a")
     (g1 (atom {})))
 
-  ;; poly arity exemple
-  (generic g2
-           ([x y]
-            :vec [:g2vec x y]
-            :coll [:g2coll x y]
-            :num [:g2num x y]
-            :any [:g2any x y])
-           ([x y z]
-            :coll [:coll x y z])
-           ;; variadic arity
-           ([x y z & more]
-            [:variadic x y z more]))
+   ;; poly arity exemple
+   (generic g2
+            ([x y]
+             :vec [:g2vec x y]
+             :coll [:g2coll x y]
+             :num [:g2num x y]
+             :any [:g2any x y])
+            ([x y z]
+             :coll [:coll x y z])
+            ;; variadic arity
+            ([x y z & more]
+             [:variadic x y z more]))
 
-  (p/asserts
+   (p/asserts
     (= (g2 [] 1)
-      [:g2vec [] 1])
+       [:g2vec [] 1])
     (= (g2 #{} 1)
-      [:g2coll #{} 1])
+       [:g2coll #{} 1])
     (= (g2 #{} 1 2)
-      [:coll #{} 1 2])
+       [:coll #{} 1 2])
     (= (g2 "me" 1 2 3 4)
        [:variadic "me" 1 2 '(3 4)])
     (= (g2 :iop 1 2 3 4)
        [:variadic :iop 1 2 '(3 4)]))
 
-  #_(p/error "stop")
+   #_(p/error "stop")
 
-  ;; extension of an existing generic 
-  (generic+ g2
-            ([a b] :vec [:g2vec2 a b])
-            ([a b c & ds] :str [:variadstr a b c ds]))
+   ;; extension of an existing generic 
+   (generic+ g2
+             ([a b] :vec [:g2vec2 a b])
+             ([a b c & ds] :str [:variadstr a b c ds]))
 
-  (p/asserts
+   (p/asserts
     (= (g2 [] 1)
-      [:g2vec2 [] 1])
+       [:g2vec2 [] 1])
     (= (g2 "me" 1 2 3 4)
        [:variadstr "me" 1 2 '(3 4)]))
 
-  ;; fork is creating a new generic from an existing one
-  ;; it inherit all impls and extend/overide it with given implementations
-  (fork g2 g2+
-        ([a b] :seq [:g2+seq2 a b])
-        ([a b c & ds] :str [:g2+variadstr a b c ds]))
+   ;; fork is creating a new generic from an existing one
+   ;; it inherit all impls and extend/overide it with given implementations
+   (fork g2 g2+
+         ([a b] :seq [:g2+seq2 a b])
+         ([a b c & ds] :str [:g2+variadstr a b c ds]))
 
-  (p/asserts
+   (p/asserts
 
-   (= (g2 () 2) [:g2coll () 2])
-   (= (g2+ () 2) [:g2+seq2 () 2])
+    (= (g2 () 2) [:g2coll () 2])
+    (= (g2+ () 2) [:g2+seq2 () 2])
 
-   ;; original untouched
-   (= (g2+ "me" 1 2 3 4)
-      [:g2+variadstr "me" 1 2 '(3 4)])
+    ;; original untouched
+    (= (g2+ "me" 1 2 3 4)
+       [:g2+variadstr "me" 1 2 '(3 4)])
 
-   ;; original untouched
-   (= (g2 "me" 1 2 3 4)
-      [:variadstr "me" 1 2 '(3 4)])
-   )
+    ;; original untouched
+    (= (g2 "me" 1 2 3 4)
+       [:variadstr "me" 1 2 '(3 4)])
+    )
 
-  (fork g2+ g2+clone)
+   (fork g2+ g2+clone)
 
 
-  ;; type+ is like deftype
-  ;; implement several generics at a time for a given type
-  (type+ :fun
-         (g1 [x] :g1fun)
-         (g2 [x y] [:g2fun2 x y]))
+   ;; type+ is like extendtype
+   ;; implement several generics at a time for a given type
+   (type+ :fun
+          (g1 [x] :g1fun)
+          (g2 [x y] [:g2fun2 x y]))
 
-  (p/asserts
-   (= [:g2fun2 inc 1] (g2 inc 1))
-   (= :g1fun (g1 (fn [a]))))
+   (p/asserts
+    (= [:g2fun2 inc 1] (g2 inc 1))
+    (= :g1fun (g1 (fn [a]))))
 
-  (generic sip'
-           ([a b]
-            :vec (conj a b)
-            :map (apply assoc a b)
-            :set (conj a b)
-            :seq (concat a [b])
-            :str (str a (.toString b))
-            :sym (symbol (sip' (name a) (.toString b)))
-            :key (keyword (sip' (name a) (.toString b))))
-           ([a b & xs]
-            (apply sip' (sip' a b) xs)))
+   ;; the implementations given to type+ does not have to be asparagus generics,
+   ;; it can be regular clojure protocols functions
+   ;; CAUTION: it will not reflect type hierarchy further changes as with generics
 
-  (p/asserts
-   (= (sip' [] 1 2 3)
-      [1 2 3])
+   (defprotocol Prot1 (prot1-f [x] [x y]))
+
+   (type+ :fun
+          (g1 [x] :g1fun)
+          (g2 [x y] [:g2fun2 x y])
+          ;; a raw protocol function
+          (prot1-f ([x] "prot1-f fun")
+                   ([x y] "prot1-f fun arity 2"))) ;; <- here
+
+   ;; if childs are added to :fun, prot1-f will not be sync! so, use at your own risk...
+
+   (p/asserts (= "prot1-f fun" (prot1-f inc))
+              (= "prot1-f fun arity 2" (prot1-f inc 42)))
+
+   (generic sip'
+            ([a b]
+             :vec (conj a b)
+             :map (apply assoc a b)
+             :set (conj a b)
+             :seq (concat a [b])
+             :str (str a (.toString b))
+             :sym (symbol (sip' (name a) (.toString b)))
+             :key (keyword (sip' (name a) (.toString b))))
+            ([a b & xs]
+             (apply sip' (sip' a b) xs)))
+
+   (p/asserts
+    (= (sip' [] 1 2 3)
+       [1 2 3])
     (= (sip' #{} 1 2 3)
-      #{1 2 3}))
+       #{1 2 3}))
 
-  (generic valid'
-    [x]
-    :nil nil
-    :map (when (every? valid' (vals x)) x)
-    :coll (when (every? valid' x) x)
-    :word :validword
-    :any x)
+   (generic valid'
+            [x]
+            :nil nil
+            :map (when (every? valid' (vals x)) x)
+            :coll (when (every? valid' x) x)
+            :word :validword
+            :any x)
 
-  (p/asserts
+   (p/asserts
     (not (valid' [nil 1 nil]))
     (valid' [1 2 3])
     (valid' #{1 2 3})
     (valid' {:a 1 :b 2})
     (not (valid' {:a 1 :b 2 :c nil})))
 
-  (generic+ valid'
-    [x] :key :validkey)
+   #_(clojure.walk/macroexpand-all '(generic+ valid'
+                                              [x] :key :validkey))
 
-  (p/asserts
+   (generic+ valid'
+             [x] :key :validkey)
+
+   (get-spec! 'valid')
+
+   (p/asserts
     (= :validkey (valid' :a))
     (= :validword (valid' 'a)))
 
 
-  )
+   )
 
 #_(do :xp
 

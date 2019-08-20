@@ -6,9 +6,10 @@
    [clojure.string :as str]
    [clojure.set :as set]
    [criterium.core :as cr]
-   [asparagus.boot.types :as t]
-   [asparagus.boot.generics :as g]
-   [asparagus.boot.prelude :as p
+   [asparagus.boot2.types :as t]
+   [asparagus.boot2.generics :as g]
+   [asparagus.boot2.state :as state]
+   [asparagus.boot2.prelude :as p
     :refer
     [;; macros
      cs cp pp _ error asserts
@@ -1939,7 +1940,7 @@
          (fn [gsym]
            (qq {:val ~gsym
                 inspect:val
-                (fn [] (@g/reg '~gsym))
+                (fn [] ((g/get-reg) '~gsym))
                 ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
                 extension-form:mac
                 (fn [e bod]
@@ -2614,7 +2615,7 @@
             (let [ts (seq (disj types.builtins :nil))]
               (zipmap
                ($ ts #(sym % "?"))
-               ($ ts #(lst 'types.preds %)))))}
+               ($ ts #(lst `(@state/state :guards) %)))))}
 
          builtins
          [(guards.import
@@ -2919,7 +2920,7 @@
                   (cs (key? v)
                       [s y
                        (gensym "?!typecheck")
-                       (cs [pred (t/guards v)]
+                       (cs [pred (t/get-guard v)]
                            (qq (~(sym v "?") ~s))
                            (qq (or (eq (type ~s) ~v)
                                    (t/>= ~v (type ~s)))))]
@@ -4592,7 +4593,7 @@
 
               [ ;; clojure side effects
                :clj (qq (do (defrecord ~class-sym ~fields)
-                          (t/prim+ ~name [~class-sym] [:usertypes])))
+                            (t/prim+ ~name [~class-sym] [:usertypes])))
                ;; constructors (positional and from hashmap)
                name-sym (qq (f ~fields (~(sym "->" class-sym) .~fields)))
                map-constructor-sym (qq (f_ (~(sym "map->" class-sym) _)))
@@ -4684,7 +4685,7 @@
 
         )
 
-    (do :object-oriented-syntax
+    #_(do :object-oriented-syntax
 
         #_(E+ composite.cxp composite.cxp-old)
 

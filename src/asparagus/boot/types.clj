@@ -1,7 +1,9 @@
 (ns asparagus.boot.types
   (:refer-clojure :exclude [parents >= <=])
   (:require [asparagus.boot.prelude :as p
-             :refer [$ $vals]]))
+             :refer [cs $ $vals]]
+            [clojure.core :as c]
+            [clojure.set :as set]))
 
 ;; this is a thin layer over clojure class hierarchy
 ;; the need for this comes from asparagus.boot.generics
@@ -99,7 +101,9 @@
    registry can be passed as first argument
    if not, global registry is derefered and used"
 
-  [{:keys [prims groups]} t]
+  [{:as reg
+    :keys [prims groups]}
+   t]
 
   (cond
 
@@ -108,12 +112,12 @@
     (= :any t) (list Object)
 
     (set? t)
-    (mapcat classes t)
+    (mapcat #(classes reg %) t)
 
     :else
     (or (prims t)
-      (when-let [cs (groups t)]
-        (classes cs)))))
+        (when-let [cs (groups t)]
+          (classes reg cs)))))
 
 (regfn details
   "details about a type"
@@ -152,7 +156,8 @@
   (classes :coll)
   (classes :prim)
   (classes :any)
-  (details :vec))
+  (details :vec)
+  (details :hash))
 
 (p/asserts
   (isa :any)
@@ -370,9 +375,3 @@
    (coll? [1 2]) ;;=> [1 2]
    (coll? "yo")  ;;=> nil
    ))
-
-
-
-
-
-
