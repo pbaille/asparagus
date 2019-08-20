@@ -87,7 +87,21 @@
                   arities)))
          (casemap cases)))
 
-  #_(type-extensions (@reg 'g2))
+  (defn type-extensions'
+    "an alternative that target extend instead of extend-type
+     it will be useful for asparagus to wrap generics with this
+     because no need to process lambdas before generating the extension form"
+    [{:keys [cases ns pname mname name lambda-wrapper]
+      :or {lambda-wrapper `fn}}]
+    (map (fn [[c arities]]
+           `(extend ~c
+              ~@(mapcat (fn [[arity impl]]
+                          [(with-ns ns (arify-name pname arity))
+                           {(keyword (arify-name mname arity)) (cons lambda-wrapper impl)}])
+                  arities)))
+         (casemap cases)))
+
+  #_(type-extensions' (assoc (get-spec! 'g2) :lambda-sym 'f))
 
   (defn emit-impls [name cases]
     (mapcat
@@ -186,9 +200,25 @@
          ~(:name spec)))
 
   (defn extension-form [spec]
+    #_(pp "extform" (get-spec! (:name spec)))
     (let [spec+ (extend-spec (get-spec! (:name spec)) spec)]
       `(do ~(registering-form spec+)
            ~(protocol-extension-form spec+))))
+
+  (defn protocol-extension-form'
+    [{:keys [ns pname mname cases] :as spec}]
+    `(do ~@(type-extensions' spec)))
+
+  (defn extension-form' [spec]
+    (let [spec+ (extend-spec (get-spec! (:name spec)) spec)]
+      `(do ~(registering-form spec+)
+           ~(protocol-extension-form' spec+))))
+
+  (defn declaration-form' [spec]
+    `(do ~(registering-form spec)
+         ~(protocol-declaration-form spec)
+         ~(function-definition-form spec)
+         ~(:name spec)))
 
   )
 

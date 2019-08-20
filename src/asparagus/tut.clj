@@ -2183,13 +2183,14 @@
    (eq (my-generic2 "iop") {:something "iop"})
    (eq (my-generic2 (lst 1 2 3) 42) {:line (lst 1 2 3) :extra-arg 42})
    (eq (my-generic2 :iop 42) {:my-generic2-arity2-default-case [:iop 42]})
-   (eq (!! (my-generic2 [1 2 3] 1 :iop {}))
-       {:my-generic2-variadic-arity
-        {:a [1 2 3] :b 1
-         :c (lst :iop {})
-         :c1 :iop
-         :cs (lst {})}})
+   (eq (my-generic2 [1 2 3] 1 :iop {})
+        {:my-generic2-variadic-arity
+         {:a [1 2 3] :b 1
+          :c (lst :iop {})
+          :c1 :iop
+          :cs (lst {})}})
    )
+
   )
 
  ;; inspection, extension

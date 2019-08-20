@@ -1908,7 +1908,7 @@
 
           )})
 
-    (E+ generic
+    #_(E+ generic
         {:doc
          "an update to define a generic function
           and its related inspection and extension capabilities
@@ -2054,6 +2054,138 @@
           (E+ foo.bar.g (generic [x] :num (+ ..fortytwo x)))
           (!! (foo.bar.g 1)))})
 
+    (E+ generic
+        {:doc
+         "an update to define a generic function
+          and its related inspection and extension capabilities
+          it is a wrapper around asparagus.boot.generics functionalities
+          please refer directly asparagus.boot.generics source file for documentation and examples"
+
+         :upd
+         (fn [e body]
+           (let [gsym (generic.symbol (loc e))]
+             (assoc (generic.module gsym)
+                    :fx (qq (generic.init ~gsym ~body)))))
+
+         reduced:upd
+         (fn [e [argv & decls]]
+           (let [[arg1 varg] (p/gensyms)]
+             #_(pp "yop" [argv decls])
+             (qq (generic
+                  ([~arg1] ~arg1)
+                  (~argv . ~decls)
+                  (~(conj argv '& varg)
+                   .~(c/mapcat
+                      (fn [[t i]]
+                        [t (qq (reduce (fn ~argv ~i) ~i ~varg))])
+                      (c/partition 2 decls))
+                   )))))
+
+
+         lambda-wrapper 'fn
+
+         module
+         (fn [gsym]
+           (qq {:val ~gsym
+                inspect:val
+                (fn [] ((g/get-reg) '~gsym))
+                ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
+                extension-form:mac
+                (fn [e bod]
+                  (exp e (g/extension-form'
+                          (assoc (g/generic-spec '~gsym bod)
+                                 :lambda-wrapper '~lambda-wrapper))))
+                ;; now entend:upd just emit a macro call that will wait expansion time
+                extend:upd
+                (fn [e bod]
+                  {:fx (lst* (qq extension-form) bod)})
+
+                }))
+
+         symbol
+         (fn [n]
+           (path->varsym (path n :generic)))
+
+         init:mac
+         (fn [e [n body]]
+           (let [spec (assoc (g/generic-spec n body)
+                             :lambda-wrapper generic.lambda-wrapper)]
+             (lst 'do
+                  (g/declaration-form' spec)
+                  (exp e (g/protocol-extension-form' spec)))))
+
+         type+
+         {:doc
+          "lets you implement one or several generics for a type.
+           analog to extend-type"
+
+          :upd
+          (fn [e [type & body]]
+            ($ (c/vec body)
+               (fn [[n & xs]]
+                 #_(pp :gentyp+ xs (g/impl-body->cases type xs))
+                 (lst* (p/sym n ".extend")
+                       (g/impl-body->cases type xs)))))}
+
+         :demo
+         (__
+
+          ;; generic ----------------
+
+          ;; defines a pul+ generic function
+          ;; with 3 implementations for: strings, symbols and numbers
+          (E+ pul+
+              (generic [a b]
+                        :str (str a b)
+                        :sym (pul+ (str a) (str b))
+                        :num (add a b)))
+
+          ;; inspect
+          (!! (pul+.inspect))
+
+          ;; use
+          (!! (pul+ 1 2))
+          (!! (pul+ "a" 2))
+
+          ;; extend
+          ;; implement pul+ for vectors
+          (E+ (pul+.extend
+               [x y]
+               :vec (catv x y)))
+
+          ;; use the new impl
+          (!! (pul+ [1] [7]))
+          (!! (pul+.inspect))
+
+          ;; generic.reduced ---------
+
+          ;; let you define a binary generic function
+          ;; and use reduce for calls with more than 2 arguments
+          (E+ pil+
+              (generic.reduced [a b]
+                               :str (str a b)
+                               :num (+ a b)))
+
+          (!! (pil+.inspect))
+          (!! (pil+ 7 9 7))
+
+          ;; type extension
+
+          (E+ (generic.type+
+               :key
+               (pul+ [x y] :keypul+)
+               (pil+ [x y] :keypil+)))
+
+          (!! (eq (pul+ :aze 1) :keypul+))
+          (!! (eq (pil+ :aze 1) :keypil+))
+
+          ;; scope checks ------------
+
+          ;; here we are just checking that generic implementation have access to the local scope
+          (E+ foo.bar.fortytwo:sub (fn [_] 42))
+          (E+ foo.bar.g (generic [x] :num (+ ..fortytwo x)))
+          (!! (foo.bar.g 1)))})
+
     (E+ fn&
 
         ["the idea is to be able to declare concisely variadic functions, while mitigating the performance cost
@@ -2134,7 +2266,7 @@
            [_]
            :fun id
            :vec []
-           :seq ()
+           :lst ()
            :map {}
            :set #{}
            :str ""
@@ -2153,7 +2285,7 @@
 
           (generic.reduced
            [a b]
-           :seq (c/concat a [b])
+           :lst (c/concat a [b])
            #{:set :vec} (c/conj a b)
            :map (c/assoc a (c/first b) (c/second b))
            :fun (c/partial a b))
@@ -2194,7 +2326,7 @@
           (generic.reduced
            [a b]
            :fun (c/comp b a)
-           :seq (c/concat a (iter b))
+           :lst (c/concat a (iter b))
            :str (c/str a b #_(.toString b))
            :sym (c/symbol (c/str (c/name a) b #_(.toString b)))
            :key (c/keyword (c/str (c/name a) (c/name b)))
@@ -2255,7 +2387,7 @@
          ["test if something is equal to its pure value"
 
           (generic [x]
-                   :seq (when-not (seq x) ())
+                   :lst (when-not (seq x) ())
                    (when (c/= x (pure x)) x))
 
           (check.thunk
@@ -2389,7 +2521,7 @@
           (fn [e [[a1 :as argv] expr]]
             (qq (generic
                  ~argv
-                 :seq
+                 :lst
                  ~expr
                  (let [a ~a1
                        ~a1 (iter ~a1)]
@@ -2797,7 +2929,7 @@
            :sym [x y]
            :vec (bind.vec x y)
            :map (bind.map x y)
-           :seq (bind.seq x y)
+           :lst (bind.seq x y)
            [(gensym "?!match") (lst 'eq x y)])
 
           vec
@@ -3575,6 +3707,8 @@
                          :name (:name opts)}))
                 (cxp e ($ (:bs opts) second)))))
 
+    (E+ generic.lambda-wrapper 'f)
+
     (do :guard-macro
         (E+ guard:mac
             (f [e (& form [argv . _])]
@@ -3626,7 +3760,7 @@
           :map (c/into {} (c/map (fn [[k v]] [k (§ f v)]) x))
           :set (c/set (c/map (§ f) x))
           :vec (c/mapv (§ f) x)
-          :seq (c/map (§ f) x)
+          :lst (c/map (§ f) x)
           :any (error "not mappable" x))
 
          ;; $ indexed
@@ -3636,7 +3770,7 @@
           :map (c/into {} (c/map (fn [[k v]] [k (§ f k v)]) x))
           :set (c/set (c/vals ($i (c/zipmap x x) f)))
           :vec (c/vec (c/map-indexed (§ f) x))
-          :seq (c/map-indexed (§ f) x)
+          :lst (c/map-indexed (§ f) x)
           :any (error "not mappable" x))
 
          ;; the following walking function are highly inspired by clojure.walk
@@ -3942,7 +4076,7 @@
                 (nil? (eq x y))))
 
         ;; a major concern about eq is that sets will use core/= instead of it...
-        ;; don't know how to change that...
+        ;; don't know how to change that... (and don't know if I want to)
 
         (check
          ;; in clojure this would be considered equal
@@ -4435,19 +4569,6 @@
              (throws (t [:point 1 "io"]))))
           ]))
 
-    (E+ generic.spec.exp-case
-        ;; redefine generic case expansion to follow the asparagus binding syntax
-        (f [e [argv . body]]
-           (let [amp '&
-                 argv ($ argv (f_ (if (= _ composite.dot) amp _)))
-                 syms ($ argv (f_ (if (= _ amp) amp (gensym))))
-                 binding-form (vec* (braid (rem argv (eq amp))
-                                           (rem syms (eq amp))))]
-             (lst+* [syms]
-                    ($ (chunk body 2)
-                       (f1 [t impl]
-                           [t (exp e (qq (let ~binding-form ~impl)))]))))))
-
     (E+ tack
 
         [
@@ -4573,7 +4694,8 @@
 
          ))
 
-    (E+ type+
+    (E+ type+ ;; TODO adapt to new boot2 impl
+
         ["an update to declare a new type"
 
          :upd
@@ -4685,7 +4807,7 @@
 
         )
 
-    #_(do :object-oriented-syntax
+    (do :object-oriented-syntax
 
         #_(E+ composite.cxp composite.cxp-old)
 

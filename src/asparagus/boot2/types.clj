@@ -27,8 +27,8 @@
        :key clojure.lang.Keyword))
 
     (def colls
-      {:seq #{clojure.lang.ISeq}
-       :lst #{clojure.lang.PersistentList}
+      {:lst #{clojure.lang.ISeq}
+       ;;:lst #{clojure.lang.PersistentList}
        :map #{clojure.lang.PersistentArrayMap
               clojure.lang.PersistentHashMap}
        :set #{clojure.lang.IPersistentSet}
