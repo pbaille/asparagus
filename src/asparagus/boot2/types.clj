@@ -313,10 +313,25 @@
        parents: a seq of other typetags that the defined tag belongs to
        & impls: optional generic implementations for the defined tag"
 
+      ([{:keys [tag childs parents impls]}]
+       (let [exists? ((get-reg) tag)
+             generic-updates
+             (if exists? (cons tag parents) parents)]
+         `(do (swap! state
+                     update :types
+                     conj-type
+                     {:tag ~tag
+                      :childs ~childs
+                      :parents ~parents})
+              (asparagus.boot2.generics/sync-types! ~(vec generic-updates))
+              ~(when impls `(asparagus.boot2.generics/type+ ~tag ~@impls))
+              (sync-guards!))))
+
       ([tag childs]
        `(tag+ ~tag ~type []))
       ([tag childs parents & impls]
-       (let [exists? ((get-reg) tag)
+       `(tag+ ~{:tag tag :childs childs :parents parents :impls (vec impls)})
+       #_(let [exists? ((get-reg) tag)
              generic-updates
              (if exists? (cons tag parents) parents)]
          `(do (swap! state
@@ -337,19 +352,27 @@
        parents: a seq of other typetags that our type belongs to
        & impls: optional generic implementations for the defined type"
 
+      ([{:as spec
+         :keys [tag parents impls fields childs class-sym]}]
+       (let [class-sym (or class-sym (symbol (clojure.string/capitalize (name tag))))]
+         `(do (defrecord ~class-sym ~fields)
+              (tag+ ~spec))))
       ([tag fields]
        `(type+ ~tag ~fields []))
       ([tag fields parents & impls]
-       (let [class-sym (symbol (clojure.string/capitalize (name tag)))]
-         `(do (defrecord ~class-sym ~fields)
+       `(type+ ~{:tag tag :parents parents :impls (vec impls) :fields fields})
+       #_(println "type+ " tag)
+       #_(let [class-sym (symbol (clojure.string/capitalize (name tag)))]
+         `(do #_(pp "types/type+ declaring type!")
+              (defrecord ~class-sym ~fields)
               (tag+ ~tag [~class-sym] ~parents ~@impls)))))
 
     (comment
 
       (tag+ :fop [:vec :set] [:hash])
 
-      (type+ :pouet [iop foo] [:hash]
-             (g1 [x] "g1foo"))
+      (type+ :pouet [iop foo] nil
+             #_(g1 [x] "g1foo"))
 
       (map macroexpand (macroexpand '(type+ :pouet [iop foo] [:hash]
                                             (g1 [x] "g1foo"))))

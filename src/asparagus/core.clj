@@ -2081,26 +2081,39 @@
                       (c/partition 2 decls))
                    )))))
 
+         lambda-case-compiler
+         (fn [e]
+           (fn [c]
+             (let [[_ _ c] (exp e (lst* (qq fn) c))]
+               c)))
 
-         lambda-wrapper 'fn
+         spec
+         (fn [e gsym bod]
+           (g/compile-cases
+            (g/generic-spec gsym bod)
+            (lambda-case-compiler e)))
 
          module
          (fn [gsym]
-           (qq {:val ~gsym
-                inspect:val
-                (fn [] ((g/get-reg) '~gsym))
-                ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
-                extension-form:mac
-                (fn [e bod]
-                  (exp e (g/extension-form'
-                          (assoc (g/generic-spec '~gsym bod)
-                                 :lambda-wrapper '~lambda-wrapper))))
-                ;; now entend:upd just emit a macro call that will wait expansion time
-                extend:upd
-                (fn [e bod]
-                  {:fx (lst* (qq extension-form) bod)})
+           #_(pp "module " gsym)
+           (id ;;p/pprob
+            (qq {:val ~gsym
+                 inspect:val
+                 (fn [] ((g/get-reg) '~gsym))
+                 ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
+                 extension-form:mac
+                 (fn [e bod]
+                   (g/extension-form
+                    (spec e '~gsym bod)
+                    #_(g/compile-cases
+                       (g/generic-spec '~gsym bod)
+                       (lambda-case-compiler e))))
+                 ;; now entend:upd just emit a macro call that will wait expansion time
+                 extend:upd
+                 (fn [e bod]
+                   {:fx (lst* (qq extension-form) bod)})
 
-                }))
+                 })))
 
          symbol
          (fn [n]
@@ -2108,11 +2121,16 @@
 
          init:mac
          (fn [e [n body]]
-           (let [spec (assoc (g/generic-spec n body)
-                             :lambda-wrapper generic.lambda-wrapper)]
-             (lst 'do
-                  (g/declaration-form' spec)
-                  (exp e (g/protocol-extension-form' spec)))))
+           (g/declaration-form
+            (spec e n body)
+            #_(g/compile-cases
+             (g/generic-spec n body) 
+             (lambda-case-compiler e)
+             #_(fn [xs]
+                 (let [[_ _ cas]
+                       (p/pprob "---" xs
+                                (asparagus.core/exp e (lst* (qq fn) xs)))]
+                   cas)))))
 
          type+
          {:doc
@@ -2136,9 +2154,9 @@
           ;; with 3 implementations for: strings, symbols and numbers
           (E+ pul+
               (generic [a b]
-                        :str (str a b)
-                        :sym (pul+ (str a) (str b))
-                        :num (add a b)))
+                       :str (str a b)
+                       :sym (pul+ (str a) (str b))
+                       :num (add a b)))
 
           ;; inspect
           (!! (pul+.inspect))
@@ -3029,6 +3047,20 @@
             :ks
             (fn [xs y]
               (bind (zipmap ($ xs keyword) xs) y))
+
+            :ks-opt
+            (fn [xs y]
+              (let [keys ($ xs keyword)
+                    opt-syms ($ xs (p sym "_"))]
+                (+ (bind (zipmap keys opt-syms) y)
+                   (interleave xs opt-syms))))
+
+            :ks-or
+            (fn [xs y]
+              (let [keys (take-nth 2 xs)
+                    or-exprs ($ (partition 2 xs) (fn [[k v]] `(or ~k ~v)))]
+                (+ ((get ops :ks-opt) keys y)
+                   (interleave keys or-exprs))))
 
             :tup
             (fn [xs y]
@@ -4704,20 +4736,17 @@
          (cf
 
           [e [name fields (:lst impl1) . impls]]
-          (do (pp "case1") (rec e [name fields {:impls (cons impl1 impls)}]))
+          (rec e [name fields {:impls (cons impl1 impls)}])
 
           [e [name fields (:vec parents) . impls]]
-          (do (pp "case 2") (rec e [name fields {:parents parents :impls impls}]))
+          (rec e [name fields {:parents parents :impls impls}])
 
           [e [name fields (ks _parents _impls)]]
 
             (let [name-sym (sym name)
-                  class-sym (sym name "_USERTYPE")
+                  class-sym (sym (clojure.string/capitalize (c/name name)))
                   map-constructor-sym (sym "map->" name-sym)
                   guard-sym (sym name-sym "?")]
-
-              (pp 'iop)
-              ;; TODO
 
               ;; 'vectors returned by an update function' treatment is not lazy enough (in the sense that it process all contained update-expression at the same time)
               ;; idealy if an update function returns something like: [form1 form2 ...]
@@ -4725,7 +4754,7 @@
               ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
 
               [ ;; clojure side effects
-               :clj (qq (t/type+ ~name ~fields ~_parents))
+               :clj (qq (t/type+ ~name ~fields ~(or _parents [])))
                ;; constructors (positional and from hashmap)
                name-sym (qq (f ~fields (~(sym "->" class-sym) .~fields)))
                map-constructor-sym (qq (f_ (~(sym "map->" class-sym) _)))
@@ -4739,23 +4768,11 @@
 
           (ppenv type+)
           ;; definition
-          (updxp (type+ :fut ;;typetag
-
-                     [bar baz] ;; fields
-
-                     ;; generic implementations
-                     (+ [a b]
-                        (!let [(:fut b) b]
-                              (fut (+ (:bar a) (:bar b))
-                                   (+ (:baz a) (:baz b)))))))
-
           (E+ (type+ :fut [bar baz]
                      (+ [(ks bar baz) (& {:bar !barb :baz bazb} (:fut b))]
                         (do (pp "here")
                             (fut (+ bar !barb)
                                  (+ baz bazb))))))
-
-          ()
 
           (!! (+.inspect))
 
@@ -4778,22 +4795,13 @@
          :upd
          (cf
 
-          [e (tup name fields (:map proto))]
-          (rec e [name fields [] proto []])
+          [e [(& (ks name fields)
+                 (ks-opt parents impls)
+                 (ks-or proto {}
+                        class-sym (sym (str/capitalize (c/name name)))))]]
 
-          [e (tup name fields (:map proto) impls)]
-          (rec e [name fields [] proto impls])
-
-          [e (tup name fields (:vec parents) (:vec impls))]
-          (rec e [name fields parents {} []])
-
-          [e (tup name fields (:vec parents) (:map proto))]
-          (rec e [name fields parents proto []])
-
-          [e [name fields parents proto impls]]
-          (let [ ;;_ (pp "main")
-                name-sym (sym name)
-                class-sym (sym name "_USERTYPE")
+          (let [name-sym (sym name)
+                ;;class-sym (or class-sym (sym (clojure.string/capitalize (c/name name))))
                 map-constructor-sym (sym "map->" name-sym)
                 guard-sym (sym name-sym "?")
                 proto-sym (sym name-sym ".proto:val")
@@ -4807,8 +4815,11 @@
                      parents)]
 
             [ ;; clojure side effects
-             :clj (qq (do (defrecord ~class-sym ~fields)
-                        (t/prim+ ~name [~class-sym] ~parents)))
+             :clj (qq (t/type+
+                       {:tag ~name
+                        :fields ~fields
+                        :parents ~_parents
+                        :class-sym ~class-sym}))
              ;; constructors (positional and from hashmap)
              name-sym (qq (f ~fields (merge ~proto-sym (~(sym "->" class-sym) .~fields))))
              proto-sym proto-val
@@ -4816,7 +4827,28 @@
              guard-sym (qq (f_ (and (instance? ~class-sym _) _)))
 
              ;; generic implementations
-             (sq (generic.type+ ~name (type [x] ~name ~name) .~impls))]))]
+             (sq (generic.type+ ~name (type [x] ~name ~name) .~_impls))])
+
+          ;; extra signatures
+
+          [e (tup name fields (:map proto))]
+          (rec e [name fields [] proto []])
+
+          [e (tup name fields (:map proto) impls)]
+          (rec e [name fields [] proto impls])
+
+          [e (tup name fields (:vec parents) (:vec impls))]
+          (rec e [name fields parents {} []])
+
+          [e (tup name fields (:vec parents) (:map proto))]
+          (rec e [name fields parents proto []])
+
+          [e [name fields parents proto impls]]
+          (rec e [{:name name
+                   :fields fields
+                   :parents parents
+                   :proto proto
+                   :impls impls}]))]
 
         )
 

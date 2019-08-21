@@ -764,12 +764,36 @@
    (is (let [(ks a b) {:a 1 :b 2 :c 3}] (add a b))
        3)
 
+   ;; in a ?let form it shorts on nil keys
+   (is (?let [(ks a) {}] (error "never")))
+
+   ;; opt-ks for keys that may not be here
+   (is "foo"
+       (?let [(ks-opt foo) {:foo "foo"}] foo)
+       (?let [(ks-opt foo) {}] (or foo "foo")))
+
+   ;; or keys let you define defult values for missing keys
+   (is "default"
+       (?let [(ks-or foo "default") {}] foo))
+
+   ;; you can use previous binding in further expressions
+   (is "Bob Doe"
+       (?let [(ks-or name "John"
+                    firstname "Doe"
+                    fullname (+ name " " firstname)) ;; <- here
+             {:name "Bob"}]
+         fullname))
 
    ;; & (parrallel bindings)
    ;; several patterns can be bound to the same seed
    ;; something that i've sometimes missed in clojure (lightly)
-   (is (let [(& mymap (ks a b)) {:a 1 :b 2 :c 3}] [mymap a b])
-       [{:a 1 :b 2 :c 3} 1 2])
+   (is (?let [(& mymap
+                (ks a b)
+                (ks-opt c)
+                (ks-or d 42))
+             {:a 1 :b 2 :c 3}]
+         [mymap a b c d])
+       [{:a 1 :b 2 :c 3} 1 2 3 42])
 
    ;; tup (tuple)
    ;; sometimes we want to be more strict than regular sequential binding (vector syntax)
@@ -2178,6 +2202,8 @@
          {:a a :b b :c c :c1 c1 :cs cs}})
        ))
 
+  (!! (my-generic2.inspect))
+
   (check
    (eq (my-generic2 [1 2 3]) {:coll [1 2 3]})
    (eq (my-generic2 "iop") {:something "iop"})
@@ -2374,8 +2400,6 @@
    (is (:walk o)
        "i'm walking")
    person.proto)
-
-
 
  )
 
