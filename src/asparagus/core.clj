@@ -2288,7 +2288,8 @@
            :lst (c/concat a [b])
            #{:set :vec} (c/conj a b)
            :map (c/assoc a (c/first b) (c/second b))
-           :fun (c/partial a b))
+           :fun (c/partial a b)
+           :nil (c/list b))
 
           :notes
           "maybe we should consider to implement sip for named
@@ -2331,6 +2332,7 @@
            :sym (c/symbol (c/str (c/name a) b #_(.toString b)))
            :key (c/keyword (c/str (c/name a) (c/name b)))
            :num (c/+ a b)
+           :nil (iter b)
            :any (c/reduce sip a (iter b)))
 
           (check.thunk
@@ -4699,13 +4701,22 @@
         ["an update to declare a new type"
 
          :upd
-         (f [e [name fields . impls]]
+         (cf
+
+          [e [name fields (:lst impl1) . impls]]
+          (do (pp "case1") (rec e [name fields {:impls (cons impl1 impls)}]))
+
+          [e [name fields (:vec parents) . impls]]
+          (do (pp "case 2") (rec e [name fields {:parents parents :impls impls}]))
+
+          [e [name fields (ks _parents _impls)]]
 
             (let [name-sym (sym name)
                   class-sym (sym name "_USERTYPE")
                   map-constructor-sym (sym "map->" name-sym)
                   guard-sym (sym name-sym "?")]
 
+              (pp 'iop)
               ;; TODO
 
               ;; 'vectors returned by an update function' treatment is not lazy enough (in the sense that it process all contained update-expression at the same time)
@@ -4714,21 +4725,21 @@
               ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
 
               [ ;; clojure side effects
-               :clj (qq (do (defrecord ~class-sym ~fields)
-                            (t/prim+ ~name [~class-sym] [:usertypes])))
+               :clj (qq (t/type+ ~name ~fields ~_parents))
                ;; constructors (positional and from hashmap)
                name-sym (qq (f ~fields (~(sym "->" class-sym) .~fields)))
                map-constructor-sym (qq (f_ (~(sym "map->" class-sym) _)))
                guard-sym (qq (f_ (and (instance? ~class-sym _) _)))
 
                ;; generic implementations
-               (sq (generic.type+ ~name (type [x] ~name) .~impls))]))
+               (sq (generic.type+ ~name (type [x] ~name) .~_impls))]))
 
          :demo
          (__
 
+          (ppenv type+)
           ;; definition
-          (E+ (type+ :fut ;;typetag
+          (updxp (type+ :fut ;;typetag
 
                      [bar baz] ;; fields
 
@@ -4743,6 +4754,8 @@
                         (do (pp "here")
                             (fut (+ bar !barb)
                                  (+ baz bazb))))))
+
+          ()
 
           (!! (+.inspect))
 
