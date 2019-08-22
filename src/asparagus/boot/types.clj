@@ -328,21 +328,9 @@
               (sync-guards!))))
 
       ([tag childs]
-       `(tag+ ~tag ~type []))
+       `(tag+ ~tag ~childs []))
       ([tag childs parents & impls]
-       `(tag+ ~{:tag tag :childs childs :parents parents :impls (vec impls)})
-       #_(let [exists? ((get-reg) tag)
-             generic-updates
-             (if exists? (cons tag parents) parents)]
-         `(do (swap! state
-                     update :types
-                     conj-type
-                     {:tag ~tag
-                      :childs ~childs
-                      :parents ~parents})
-              (asparagus.boot.generics/sync-types! ~(vec generic-updates))
-              ~(when impls `(asparagus.boot.generics/type+ ~tag ~@impls))
-              (sync-guards!)))))
+       `(tag+ ~{:tag tag :childs childs :parents parents :impls (vec impls)})))
 
     (defmacro type+
 
@@ -354,18 +342,14 @@
 
       ([{:as spec
          :keys [tag parents impls fields childs class-sym]}]
-       (let [class-sym (or class-sym (symbol (clojure.string/capitalize (name tag))))]
+       (let [class-sym (or class-sym (symbol (clojure.string/capitalize (name tag))))
+             spec (update spec :childs (fnil conj []) class-sym)]
          `(do (defrecord ~class-sym ~fields)
               (tag+ ~spec))))
       ([tag fields]
        `(type+ ~tag ~fields []))
       ([tag fields parents & impls]
-       `(type+ ~{:tag tag :parents parents :impls (vec impls) :fields fields})
-       #_(println "type+ " tag)
-       #_(let [class-sym (symbol (clojure.string/capitalize (name tag)))]
-         `(do #_(pp "types/type+ declaring type!")
-              (defrecord ~class-sym ~fields)
-              (tag+ ~tag [~class-sym] ~parents ~@impls)))))
+       `(type+ ~{:tag tag :parents parents :impls (vec impls) :fields fields})))
 
     (comment
 
@@ -373,6 +357,11 @@
 
       (type+ :pouet [iop foo] nil
              #_(g1 [x] "g1foo"))
+
+      (type+ {:tag :pouet
+              :fields [iop foo]
+              :class-sym POUUUUUET
+              #_(g1 [x] "g1foo")})
 
       (map macroexpand (macroexpand '(type+ :pouet [iop foo] [:hash]
                                             (g1 [x] "g1foo"))))

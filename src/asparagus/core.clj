@@ -1950,7 +1950,7 @@
          lambda-case-compiler
          (fn [e]
            (fn [case]
-             (nth (exp e (lst* lambda-wrapper case)) 2)))
+             (nth (cxp e (lst* lambda-wrapper case)) 2)))
 
          spec
          (fn [e gsym bod]
@@ -4088,14 +4088,12 @@
               ;; nil do nothing, it returns the diving-target unchanged
               :nil y)]
 
-
-
             dive
             {:mac
              (f [e [x y]]
                 (exp e
                      (lst* (qq dive:val)
-                           (clet [[(:sym v) . args] (seq? x)
+                           (clet [[(:sym v) . args] (lst? x)
                                   impl (get .ops (key v))]
                                  [(impl args) y]
                                  [x y]))))
@@ -4593,20 +4591,80 @@
 
          ))
 
-    (E+ type+
-
-        ["an update to declare a new type"
+    (E+ obj+
+        ["an update to declare a new object"
 
          :upd
          (cf
 
-          [e [name fields (:lst impl1) . impls]]
-          (rec e [name fields {:impls (cons impl1 impls)}])
+          [e [(& (ks name fields)
+                 (ks-or parents []
+                        impls []
+                        proto {}
+                        class-sym (sym (str/capitalize (c/name name)))))]]
 
-          [e [name fields (:vec parents) . impls]]
-          (rec e [name fields {:parents parents :impls impls}])
+          (let [name-sym (sym name)
+                ;;class-sym (or class-sym (sym (clojure.string/capitalize (c/name name))))
+                map-constructor-sym (sym "map->" name-sym)
+                guard-sym (sym name-sym "?")
+                proto-sym (sym name-sym ".proto:val")
+                proto-val
+                (red proto
+                     (f [p x]
+                        (clet [path (path (sym x ".proto:val"))
+                               [at v] (env-relfind e path)]
+                              (+ p v)
+                              p))
+                     parents)]
 
-          [e [name fields (ks _parents _impls)]]
+            (pp 'obj+ name fields parents impls proto class-sym)
+
+            [ ;; clojure side effects
+             :clj (qq #_(t/type+ ~name ~fields ~parents)
+                      (t/type+
+                       {:tag ~name
+                        :fields ~fields
+                        :parents ~parents
+                        ;:class-sym ~class-sym
+                        }))
+             ;; constructors (positional and from hashmap)
+             name-sym (qq (f ~fields (merge (~(sym "->" class-sym) .~fields) ~proto-sym)))
+             proto-sym proto-val
+             map-constructor-sym (qq (f_ (~(sym "map->" class-sym) (merge ~proto-sym _))))
+             guard-sym (qq (f_ (and (instance? ~class-sym _) _)))
+
+             ;; generic implementations
+             (sq (generic.type+ ~name (type [x] ~name) .~impls))])
+
+          ;; extra signatures
+
+          [e (tup name fields (:map proto))]
+          (rec e [name fields [] proto []])
+
+          [e (tup name fields (:map proto) impls)]
+          (rec e [name fields [] proto impls])
+
+          [e (tup name fields (:vec parents) (:vec impls))]
+          (rec e [name fields parents {} []])
+
+          [e (tup name fields (:vec parents) (:map proto))]
+          (rec e [name fields parents proto []])
+
+          [e [name fields parents proto impls]]
+          (rec e [{:name name
+                   :fields fields
+                   :parents parents
+                   :proto proto
+                   :impls impls}]))]
+
+        type+
+
+        ["an update to declare a new type"
+
+         :upd
+         #_(cf
+
+          [e (tup name fields (ks-or parents [] impls []))]
 
             (let [name-sym (sym name)
                   class-sym (sym (clojure.string/capitalize (c/name name)))
@@ -4619,14 +4677,38 @@
               ;; not (E+ [form1 form2 ...]) where all updates-expr are executed in a parrallel way (not taking care of previous forms effect)
 
               [ ;; clojure side effects
-               :clj (qq (t/type+ ~name ~fields ~(or _parents [])))
+               :clj (qq (t/type+ ~name ~fields ~parents))
                ;; constructors (positional and from hashmap)
                name-sym (qq (f ~fields (~(sym "->" class-sym) .~fields)))
                map-constructor-sym (qq (f_ (~(sym "map->" class-sym) _)))
                guard-sym (qq (f_ (and (instance? ~class-sym _) _)))
 
                ;; generic implementations
-               (sq (generic.type+ ~name (type [x] ~name) .~_impls))]))
+               (sq (generic.type+ ~name (type [x] ~name) .~impls))])
+
+            [e (tup name fields)]
+            (rec e [name fields {}])
+
+            [e (tup name fields (:lst impl1))]
+            (rec e [name fields {:impls [impl1]}])
+
+            [e [name fields (:lst impl1) . _impls]]
+            (rec e [name fields {:impls (cons impl1 _impls)}])
+
+            [e [name fields (:vec parents) . _impls]]
+            (rec e [name fields {:parents parents :impls _impls}]))
+
+         (cf [e (tup name fields)]
+             (obj+:upd e [{:name name :fields fields}])
+
+             [e (tup name fields (:lst impl1))]
+             (obj+:upd e [{:name name :fields fields :impls [impl1]}])
+
+             [e [name fields (:lst impl1) . _impls]]
+             (obj+:upd e [{:name name :fields fields :impls (cons impl1 _impls)}])
+
+             [e [name fields (:vec parents) . _impls]]
+             (obj+:upd e [{:name name :fields fields :impls _impls :parents parents}]))
 
          :demo
          (__
@@ -4653,67 +4735,6 @@
 
           ;; using generic implmentations
           (!! (+ (fut 1 2) (fut 1 2) )))]
-
-        obj+
-        ["an update to declare a new object"
-
-         :upd
-         (cf
-
-          [e [(& (ks name fields)
-                 (ks-opt parents impls)
-                 (ks-or proto {}
-                        class-sym (sym (str/capitalize (c/name name)))))]]
-
-          (let [name-sym (sym name)
-                ;;class-sym (or class-sym (sym (clojure.string/capitalize (c/name name))))
-                map-constructor-sym (sym "map->" name-sym)
-                guard-sym (sym name-sym "?")
-                proto-sym (sym name-sym ".proto:val")
-                proto-val
-                (red proto
-                     (f [p x]
-                        (clet [path (path (sym x ".proto:val"))
-                               [at v] (env-relfind e path)]
-                              (+ p v)
-                              p))
-                     parents)]
-
-            [ ;; clojure side effects
-             :clj (qq (t/type+
-                       {:tag ~name
-                        :fields ~fields
-                        :parents ~_parents
-                        :class-sym ~class-sym}))
-             ;; constructors (positional and from hashmap)
-             name-sym (qq (f ~fields (merge ~proto-sym (~(sym "->" class-sym) .~fields))))
-             proto-sym proto-val
-             map-constructor-sym (qq (f_ (~(sym "map->" class-sym) (merge ~proto-sym _))))
-             guard-sym (qq (f_ (and (instance? ~class-sym _) _)))
-
-             ;; generic implementations
-             (sq (generic.type+ ~name (type [x] ~name ~name) .~_impls))])
-
-          ;; extra signatures
-
-          [e (tup name fields (:map proto))]
-          (rec e [name fields [] proto []])
-
-          [e (tup name fields (:map proto) impls)]
-          (rec e [name fields [] proto impls])
-
-          [e (tup name fields (:vec parents) (:vec impls))]
-          (rec e [name fields parents {} []])
-
-          [e (tup name fields (:vec parents) (:map proto))]
-          (rec e [name fields parents proto []])
-
-          [e [name fields parents proto impls]]
-          (rec e [{:name name
-                   :fields fields
-                   :parents parents
-                   :proto proto
-                   :impls impls}]))]
 
         )
 

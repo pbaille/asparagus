@@ -168,9 +168,10 @@
 
   ;; they can be refered in code with colon notation
 
-  (!! stats:doc)
+  (is stats:doc
+      "a functions that takes some numbers and do some statistics on it")
 
-  (!! (eq stats stats:val))
+  (is stats stats:val)
 
   ;; we also could have used vector syntax to define stats
 
@@ -258,11 +259,9 @@
               ;; relative dotted
               ..demo1.c))})
 
-  (!! [(relative-access.demo1.a)
-       (relative-access.demo2 5)
-       (relative-access.demo3 9)])
-
-  
+  (is (relative-access.demo1.a) 3)
+  (is (relative-access.demo2 5) 12)
+  (is (relative-access.demo3 9) 18)
 
   ;; you may wonder about interop... it is not supportted for now, More thinking is required on that matter
   ;; at those early stages I tought that the core design is the main focus,
@@ -313,14 +312,14 @@
        mod2
        {:links {m1 links.demo.mod1
                 m1c links.demo.mod1.c
-                bub bubling.demo}
+                bub bubling.demo} ;; <- defined in previous section
         f
         (fn []
           ;; here m1.a will be substituted by links.demo.mod1.a
           ;; and m1c.d by links.demo.mod1.c.d
           (add m1.a m1c.d bub.a))}})
 
-  (!! (links.demo.mod2.f))
+  (is (links.demo.mod2.f) 5)
 
   ;; with this we can acheive some of the things we do with :require and :use in clojure ns's form
   ;; it will not be oftenly used directly, but will be used under the hood by higher level macros...
@@ -436,10 +435,10 @@
  ;; joining things together with +
  ;; ------------------------------
 
- ;; as I mentioned in the rational, core operations are generic functions that can be extended
- ;; + is one of them
-
  (_
+
+  ;; as I mentioned in the rational, core operations are generic functions that can be extended
+  ;; + is one of them
 
   (is (+ [1 2] '(3 4))
       [1 2 3 4])
@@ -520,7 +519,8 @@
 
   (is {} (pure? {}))
 
-  (nil? (!! (pure? {:a 1}))))
+  (isnt (pure? {:a 1})))
+
  )
 
 ;; ------------------------------------------------------------------------
@@ -761,7 +761,7 @@
        3)
 
    ;; in a ?let form it shorts on nil keys
-   (is (?let [(ks a) {}] (error "never")))
+   (isnt (?let [(ks a) {}] (error "never")))
 
    ;; opt-ks for keys that may not be here
    (is "foo"
@@ -808,12 +808,14 @@
     (?let [(tup a b) [1 2]] :iop)
     (!let [(tup a b) [1 2]] :iop))
 
-   (nil? (let [(tup a b) [1 2 3]] :iop))
-   (nil? (?let [(tup a b) [1 2 3]] :iop))
+   (isnt (let [(tup a b) [1 2 3]] :iop)
+         (?let [(tup a b) [1 2 3]] :iop))
+
    (!! (throws (!let [(tup a b) [1 2 3]] :iop)))
 
-   (nil? (let [(tup a b) [1]] :iop))
-   (nil? (?let [(tup a b) [1]] :iop))
+   (isnt (let [(tup a b) [1]] :iop)
+         (?let [(tup a b) [1]] :iop))
+
    (!! (throws (!let [(tup a b) [1]] :iop)))
 
 
@@ -825,7 +827,7 @@
    ;; we can extend binding ops like this
 
    ;; as an exemple we are redefining the & operation
-   (E+ (bind.op+ & [xs seed] ;; xs are the arguments passed to the operation, y is the expr we are binding
+   (E+ (bind.op+ ks [xs seed] ;; xs are the arguments passed to the operation, y is the expr we are binding
                  (bind (zipmap ($ xs keyword) xs) seed)))
 
    ;; when this operation is used
@@ -857,38 +859,45 @@
    ;; it can be what we call a guard pattern
    ;; a guard pattern is an expression with a binding symbol as first argument
 
-   (?let [(pos? a) 1] ;; if 1 is pos then the return value of (pos? 1) which is 1 is bound to the symbol a
-         a) ;;=> 1
+   (is 1
 
-   ;; is equivalent to
-   (?let [a 1
-          a (pos? a)]
-         a)
+       (?let [(pos? a) 1] ;; if 1 is pos then the return value of (pos? 1) which is 1 is bound to the symbol a
+               a) ;;=> 1
+
+       ;; is equivalent to
+       (?let [a 1
+              a (pos? a)]
+             a))
 
    ;; this syntax is really making sense whith guards that returns their first argument unchanged in case of success
 
-   (?let [(gt a 3) 4] ;; guards can have more than one arg
-         a) ;;=> 4
+   (is 4
+       (?let [(gt a 3) 4] ;; guards can have more than one arg
+             a))
 
-   (?let [(gt a 3) 2] ;; shorts
-         (error "never touched")) ;; nil
+   (isnt
+    (?let [(gt a 3) 2]              ;; shorts
+          (error "never touched"))) 
 
    ;; type guards
    ;; an sexpr starting with a type keyword (see asparagus.boot.types) indicates a type guard pattern
-   (?let [(:vec v) [1 2 3]]
-         v) ;;=> [1 2 3]
+   (is [1 2 3]
+       (?let [(:vec v) [1 2 3]]
+             v))
 
-   (?let [(:seq v) [1 2 3]]
-         (error "never")) ;;=> nil
+   (isnt
+    (?let [(:seq v) [1 2 3]]
+          (error "never"))) ;;=> nil
 
    ;; guard syntax
    (is (?let [(pos? a) 1
               (neg? b) -1] (add a b))
        0)
 
-   (?let [(pos? a) 1
-          (neg? b) 1]
-         (error "never thrown")) ;;=> nil
+   (isnt
+    (?let [(pos? a) 1
+           (neg? b) 1]
+          (error "never thrown"))) ;;=> nil
    )
 
   ;; value patterns ----------------------
@@ -964,8 +973,8 @@
   (let [f (fn [seed]
             (clut [[a a] seed] :eq
                   [[a b] seed] :neq))]
-    (and (eq :eq (f [1 1]))
-         (eq :neq (f [1 2]))))
+    (is :eq (f [1 1]))
+    (is :neq (f [1 2])))
 
   ;;unified strict version 
   (let [x [:tup [1 2]]]
@@ -1011,7 +1020,8 @@
   (let [fun (f [(& x [x1 . xs])
                 (& y [y1 . ys])]
                {:x x :y y :cars [x1 y1] :cdrs [xs ys]})]
-    (is (fun [1 2 3 4] [7 8 9])
+    (is
+     (fun [1 2 3 4] [7 8 9])
         {:x [1 2 3 4],
          :y [7 8 9],
          :cars [1 7],
@@ -1959,7 +1969,7 @@
  ;; is that functions and macros can share the same name. you may ask yourself what is the point :)
  ;; in fact in clojurescript, this kind of technique is used for compile time optimizations for exemple.
 
- ;; macros ------------------
+ ;; macros -----------------------------------
 
  (_
   ;; a simple macro definition
@@ -2025,7 +2035,7 @@
        :neg
        :zero)))
 
- ;; dual stage ------
+ ;; dual stage -------------------------------
 
  (_
   ;; our fancy-add function, will check the presence of litteral numbers in its operands and preprocess them at compile time
@@ -2060,7 +2070,7 @@
         (fancy-add 1 a 2)))
   )
 
- ;; substitutions --------------
+ ;; substitutions ----------------------------
 
  (_
 
@@ -2099,7 +2109,7 @@
 
   )
 
- ;; updates --------------------
+ ;; updates ----------------------------------
 
  (_
   ;; extending E+ behavior with the :upd attribute
@@ -2127,7 +2137,7 @@
   ;; so an update functions can return an expression which is another update call, which will be further processed
   )
 
- ;; effects -----------------------
+ ;; effects ----------------------------------
 
  (_
   ;; sometimes you need to do dirty/real things,
@@ -2246,7 +2256,7 @@
        ([a]
         :num {:num a}
         :str {:str a}
-        :seq {:seq a})
+        :lst {:seq a})
        ([a b . c]
         :vec {:variadic-arity-vec-extension [a b c]})))
 
@@ -2289,16 +2299,17 @@
        ))
 
  ;; definition with generic implementations 
- (E+ (type+ :mytyp ;; type tag
+ (E+
+  (type+ :mytyp ;; type tag
 
-            [bar baz] ;; fields
+         [bar baz] ;; fields
 
-            ;; generic implementations ...
-            ;; only one here but there can be several of them
-            (+ [a b]
-               (!let [(:mytyp b) b]
-                     (mytyp (+ (:bar a) (:bar b))
-                          (+ (:baz a) (:baz b)))))))
+         ;; generic implementations ...
+         ;; only one here but there can be several of them
+         (+ [a b]
+            (!let [(:mytyp b) b]
+                  (mytyp (+ (:bar a) (:bar b))
+                         (+ (:baz a) (:baz b)))))))
 
  ;; instantiation
  (is (mytyp 1 2)
@@ -2315,6 +2326,9 @@
  ;; using generic implmentations
  (is (+ (mytyp 1 2) (mytyp 1 2))
      (mytyp 2 4))
+
+ ;;TODO when evaluating several times those types declarations a weird thing occurs
+ (:mytyp (t/get-reg)) ;; @#?!
 
  )
 
