@@ -59,80 +59,19 @@
             vec (conj (last argv)))
           members))
 
-  (defn tagmap [[argv & decls]]
+  (defn casemaps
+
+    "(casemaps '([a b] :t1 e1 :t2 e2))
+     ;;=>
+     [{:type t1 :argv [a b] :arity 2 :expr e1}
+      {:type t2 :argv [a b] :arity 2 :expr e2}]"
+
+    [[argv & decls]]
     (let [arity (count argv)]
       (reduce
        (fn [a [t e]]
          (conj a {:type t :argv argv :arity arity :expr e}))
        [] (reverse (partition 2 decls)))))
-
-  #_(defn tagsmap [cases]
-    (p/redh
-     #(p/deep-merge %1 (tagmap %2))
-     cases))
-
-  #_(defn exprmap [xs]
-    (p/redh
-     (fn [a [t e]]
-       (merge a (zipmap (t/classes t) (repeat e))))
-     (reverse (partition 2 xs))))
-
-  #_(exprmap (next (first (:cases (get-spec! 'g2)))))
-
-  #_(defn casemap [[argv & decls]]
-    (let [arity (count argv)]
-      (reduce
-       (fn [a [c e]]
-         (update a c assoc arity (list argv e)))
-       {} (exprmap decls))))
-
-  #_(casemap (first (:cases (get-spec! 'g2))))
-
-  #_(defn casesmap [cases]
-    (p/redh
-     #(p/deep-merge %1 (casemap %2))
-     #_(fn [a [argv & decls]]
-         (let [arity (count argv)]
-           (reduce
-            (fn [a [c e]]
-              (update a c assoc arity (list argv e)))
-            a (exprmap decls))))
-      cases))
-
-  
-  #_(casesmap (:cases (get-spec! 'g2)))
-
-  #_(defn type-extensions
-    [{:keys [cases ns pname mname name]}]
-    (map (fn [[c arities]]
-           `(extend-type ~c
-              ~@(mapcat (fn [[arity impl]]
-                          [(with-ns ns (arify-name pname arity))
-                           (cons (arify-name mname arity) impl)])
-                  arities)))
-         (casesmap cases)))
-
-  #_(defn type-extensions'
-    "an alternative that target extend instead of extend-type
-     it will be useful for asparagus to wrap generics with this
-     because no need to process lambdas before generating the extension form"
-    [{:keys [cases ns pname mname name lambda-wrapper]
-      :or {lambda-wrapper `fn}}]
-    (map (fn [[c arities]]
-           `(extend ~c
-              ~@(mapcat (fn [[arity impl]]
-                          [(with-ns ns (arify-name pname arity))
-                           {(keyword (arify-name mname arity)) (cons lambda-wrapper impl)}])
-                  arities)))
-         (casesmap cases)))
-
-  #_(type-extensions' (assoc (get-spec! 'g2) :lambda-sym 'f))
-
-  #_(defn emit-impls [name cases]
-    (mapcat
-      (fn [[c m]]
-        [c (cons name (vals m))])
-      (casesmap cases)))
 
   (defn variadify-argv [v]
     (vec (concat (butlast v) ['& (last v)])))
@@ -163,9 +102,11 @@
 
       (assoc spec
              :compiled-cases
-             (mapv (fn [{:keys [argv expr] :as tagmap}]
-                     (assoc tagmap :compiled ((or lambda-case-compiler identity) (list argv expr))))
-                   (vec (mapcat tagmap cases)))))
+             (mapv (fn [{:keys [argv expr] :as casemap}]
+                     (assoc casemap :compiled
+                            ((or lambda-case-compiler identity)
+                             (list argv expr))))
+                   (mapcat casemaps cases))))
 
     (defn generic-spec [name body]
 
@@ -204,18 +145,6 @@
                        (list `fn compiled)}))
               (t/classes type)))
        compiled-cases))
-
-    (comment
-     #_(def g2spec
-         (compile-cases
-          (assoc (get-spec! 'g2)
-                 :lambda-case-compiler
-                 #(do (pp "hey i compile") %))))
-
-     #_(pp g2spec)
-
-     #_(extend-forms' g2spec)
-     )
 
     (defn registering-form [spec]
       `(swap! state assoc-in [:fns '~(:name spec)] '~spec))
@@ -313,7 +242,7 @@
        only the generics impacted by this change will be synced"
       [xs]
       (let [sync? #(seq (clojure.set/intersection (set xs) (set %)))]
-        (doseq [[name ts] (p/prob "implementers-map:" (implementers-map))]
+        (doseq [[name ts] (implementers-map)]
           (when (sync? ts) (sync-spec! name)))))
 
     #_(sync-types! [:num :str])

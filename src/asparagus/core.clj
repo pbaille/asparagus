@@ -1013,9 +1013,11 @@
       "the main way to extend and update the asparagus environment
        for implementation details refer to the previous section (:extension)"
       [& xs]
-      `(do ~@(map (fn [u]
-                    `(env-upd_exe @E (env-upds @E '~u)))
-                  (env-upd_split xs))))
+      `(do ~(when (symbol? (first xs))
+              `(println "E+ " '~(first xs)))
+           ~@(map (fn [u]
+                      `(env-upd_exe @E (env-upds @E '~u)))
+                    (env-upd_split xs))))
 
     (defmacro !!
       "a little convenience, that is mainly useful for development
@@ -1908,152 +1910,6 @@
 
           )})
 
-    #_(E+ generic
-        {:doc
-         "an update to define a generic function
-          and its related inspection and extension capabilities
-          it is a wrapper around asparagus.boot.generics functionalities
-          please refer directly asparagus.boot.generics source file for documentation and examples"
-
-         :upd
-         (fn [e body]
-           (let [gsym (generic.symbol (loc e))]
-             (assoc (generic.module gsym)
-                    :fx (qq (generic.init ~gsym ~body))
-                    #_(lst 'generic.init gsym body))))
-
-         reduced:upd
-         (fn [e [argv & decls]]
-           (let [[arg1 varg] (p/gensyms)]
-             #_(pp "yop" [argv decls])
-             (qq (generic
-                  ([~arg1] ~arg1)
-                  (~argv . ~decls)
-                  (~(conj argv '& varg)
-                   .~(c/mapcat
-                      (fn [[t i]]
-                        [t (qq (reduce (fn ~argv ~i) ~i ~varg))])
-                      (c/partition 2 decls))
-                   )))))
-
-         module
-         (fn [gsym]
-           (qq {:val ~gsym
-                inspect:val
-                (fn [] ((g/get-reg) '~gsym))
-                ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
-                extension-form:mac
-                (fn [e bod]
-                  (g/extension-form
-                   (generic.spec e '~gsym bod)))
-                ;; now entend:upd just emit a macro call that will wait expansion time
-                extend:upd
-                (fn [e bod]
-                  {:fx (lst* (qq extension-form) bod)})
-                ;; this is the previous code (problems with type+)
-                #_(fn [e bod]
-                    {:fx (g/extension-form
-                          (generic.spec e '~gsym bod))})
-
-                }))
-
-         spec
-         {:val
-          (fn [e n body]
-            #_(g/generic-spec n body)
-            #_(println "generic-spec " body)
-            (.exp-cases e (g/generic-spec n body)))
-
-          exp-case
-          (fn [e [argv & body]]
-            (let [[e argv] (hygiene.shadow e argv)]
-              (lst* argv (exp e body))))
-
-          exp-cases
-          (fn [e s]
-            (update s :cases $ (p ..exp-case e)))}
-
-         symbol
-         (fn [n]
-           (path->varsym (path n :generic)))
-
-         init:mac
-         (fn [e [n body]]
-           (g/declaration-form
-            (..spec e n body)))
-
-         type+
-         {:doc
-          "lets you implement one or several generics for a type.
-           analog to extend-type"
-
-          :upd
-          (fn [e [type & body]]
-            ($ (c/vec body)
-               (fn [[n & xs]]
-                 #_(pp :gentyp+ xs (g/impl-body->cases type xs))
-                 (lst* (p/sym n ".extend")
-                       (g/impl-body->cases type xs)))))}
-
-         :demo
-         (__
-
-          ;; generic ----------------
-
-          ;; defines a pul+ generic function
-          ;; with 3 implementations for: strings, symbols and numbers
-          (E+ pul+
-              (generic [a b]
-                       :str (str a b)
-                       :sym (pul+ (str a) (str b))
-                       :num (add a b)))
-
-          ;; inspect
-          (!! (pul+.inspect))
-
-          ;; use
-          (!! (pul+ 1 2))
-          (!! (pul+ "a" 2))
-
-          ;; extend
-          ;; implement pul+ for vectors
-          (E+ (pul+.extend
-               [x y]
-               :vec (catv x y)))
-
-          ;; use the new impl
-          (!! (pul+ [1] [7]))
-          (!! (pul+.inspect))
-
-          ;; generic.reduced ---------
-
-          ;; let you define a binary generic function
-          ;; and use reduce for calls with more than 2 arguments
-          (E+ pil+
-              (generic.reduced [a b]
-                               :str (str a b)
-                               :num (+ a b)))
-
-          (!! (pil+.inspect))
-          (!! (pil+ 7 9 7))
-
-          ;; type extension
-
-          (E+ (generic.type+
-               :key
-               (pul+ [x y] :keypul+)
-               (pil+ [x y] :keypil+)))
-
-          (eq (pul+ :aze 1) :keypul+)
-          (eq (pil+ :aze 1) :keypil+)
-
-          ;; scope checks ------------
-
-          ;; here we are just checking that generic implementation have access to the local scope
-          (E+ foo.bar.fortytwo:sub (fn [_] 42))
-          (E+ foo.bar.g (generic [x] :num (+ ..fortytwo x)))
-          (!! (foo.bar.g 1)))})
-
     (E+ generic
         {:doc
          "an update to define a generic function
@@ -2081,11 +1937,12 @@
                       (c/partition 2 decls))
                    )))))
 
+         lambda-wrapper (qq fn)
+
          lambda-case-compiler
          (fn [e]
-           (fn [c]
-             (let [[_ _ c] (exp e (lst* (qq fn) c))]
-               c)))
+           (fn [case]
+             (nth (exp e (lst* lambda-wrapper case)) 2)))
 
          spec
          (fn [e gsym bod]
@@ -4728,7 +4585,7 @@
 
          ))
 
-    (E+ type+ ;; TODO adapt to new boot2 impl
+    (E+ type+
 
         ["an update to declare a new type"
 
@@ -4934,7 +4791,7 @@
                 e (composite.cxp-old e x))))
         )
 
-    (pp :will-declare-topforms)
+    (pp 'will-declare-topforms)
 
     (init-top-forms
      let lut ?let !let !lut
@@ -4946,5 +4803,5 @@
      case casu !case !casu
      throws)
 
-    (pp :DONE)
+    (pp 'DONE)
     )

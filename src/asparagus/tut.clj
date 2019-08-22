@@ -13,7 +13,7 @@
 ;; ------------------------------------------------------------------------
 
 (_
- ;; asparagus is my last experience in language design
+ ;; Asparagus is my last experience in language design
  ;; after several attempt, i've compiled some of the ideas I like, found in other languages/books/papers
 
  ;; it is embedded in clojure, but at the same time is quite far from it.
@@ -51,6 +51,10 @@
 
 (_
 
+ ;; the asparagus environment is holded by the asparagus.core/E atom
+
+ @E
+
  (_
   ;; you can define a variable like this (E+ stands for extend-environment)
   ;; its like a really (really!) fancy 'def
@@ -64,9 +68,9 @@
 
   ;; for now we will use !! macro to evaluate forms (it is kind of ugly...), but later it will no longer be needed
 
-  (!! foo) ;; return the value under foo e.g 1
-  (!! baz) ;; 42
-  (!! bar) ;; \a
+  (is 1 foo) ;; return the value under foo e.g 1
+  (is 42 baz) ;; 42
+  (is \a bar) ;; \a
 
   ;; you can modularize definitions (one of the motivational point of all this)
   ;; here we use a hashmap literal to define several variables in 'mymodule and 'mymodule.c
@@ -88,7 +92,8 @@
 
   ;; we use dot notation to access nested environment members
 
-  (!! (add mymodule.a mymodule.c.d)) ;; will add 1 and 42
+  (is 43
+      (add mymodule.a mymodule.c.d)) ;; will add 1 and 42
 
   ;; dot notation can be used in definitions too
 
@@ -99,8 +104,8 @@
 
   ;; foo is still defined
 
-  (!! foo)                              ;=> 1
-  (!! foo.bar)                          ;=> 'foob
+  (is 1 foo)
+  (is 'foob foo.bar)
 
   ;; one handy usage of this behavior is scoped helpers definition
 
@@ -122,11 +127,12 @@
       :mean (stats.mean xs)}))
 
   ;; in my clojure practice I was often annoyed to put stats.sum and stats.mean at the same level than stats
-  ;; Certainly I can create a stats namespace holding those helpers, but... it seems heavy for sush a common/natural thing...
+  ;; Certainly I can create a stats namespace holding those helpers, but... it seems heavy for such a common/natural thing...
 
-  (!! (stats 1 2 3 4))                  ;=> {:xs (1 2 3 4), :sum 10, :mean 5/2}
+  (is (stats 1 2 3 4)
+      {:xs '(1 2 3 4), :sum 10, :mean 5/2})
 
-  ;; it could be defined with a map literal to
+  ;; it could be defined with a map literal too
 
   (E+ stats
       {;; for now i've hidden an important detail,
@@ -191,8 +197,8 @@
           :mean (.mean xs)})])
 
   ;; in E+, top level's strings literals represent documentation
-  ;; (a bold choice maybe... but maybe not so much if we really want to make documentation a first class citizen)
-  ;; and I've said to myself, maybe hardcoded string in code are not so common? far less than keywords for instance
+  ;; (a bold choice maybe... maybe not so much if we really want to make documentation a first class citizen)
+  ;; and I've said to myself, maybe hardcoded string in code are not so common? far less than keywords for instance.
 
   (E+ myvar
       ["myvar doc" 42])
@@ -201,8 +207,8 @@
 
   (E+ myvar {:val 42 :doc "myvar doc"})
 
-  (!! (eq "myvar doc"
-          myvar:doc))
+  (is  "myvar doc"
+       myvar:doc)
 
   ;; finally we can redefine stats with doc litterals
 
@@ -230,8 +236,8 @@
        v:val [1 2 3]
        s:val "iop"])
 
-  (!! (and (eq {:a 1 :b 2} rawvals.h)
-           (eq "iop" rawvals.s)))
+  (is {:a 1 :b 2} rawvals.h)
+  (is "iop" rawvals.s)
 
   ;; one thing that may have intrigued you is relative environment member accesses
   ;; e.g .sum, .mean and ..sum (in the stats previous definition)
@@ -264,9 +270,11 @@
        (relative-access.demo2 5)
        (relative-access.demo3 9)])
 
-  ;; you may wonder about interop... we do not support it for now, we have to think more carrefully about it
+  
+
+  ;; you may wonder about interop... it is not supportted for now, More thinking is required on that matter
   ;; at those early stages I tought that the core design is the main focus,
-  ;; We are not at the get-the-things-done stage for now ;)
+  ;; Asparagus is not at the get-the-things-done stage for now ;)
 
   )
 
@@ -293,8 +301,8 @@
           a)}}
       )
 
-  (!! (eq 1 (bubling.demo.b.c)))
-  (!! (eq 2 (bubling.demo.c.b)))
+  (is 1 (bubling.demo.b.c))
+  (is 2 (bubling.demo.c.b))
   )
 
  ;; links --------------------
@@ -325,10 +333,6 @@
   ;; with this we can acheive some of the things we do with :require and :use in clojure ns's form
   ;; it will not be oftenly used directly, but will be used under the hood by higher level macros...
 
-
-  ;; the asparagus environment is holded by the asparagus.core/E atom
-
-  (env-inspect root-path)
   ))
 
 ;; ------------------------------------------------------------------------
@@ -394,7 +398,7 @@
 
   ;; we will see that in asparagus we avoid predicates (functions that returns booleans)
   ;; in favor of guards (functions that can return nil indicating failure, or data)
-  ;; for instance (pos? 1) will be, i think, more useful if it returns 1 in case of success and nil otherwise
+  ;; for instance (pos? 1) may be, more useful if it returns 1 in case of success and nil otherwise
   ;; this way it can be composed more easily i think.
   ;; more on control flow, shortcircuiting and stuff later...
   )
@@ -484,7 +488,7 @@
       [1 2])
 
   ;; for lists it adds at the end (not like conj do)
-  ;; it is a choice that can be disctable, in my own pratice i'm not realying often on way that clojure lists implements conj
+  ;; it is a choice that can be discutable, in my own pratice i'm not realying often on way that clojure lists implements conj
   ;; sip being a generic operation (extendable by user types) we could add a datatype that conj elements at its head like clojure lists...
   (is (sip (lst 1 2) 3)
       '(1 2 3))
@@ -963,7 +967,6 @@
   (throws
    (!clet [x (pos? 0)] :pos
           [x (neg? 0)] :neg))
-
 
   ;; unfied version of clet
   (let [f (fn [seed]
