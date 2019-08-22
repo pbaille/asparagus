@@ -1,6 +1,7 @@
 (ns asparagus.boot.generics
-  (:require [asparagus.boot.prelude :as p :refer [$ $vals sym pp]])
-  (:require [asparagus.boot.types :as t]))
+  (:require [asparagus.boot.prelude :as p :refer [$ $vals sym pp]]
+            [asparagus.boot.types :as t]
+            [asparagus.boot.state :refer [state]]))
 
 ;; generic function
 ;; based on clojure protocols with some extra features
@@ -15,12 +16,14 @@
 
 (do :state
 
-    ;; hold generics implementations
-    (def reg (atom {}))
+    (swap! state assoc :fns {})
+
+    (defn get-reg []
+      (:fns @state))
 
     (defn get-spec! [name]
-      (p/assert (get @reg name)
-              (str "Cannot find spec " name))))
+      (p/assert (get-in @state [:fns name])
+                (str "Cannot find spec " name))))
 
 (do :impl
 
@@ -54,43 +57,21 @@
     [[argv & members]]
     (cons (-> argv butlast butlast
             vec (conj (last argv)))
-      members))
+          members))
 
-  (defn exprmap [xs]
-    (p/redh
-     (fn [a [t e]]
-       (merge a (zipmap (t/classes t) (repeat e))))
-     (reverse (partition 2 xs))))
+  (defn casemaps
 
-  (defn casemap [cases]
-    (p/redh
-      (fn [a [argv & decls]]
-        (let [arity (count argv)]
-          (reduce
-            (fn [a [c e]]
-              (update a c assoc arity (list argv e)))
-            a (exprmap decls))))
-      cases))
+    "(casemaps '([a b] :t1 e1 :t2 e2))
+     ;;=>
+     [{:type t1 :argv [a b] :arity 2 :expr e1}
+      {:type t2 :argv [a b] :arity 2 :expr e2}]"
 
-  #_(casemap (:cases (@reg 'g2)))
-
-  (defn type-extensions
-    [{:keys [cases ns pname mname name]}]
-    (map (fn [[c arities]]
-           `(extend-type ~c
-              ~@(mapcat (fn [[arity impl]]
-                          [(with-ns ns (arify-name pname arity))
-                           (cons (arify-name mname arity) impl)])
-                  arities)))
-         (casemap cases)))
-
-  #_(type-extensions (@reg 'g2))
-
-  (defn emit-impls [name cases]
-    (mapcat
-      (fn [[c m]]
-        [c (cons name (vals m))])
-      (casemap cases)))
+    [[argv & decls]]
+    (let [arity (count argv)]
+      (reduce
+       (fn [a [t e]]
+         (conj a {:type t :argv argv :arity arity :expr e}))
+       [] (reverse (partition 2 decls)))))
 
   (defn variadify-argv [v]
     (vec (concat (butlast v) ['& (last v)])))
@@ -114,80 +95,159 @@
 
 (do :parts
 
-  (defn generic-spec [name body]
+    (defn compile-cases
 
-    (let [doc (when (string? (first body)) (first body))
-          cases' (if doc (rest body) body)
-          cases (parse-cases cases')
-          {:keys [fixed variadic]} (split-cases cases)
-          variadic (some-> variadic format-variadic-case)
-          variadic-arity (some-> variadic first count)
-          argvs (concat (map first fixed) (some-> variadic first vector))
-          arities (set (map count argvs))
-          cases (if-not variadic fixed (concat fixed [variadic]))]
+      [{:as spec :keys [cases]}
+       & [lambda-case-compiler]]
 
-      (assert (if variadic (= variadic-arity (apply max arities)) true)
-        "arity error, fixed arity > variadic arity")
-      (merge
-        (derive-name name)
-        {:variadic? (boolean variadic)
-         :arities arities
-         :sigs (map p/argv-litt arities)
-         :cases cases
-         :doc doc})))
+      (assoc spec
+             :compiled-cases
+             (mapv (fn [{:keys [argv expr] :as casemap}]
+                     (assoc casemap :compiled
+                            ((or lambda-case-compiler identity)
+                             (list argv expr))))
+                   (mapcat casemaps cases))))
 
-  (defn registering-form [spec]
-    `(swap! reg assoc '~(:name spec) '~spec))
+    (defn generic-spec [name body]
 
-  (defn extend-spec
-    [spec extension-spec]
-    (p/assert (every? (:arities spec) (:arities extension-spec))
-              "unknown arity")
-    (update spec :cases
-            concat (:cases extension-spec)))
+      (let [doc (when (string? (first body)) (first body))
+            cases' (if doc (rest body) body)
+            cases (parse-cases cases')
+            {:keys [fixed variadic]} (split-cases cases)
+            variadic (some-> variadic format-variadic-case)
+            variadic-arity (some-> variadic first count)
+            argvs (concat (map first fixed) (some-> variadic first vector))
+            arities (set (map count argvs))
+            cases (if-not variadic fixed (concat fixed [variadic]))]
 
-  (defn protocol-declaration-form
-    [{:keys [pname mname sigs ns]}]
-    `(do ~@(map (fn [argv]
-                  (let [arity (count argv)]
-                    `(defprotocol ~(with-ns ns (arify-name pname arity))
-                       (~(arify-name mname arity) ~argv))))
-                sigs)))
+        (assert (if variadic (= variadic-arity (apply max arities)) true)
+                "arity error, fixed arity > variadic arity")
 
-  (defn protocol-extension-form
-    [{:keys [ns pname mname cases] :as spec}]
-    `(do ~@(type-extensions spec)))
+        (merge
+         (derive-name name)
+         {:variadic? (boolean variadic)
+          :arities arities
+          :sigs (map p/argv-litt arities)
+          :cases cases
+          :doc doc})))
 
-  (defn function-definition-form
-    [{:keys [name pname mname
-             sigs variadic? arities]}]
-    (let [sigs (sort sigs)
-          fixed-sigs (if variadic? (butlast sigs) sigs)
-          vsig (last sigs)
-          vsig-argv (variadify-argv vsig)]
-      `(defn ~name
-         ~@(map (fn [sig] `(~sig (~(arify-name mname (count sig)) ~@sig)))
-                fixed-sigs)
-         ~@(when variadic?
-             [`(~vsig-argv (~(arify-name mname (count vsig)) ~@vsig))]))))
+    (def compiled-generic-spec
+      (comp compile-cases generic-spec))
 
-  (defn protocol-initialisation-form [spec]
-    `(do ~(protocol-declaration-form spec)
-         ~(protocol-extension-form spec)))
+    (defn extend-forms
+      [{:as spec :keys [ns pname mname compiled-cases]}]
 
-  (defn declaration-form [spec]
-    `(do ~(registering-form spec)
-         ~(protocol-declaration-form spec)
-         ~(function-definition-form spec)
-         ~(protocol-extension-form spec)
-         ~(:name spec)))
+      (mapcat
+       (fn [{:as case :keys [type arity compiled]}]
+         (map (fn [k]
+                (list `extend k (with-ns (str *ns*) (arify-name pname arity))
+                      {(keyword (arify-name mname arity))
+                       (list `fn compiled)}))
+              (t/classes type)))
+       compiled-cases))
 
-  (defn extension-form [spec]
-    (let [spec+ (extend-spec (get-spec! (:name spec)) spec)]
-      `(do ~(registering-form spec+)
-           ~(protocol-extension-form spec+))))
+    (defn registering-form [spec]
+      `(swap! state assoc-in [:fns '~(:name spec)] '~spec))
 
-  )
+    (defn extend-spec
+      [spec extension-spec]
+      (p/assert (every? (:arities spec) (:arities extension-spec))
+                "unknown arity")
+      (merge-with
+       concat spec
+       (select-keys extension-spec
+                    [:cases :compiled-cases]))
+      #_(-> spec
+          (update :cases concat (:cases extension-spec))
+          (update :compiled-cases concat (:compiled-cases extension-spec))))
+
+    (defn protocol-declaration-form
+      [{:keys [pname mname sigs ns]}]
+      `(do ~@(map (fn [argv]
+                    (let [arity (count argv)]
+                      `(defprotocol ~(with-ns ns (arify-name pname arity))
+                         (~(arify-name mname arity) ~argv))))
+                  sigs)))
+
+    (defn protocol-extension-form
+      [{:keys [ns pname mname cases] :as spec}]
+      `(do ~@(extend-forms spec)))
+
+    (defn function-definition-form
+      [{:keys [name pname mname
+               sigs variadic? arities]}]
+      (let [sigs (sort sigs)
+            fixed-sigs (if variadic? (butlast sigs) sigs)
+            vsig (last sigs)
+            vsig-argv (variadify-argv vsig)]
+        `(defn ~name
+           ~@(map (fn [sig] `(~sig (~(arify-name mname (count sig)) ~@sig)))
+                  fixed-sigs)
+           ~@(when variadic?
+               [`(~vsig-argv (~(arify-name mname (count vsig)) ~@vsig))]))))
+
+    (defn protocol-initialisation-form [spec]
+      `(do ~(protocol-declaration-form spec)
+           ~(protocol-extension-form spec)))
+
+    (defn extension-form [spec]
+      #_(pp "extform" (get-spec! (:name spec)))
+      (let [spec+ (extend-spec (get-spec! (:name spec)) spec)]
+        `(do ~(registering-form spec+)
+             ~(protocol-extension-form spec+))))
+
+    (defn cleaning-form [{:as s :keys [pname mname name arities]}]
+      (let [arified-names
+            (mapcat (fn [n] [(arify-name mname n) (arify-name pname n)])
+                    arities)]
+        `(doseq [x# '~(vec (cons name arified-names))]
+           (ns-unmap *ns* x#))))
+
+    (defn declaration-form [spec]
+      `(do ~(cleaning-form spec)
+           ~(registering-form spec)
+           ~(protocol-declaration-form spec)
+           ~(function-definition-form spec)
+           ~(protocol-extension-form spec)
+           ~(:name spec)))
+
+    )
+
+(do :refresh
+
+    (defn implementers
+      "given a generic spec,
+       returns a vector of all types that implement the corresponding generic"
+      [spec]
+      (->> (:cases spec)
+           (map (fn [[_ & xs]]
+                  (reduce (fn [a e]
+                            (if (set? e) (into a e) (conj a e)))
+                          #{} (map first (partition 2 xs)))))
+           (reduce into #{})))
+
+    (defn implementers-map []
+      ($vals (get-reg) implementers))
+
+    (defn sync-spec!
+      "recompile and execute the spec of the given name"
+      [name]
+      #_(println "refreshing generics: " name)
+      (eval (extension-form (get-spec! name))))
+
+    (defn sync-types!
+      "when type registry has been updated,
+       we sometimes need to sync some generics declaration
+       xs: the types that have changed
+       only the generics impacted by this change will be synced"
+      [xs]
+      (let [sync? #(seq (clojure.set/intersection (set xs) (set %)))]
+        (doseq [[name ts] (implementers-map)]
+          (when (sync? ts) (sync-spec! name)))))
+
+    #_(sync-types! [:num :str])
+
+    )
 
 (do :api
 
@@ -197,14 +257,14 @@
       "create a generic function"
       [name & cases]
       (declaration-form
-       (generic-spec name cases)))
+       (compiled-generic-spec name cases)))
 
     (defmacro generic+
       "add new cases to an existant generic
        all given arities must already be known"
       [name & cases]
       (extension-form
-       (generic-spec name cases)))
+       (compiled-generic-spec name cases)))
 
     (defmacro fork
       "create a new generic from an existing one
@@ -213,12 +273,12 @@
       (let [names (derive-name name)
             parent-spec (get-spec! parent-name)
             base-spec (merge parent-spec names)
-            extension-spec (generic-spec name cases)
+            extension-spec (compiled-generic-spec name cases)
             spec (extend-spec base-spec extension-spec)]
         (declaration-form spec)))
 
     (defmacro compile-all! []
-      `(do ~@(map protocol-extension-form (vals @reg))))
+      `(do ~@(map protocol-extension-form (vals (get-reg)))))
 
     ;; extend-type
 
@@ -233,13 +293,18 @@
                  (list argv tag (bodify bs)))
                all))))
 
-    (defn implement [tag [name & body]]
-      `(generic+ ~name ~@(impl-body->cases tag body)))
+    (defn implement [tag [name & body :as form]]
+      (if (get (get-reg) name)
+        `(generic+ ~name ~@(impl-body->cases tag body))
+        (if-let [p (-> (resolve name) meta :protocol)]
+          `(extend-protocol ~(symbol p)
+             ~@(mapcat (fn [t] [t form]) (t/classes tag))))))
 
     (defmacro type+
       "like extend type"
       [tag & impls]
-      `(do ~@(map #(implement tag %) impls))))
+      `(do ~@(map #(implement tag %) impls)))
+    )
 
 (do :tests
 
@@ -254,11 +319,11 @@
            #{:key :sym} :key-or-sym)
 
   (p/asserts
-    (g1 [])
-    (g1 #{})
-    (g1 '())
-    (g1 'a)
-    (g1 :a))
+   (g1 [])
+   (g1 #{})
+   (g1 '())
+   (g1 'a)
+   (g1 :a))
 
   ;; extension
   (generic+ g1 [x]
@@ -267,9 +332,13 @@
             ;; if a last expresion is given it extends Object
             [:unknown x])
 
+  (get-spec! 'g1)
+  (implementers (get-spec! 'g1))
+  (get-reg)
+
   (p/asserts
-    (g1 "a")
-    (g1 (atom {})))
+   (g1 "a")
+   (g1 (atom {})))
 
   ;; poly arity exemple
   (generic g2
@@ -285,16 +354,16 @@
             [:variadic x y z more]))
 
   (p/asserts
-    (= (g2 [] 1)
+   (= (g2 [] 1)
       [:g2vec [] 1])
-    (= (g2 #{} 1)
+   (= (g2 #{} 1)
       [:g2coll #{} 1])
-    (= (g2 #{} 1 2)
+   (= (g2 #{} 1 2)
       [:coll #{} 1 2])
-    (= (g2 "me" 1 2 3 4)
-       [:variadic "me" 1 2 '(3 4)])
-    (= (g2 :iop 1 2 3 4)
-       [:variadic :iop 1 2 '(3 4)]))
+   (= (g2 "me" 1 2 3 4)
+      [:variadic "me" 1 2 '(3 4)])
+   (= (g2 :iop 1 2 3 4)
+      [:variadic :iop 1 2 '(3 4)]))
 
   #_(p/error "stop")
 
@@ -304,16 +373,18 @@
             ([a b c & ds] :str [:variadstr a b c ds]))
 
   (p/asserts
-    (= (g2 [] 1)
+   (= (g2 [] 1)
       [:g2vec2 [] 1])
-    (= (g2 "me" 1 2 3 4)
-       [:variadstr "me" 1 2 '(3 4)]))
+   (= (g2 "me" 1 2 3 4)
+      [:variadstr "me" 1 2 '(3 4)]))
 
   ;; fork is creating a new generic from an existing one
   ;; it inherit all impls and extend/overide it with given implementations
   (fork g2 g2+
-        ([a b] :seq [:g2+seq2 a b])
+        ([a b] :lst [:g2+seq2 a b])
         ([a b c & ds] :str [:g2+variadstr a b c ds]))
+
+  (get-spec! 'g2+)
 
   (p/asserts
 
@@ -332,7 +403,7 @@
   (fork g2+ g2+clone)
 
 
-  ;; type+ is like deftype
+  ;; type+ is like extendtype
   ;; implement several generics at a time for a given type
   (type+ :fun
          (g1 [x] :g1fun)
@@ -342,12 +413,30 @@
    (= [:g2fun2 inc 1] (g2 inc 1))
    (= :g1fun (g1 (fn [a]))))
 
+  ;; the implementations given to type+ does not have to be asparagus generics,
+  ;; it can be regular clojure protocols functions
+  ;; CAUTION: it will not reflect type hierarchy further changes as with generics
+
+  (defprotocol Prot1 (prot1-f [x] [x y]))
+
+  (type+ :fun
+         (g1 [x] :g1fun)
+         (g2 [x y] [:g2fun2 x y])
+         ;; a raw protocol function
+         (prot1-f ([x] "prot1-f fun")
+                  ([x y] "prot1-f fun arity 2"))) ;; <- here
+
+  ;; if childs are added to :fun, prot1-f will not be sync! so, use at your own risk...
+
+  (p/asserts (= "prot1-f fun" (prot1-f inc))
+             (= "prot1-f fun arity 2" (prot1-f inc 42)))
+
   (generic sip'
            ([a b]
             :vec (conj a b)
             :map (apply assoc a b)
             :set (conj a b)
-            :seq (concat a [b])
+            :lst (concat a [b])
             :str (str a (.toString b))
             :sym (symbol (sip' (name a) (.toString b)))
             :key (keyword (sip' (name a) (.toString b))))
@@ -357,86 +446,35 @@
   (p/asserts
    (= (sip' [] 1 2 3)
       [1 2 3])
-    (= (sip' #{} 1 2 3)
+   (= (sip' #{} 1 2 3)
       #{1 2 3}))
 
   (generic valid'
-    [x]
-    :nil nil
-    :map (when (every? valid' (vals x)) x)
-    :coll (when (every? valid' x) x)
-    :word :validword
-    :any x)
+           [x]
+           :nil nil
+           :map (when (every? valid' (vals x)) x)
+           :coll (when (every? valid' x) x)
+           :word :validword
+           :any x)
 
   (p/asserts
-    (not (valid' [nil 1 nil]))
-    (valid' [1 2 3])
-    (valid' #{1 2 3})
-    (valid' {:a 1 :b 2})
-    (not (valid' {:a 1 :b 2 :c nil})))
+   (not (valid' [nil 1 nil]))
+   (valid' [1 2 3])
+   (valid' #{1 2 3})
+   (valid' {:a 1 :b 2})
+   (not (valid' {:a 1 :b 2 :c nil})))
+
+  #_(clojure.walk/macroexpand-all '(generic+ valid'
+                                             [x] :key :validkey))
 
   (generic+ valid'
-    [x] :key :validkey)
+            [x] :key :validkey)
+
+  (get-spec! 'valid')
 
   (p/asserts
-    (= :validkey (valid' :a))
-    (= :validword (valid' 'a)))
+   (= :validkey (valid' :a))
+   (= :validword (valid' 'a)))
 
 
   )
-
-#_(do :xp
-
-    ;; build a map :: type -> fn-form
-    ;; for a given generic (for each defined type)
-
-    ;; the goal is to provide a way to use specific implementations manually in code, for performance/precision
-
-    ;; the impl is not so pretty but it works
-    ;; for instance if my-generic has an implementation for :vec
-    ;; in some cases we could want to call my-generic-vec or my-generic_vec directly for performance/precision
-
-    (defn tfnmap_t->expr [xs]
-      (p/redh
-       (fn [a [t e]]
-         (let [ts (if (= :any t)
-                    (t/all-types)
-                    (conj (t/childs t) t))]
-           (merge a (zipmap ts (repeat e)))))
-       (reverse (partition 2 xs))))
-
-    (defn tfnmap_t->aritymap [cases]
-      (p/redh
-       (fn [a [argv & decls]]
-         (let [arity (count argv)]
-           (reduce
-            (fn [a [c e]]
-              (update a c assoc arity (list argv e)))
-            a (tfnmap_t->expr decls))))
-       cases))
-
-    (defn tfnmap
-      [{:as spec
-        :keys [variadic? cases]}]
-      ($vals (tfnmap_t->aritymap cases)
-             (fn [aritymap]
-               (if variadic?
-                 (let [[[vargv vexpr] & fixed-arities]
-                       (map second (sort-by key > aritymap))]
-                   (cons (list (variadify-argv vargv) vexpr)
-                         fixed-arities))
-                 (vals aritymap)))
-             ))
-
-    #_(tfnmap (@reg '$) 'mylamb)
-
-    (defmacro defsubcases [nam]
-      `(do
-         ~@(map
-            (fn [[t fnbody]]
-              `(defn ~(sym nam '_ (name t)) ~@fnbody))
-            (tfnmap (@reg nam)))))
-
-                                        ; tada !
-    (p/mx' (defsubcases g2)))
-

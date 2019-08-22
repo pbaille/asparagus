@@ -87,14 +87,14 @@
     (defmacro assert [x & [m]]
       (let [s (gensym)
             v (gensym)
-            m (str (c/or m "assert fails:") "\n" (seq x))]
+            m `(str ~(c/or m "assert fails:") "\n" '~x)]
         `(if-let [~s ~x ;(try ~x (catch Exception e# (println  "error during assertion:\n" (pretty-str '~x e#))))
                   ] ~s
                  (throw (new AssertionError
                              ~m #_(str ~(c/or m "assert fails:") "\n" '~x))))))
 
-    #_(assert (= 0 (/ 2 0)))
-    #_(assert (= 0 (/ 0 1)))
+    #_(macroexpand (assert (= 0 (/ 2 0)) "by zero"))
+    #_(assert (= 0 (/ 1 1)) "by zero")
 
     (defmacro asserts [& xs]
       `(do ~@(map (fn [x] `(assert ~x)) xs)))

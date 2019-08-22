@@ -1,13 +1,5 @@
 (in-ns 'asparagus.core)
 
-(do :init
-
-    (defmacro is [& xs]
-      `(!! (check (~'eq ~@xs))))
-
-    (defmacro isnt [& xs]
-      `(!! (check ~@($ xs (f_ (lst `nil? _)))))))
-
 ;; ------------------------------------------------------------------------
 ;;                              Introduction
 ;; ------------------------------------------------------------------------
@@ -399,7 +391,7 @@
   ;; we will see that in asparagus we avoid predicates (functions that returns booleans)
   ;; in favor of guards (functions that can return nil indicating failure, or data)
   ;; for instance (pos? 1) may be, more useful if it returns 1 in case of success and nil otherwise
-  ;; this way it can be composed more easily i think.
+  ;; this way it can be composed more easily I think.
   ;; more on control flow, shortcircuiting and stuff later...
   )
 
@@ -2604,3 +2596,4 @@
  ;; TODO
 
  )
+

@@ -6,10 +6,10 @@
    [clojure.string :as str]
    [clojure.set :as set]
    [criterium.core :as cr]
-   [asparagus.boot2.types :as t]
-   [asparagus.boot2.generics :as g]
-   [asparagus.boot2.state :as state]
-   [asparagus.boot2.prelude :as p
+   [asparagus.boot.types :as t]
+   [asparagus.boot.generics :as g]
+   [asparagus.boot.state :as state]
+   [asparagus.boot.prelude :as p
     :refer
     [;; macros
      cs cp pp _ error asserts
@@ -1776,6 +1776,14 @@
        (!! (foo:check)) ;; will call the thunk
        )}
 
+     is:mac
+     (fn [e xs]
+       (exp e (qq (check (~'eq .~xs)))))
+
+     isnt:mac
+     (fn [e xs]
+       (exp e (qq (check .~($ xs (fn [x] (lst `nil? x)))))))
+
      upd.mk
      ["an update that evaluate the given expression in order to produce another update"
       :upd (fn [e [x]] (eval e x))]
@@ -1819,7 +1827,7 @@
 
      )
 
-    (init-top-forms check)
+    (init-top-forms check is isnt)
 
     (E+ import
         {:doc
