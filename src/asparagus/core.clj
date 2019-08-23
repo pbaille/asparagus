@@ -3730,6 +3730,7 @@
           !cfu:mac (cased.compiler :unified :strict)]}
 
         (import lambda.builtins :all)
+        generic.lambda-wrapper (qq f)
 
         bindings.let.compile.named
         (fn [e opts]
@@ -3740,8 +3741,6 @@
                          :body [(:expr opts)]
                          :name (:name opts)}))
                 (exp e ($ (:bs opts) second)))))
-
-    (E+ generic.lambda-wrapper (qq f))
 
     (do :guard-macro
         (E+ guard:mac
