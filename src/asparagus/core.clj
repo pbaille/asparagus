@@ -703,6 +703,9 @@
           sym?
           (or (qualsym e x) x)
 
+          ;; fullquote we skip
+          quote? x
+
           seq?
           (cs
            ;; if x is a macro call, we qualify the verb (the macro identifier)
@@ -1103,7 +1106,9 @@
         (E+
 
          env
-         [add-sub
+         [exp:val asparagus.core/exp
+
+          add-sub
           ["add a substitution to an environment at current location
             it is used for shadowing bindings in let and lambda"
            (c/fn [e [s1 s2]]
@@ -1119,9 +1124,12 @@
           (c/fn [e submap]
             (c/reduce add-sub e submap))]
 
+         :links {exp env.exp
+                 qualify env.qualify}
+
          hygiene
          {shadow
-          [;; helpers
+          [ ;; helpers
            expand-keys-pattern
            ["transform the clojure :keys syntax into regular map pattern
              because all symbol will be made uniq and it will no longer work as is"
@@ -1425,8 +1433,104 @@
          :links {fn primitives.fn
                  let primitives.let
                  loop primitives.loop
-                 cs primitives.cs.optimized
-                 }
+                 cs primitives.cs.optimized}
+
+         env
+         [get
+          [
+           "getting things inside an environment"
+           (fn [e s]
+             (second (env-absfind e (path s))))
+
+           val (fn [e s] (env.get e (sym s ":val")))
+           mac (fn [e s] (env.get e (sym s ':mac)))
+           sub (fn [e s] (env.get e (sym s ':sub)))]
+
+          put
+          [
+           "putting things inside an environment"
+           (fn [e s v & svs]
+             (let [e' (assoc-in e (env-member-path (path s)) v)
+                   #_(env-add-member e (path s) v)]
+               (if svs (apl rec e' svs) e')))
+
+           val (fn [e s v] (env.put e (sym s :val) v))
+           mac (fn [e s v] (env.put e (sym s :mac) v))
+           sub (fn [e s v] (env.put e (sym s :sub) v))]
+
+          upd
+          [
+           "updating things inside an environment"
+           (fn [e s f & sfs]
+             (let [e' (env.put e s (f (env.get e s)))]
+               (if sfs (apl rec e' sfs) e')))]
+
+          qualify
+          [
+           "takes an environment e and an expression x
+           it will turn all resolvable symbols into paths, using bubbling resolution
+           (see bubfind and qualsym in the [:env :getters] section)
+           macro calls will be handled differently, the verb will be qualified, the expression marked, and the arguments left as is"
+
+           fail
+           ["the function that is called when a symbol cannot be qualified"
+            (fn [x] x)]
+
+           gensym?
+           (fn [x]
+             (and (symbol? x)
+                  (re-matches #"^.*_[0-9]+#*$" (name x))))
+
+           unqualifiable-symbols:val
+           '#{if do recur fn* let* try catch quote _ . .. &}
+
+           unqualifiable?
+           (fn [x]
+             (or (unqualifiable-symbols x)
+                 (gensym? x)))
+
+           (fn [e x]
+
+             (cp x
+
+                 ;; symbols
+                 sym?
+                 (cs [qs (qualsym e x)] qs ;; x is qualifiable in e
+                     (unqualifiable? x) x ;; unqualifiable symbol (gensyms or clojure special forms) left as is
+                     (c/resolve x) (ns-resolve-sym x) ;; else we use clojure/resolve
+                     (env.get e 'env.qualify:strict) (error "unqualifiable symbol: " x)
+                     ((env.get.val e 'env.qualify.fail) x)) ;; else we use qualify.fail on x
+
+                 ;; fullquote we do nothing
+                 p/quote? x
+
+                 seq?
+                 (cs
+                  ;; if x is a macro call, we qualify the verb (the macro identifier)
+                  ;; and mark the expression as expansion
+                  [p (-> x car path)
+                   ? (or (ppath? p) (macpath? p))
+                   p (qualsym e (path p :mac))]
+                  (mark-exp (cons p (cdr x)))
+                  ;; else we just map
+                  (p/$ x (p rec e)))
+
+                 ;; for clojure's collection, we map qualify
+                 holycoll?
+                 (p/$ x (p rec e))
+
+                 ;; else do nothing
+                 x))
+
+           :strict true
+
+           strict
+           (fn [e x]
+             (qualify
+              (env.put.val
+               e 'env.qualify.fail
+               #(error "not resolvable: " %))
+              x))]]
 
          error
          ["throw an error printing some context (not so great, to improve!)"
@@ -1442,65 +1546,6 @@
          __
          ["the comment macro"
           :mac (fn [_ _])]))
-
-    (do :strict-qualify
-
-        "redefine qualify in a strict way, it will throw on unqualifiable symbols
-         excepting gensyms and some unavoidable ones like 'do 'if etc... (listed in #'unqualified-symbols)"
-
-        (defn gensym? [x]
-          (and (symbol? x)
-               (re-matches #"^.*_[0-9]+#*$" (name x))))
-
-        (def unqualifiable-symbols
-          '#{if do recur fn* let* try catch quote _ . .. &})
-
-        (defn unqualifiable? [x]
-          (or (unqualifiable-symbols x)
-              (gensym? x)))
-
-        (def qualify-soft qualify)
-
-        (defne qualify
-
-          "takes an environment e and an expression x
-           it will turn all resolvable symbols into paths, using bubbling resolution
-           (see bubfind and qualsym in the [:env :getters] section)
-           macro calls will be handled differently, the verb will be qualified, the expression marked, and the arguments left as is"
-
-          [e x]
-
-          #_(pp "qual " x)
-          (cp x
-
-              ;; symbols
-              sym?
-              (cs [qs (qualsym e x)] qs ;; x is qualifiable in e
-                  (unqualifiable? x) x ;; unqualifiable symbol (gensyms or clojure special forms) left as is
-                  (c/resolve x) (ns-resolve-sym x) ;; else we use clojure/resolve
-                  (error "not resolvable: " x))    ;; and fail if nothing works
-
-              ;; fullquote we do nothing
-              p/quote? x
-
-              seq?
-              (cs
-               ;; if x is a macro call, we qualify the verb (the macro identifier)
-               ;; and mark the expression as expansion
-               [p (-> x car path)
-                ? (or (ppath? p) (macpath? p))
-                p (qualsym e (path p :mac))]
-               (mark-exp (cons p (cdr x)))
-               ;; else we just map
-               ($ x (p qualify e)))
-
-              ;; for clojure's collection, we map qualify
-              holycoll?
-              ($ x (p qualify e))
-
-              ;; else do nothing
-              x))
-        )
 
     (E+ composite
 
@@ -1617,207 +1662,108 @@
           '(asparagus.boot.prelude/call*
             (clojure.core/concat [fun a b] c d e))
           )
-
-         cxp
-         ["a version of exp that handle composite datastructures"
-          (fn [e x] (expand (exp e x)))]]
-
-        ;; we put cxp at the root
-        :links {cxp composite.cxp})
+         ]
+        )
 
     (E+ quotes
-      [:links {cp composite}
+        [:links {cp composite}
 
-       wrap
-       (fn [x] (list 'quote x))
-       rootsym
-       (fn [p] (path->sym (path '_ p)))
+         wrap
+         (fn [x] (list 'quote x))
+         rootsym
+         (fn [p] (path->sym (path '_ p)))
 
-       quote?
-       (fn [e x]
-         (and (seq? x)
-              (sym? (car x))
-              (#{(path 'quotes.sq:mac)
-                 (path 'quotes.qq:mac)
-                 (path 'quotes.qq!:mac)}
-               (or (qualsym e (car x))
-                   (qualsym e (sym (car x) ":mac"))))))
+         quote?
+         (fn [e x]
+           (and (seq? x)
+                (sym? (car x))
+                (#{(path 'quotes.sq:mac)
+                   (path 'quotes.qq:mac)
+                   (path 'quotes.qq!:mac)}
+                 (or (qualsym e (car x))
+                     (qualsym e (sym (car x) ":mac"))))))
 
-       unquote-quote?
-       (fn [x]
-         (and (unquote? x)
-              (p/quote? (second x))))
+         unquote-quote?
+         (fn [x]
+           (and (unquote? x)
+                (p/quote? (second x))))
 
-       mk
-       (fn [{:keys [strict qualified]}]
-         (fn [e lvl form]
-           #_(pp "mk2 in" lvl form "_")
-           (cp form
+         mk
+         (fn [{:keys [strict qualified]}]
+           (fn [e lvl form]
+             #_(pp "mk2 in" lvl form "_")
+             (cp form
 
-               ;; we do not touch dots
-               ;; they will be handled via composite.expand after quoting
-               cp.dot? cp.dot
-               cp.dotdot? cp.dotdot
+                 ;; we do not touch dots
+                 ;; they will be handled via composite.expand after quoting
+                 cp.dot? cp.dot
+                 cp.dotdot? cp.dotdot
 
-               ;; if quote-unquote we strip a lvl
-               quotes.unquote-quote?
-               (rec e (dec lvl) (second (second form)))
+                 ;; if quote-unquote we strip a lvl
+                 quotes.unquote-quote?
+                 (rec e (dec lvl) (second (second form)))
 
-               ;; if unquote we perform expansion with e
-               unquote?
-               (cs (zero? lvl)
-                   (cxp e (second form))
-                   (list `list (quotes.wrap `unquote) (rec e (dec lvl) (second form))))
+                 ;; if unquote we perform expansion with e
+                 unquote?
+                 (cs (zero? lvl)
+                     (exp e (second form))
+                     (list `list (quotes.wrap `unquote) (rec e (dec lvl) (second form))))
 
-               ;; if nested quote
-               (p quotes.quote? e)
-               (list `list (quotes.wrap (car form)) (rec e (inc lvl) (second form)))
+                 ;; if nested quote
+                 (p quotes.quote? e)
+                 (list `list (quotes.wrap (car form)) (rec e (inc lvl) (second form)))
 
-               ;; handle collections
-               seq? (cons `list ($ form (p rec e lvl)))
-               holycoll? (p/$ form (p rec e lvl))
+                 ;; handle collections
+                 seq? (cons `list ($ form (p rec e lvl)))
+                 holycoll? (p/$ form (p rec e lvl))
 
-               symbol?
-               (cs (not qualified)
-                   (quotes.wrap form)
+                 symbol?
+                 (cs (not qualified)
+                     (quotes.wrap form)
 
-                   [pth (path form)
-                    [p v] (bubfind e pth)]
-                   (cs (get v :local)
-                       (quotes.wrap (exp e form))
-                       (quotes.wrap (quotes.rootsym p)))
+                     [pth (path form)
+                      [p v] (bubfind e pth)]
+                     (cs (get v :local)
+                         (quotes.wrap (exp e form))
+                         (quotes.wrap (quotes.rootsym p)))
 
-                   [s (ns-resolve-sym form)]
-                   (quotes.wrap s)
+                     [s (ns-resolve-sym form)]
+                     (quotes.wrap s)
 
-                   (cs strict
-                       (error "unqualifiable symbol: " form)
-                       (quotes.wrap form)))
+                     (cs strict
+                         (error "unqualifiable symbol: " form)
+                         (quotes.wrap form)))
 
-               ;; else we quote wathever it is
-               (quotes.wrap form))))
+                 ;; else we quote wathever it is
+                 (quotes.wrap form))))
 
-       sq
-       ["syntax-quote, does handle unquote and splicing, but do not qualifies symbols"
-        :mac  (fn [e [x]] (let [f (quotes.mk {})] (cp.expand (f e 0 x))))]
-       qq
-       ["qualified quote, like sq (syntax-quote), but qualifies symbols"
-        :mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (cp.expand (f e 0 x))))]
-       qq!
-       ["strictly qualified quote, a strict version of qq (qualified-quote) that throws on unqualifiable symbols"
-        :mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (cp.expand (f e 0 x))))]
+         sq
+         ["syntax-quote, does handle unquote and splicing, but do not qualifies symbols"
+          :mac (fn [e [x]] (let [f (quotes.mk {})] (exp e (f e 0 x))))]
+         qq
+         ["qualified quote, like sq (syntax-quote), but qualifies symbols"
+          :mac (fn [e [x]] (let [f (quotes.mk {:qualified true})] (exp e (f e 0 x))))]
+         qq!
+         ["strictly qualified quote, a strict version of qq (qualified-quote) that throws on unqualifiable symbols"
+          :mac (fn [e [x]] (let [f (quotes.mk {:qualified true :strict true})] (exp e (f e 0 x))))]
 
-       :demo
-       (__
-        (sq (add 1 2 ~(+ [] (lst 1 2))))
-        (qq (add 1 2 a ~(sip [] . (lst 1 2))))
-        ;; (throws (qq! (add 1 2 a ~(+ [] (lst 1 2)))))
-        (qq (add 1 2 a ~(sip [] . (lst 1 2))
-                 (qq (a b c ~'(add 1 2 . ~(lst 3 4)))))))
-       ]
+         :demo
+         (__
+          (!! (sq (add 1 2 x ~(+ [] (lst 1 2)))))
+          (!! (qq (add 1 2 a ~(sip [] . (lst 1 2)))))
+          #_(!! (throws (qq! (add 1 2 a ~(+ [] (lst 1 2))))))
+          (qq (add 1 2 a ~(sip [] . (lst 1 2))
+                   (qq (a b c ~'(add 1 2 . ~(lst 3 4)))))))
+         ]
 
-      {:links {sq quotes.sq
-               qq quotes.qq
-               qq! quotes.qq!}}
+        {:links {sq quotes.sq
+                 qq quotes.qq
+                 qq! quotes.qq!}}
 
-      )
+        )
 
     (E+ env
         {
-         get
-         [
-          "getting things inside an environment"
-          (fn [e s]
-            (second (env-absfind e (path s))))
-
-          val (fn [e s] (env.get e (sym s :val)))
-          mac (fn [e s] (env.get e (sym s :mac)))
-          sub (fn [e s] (env.get e (sym s :sub)))]
-
-         put
-         [
-          "putting things inside an environment"
-          (fn [e s v & svs]
-            (let [e' (assoc-in e (env-member-path (path s)) v)
-                  #_(env-add-member e (path s) v)]
-              (if svs (apl rec e' svs) e')))
-
-          val (fn [e s v] (env.put e (sym s :val) v))
-          mac (fn [e s v] (env.put e (sym s :mac) v))
-          sub (fn [e s v] (env.put e (sym s :sub) v))]
-
-         upd
-         [
-          "updating things inside an environment"
-          (fn [e s f & sfs]
-            (let [e' (env.put e s (f (env.get e s)))]
-              (if sfs (apl rec e' sfs) e')))]
-
-         qualify
-         [
-          "takes an environment e and an expression x
-       it will turn all resolvable symbols into paths, using bubbling resolution
-       (see bubfind and qualsym in the [:env :getters] section)
-       macro calls will be handled differently, the verb will be qualified, the expression marked, and the arguments left as is"
-
-          fail
-          ["the function that is called when a symbol cannot be qualified"
-           (fn [x] x)]
-
-          gensym?
-          (fn [x]
-            (and (symbol? x)
-                 (re-matches #"^.*_[0-9]+#*$" (name x))))
-
-          unqualifiable-symbols:val
-          '#{if do recur fn* let* try catch quote _ . .. &}
-
-          unqualifiable?
-          (fn [x]
-            (or (unqualifiable-symbols x)
-                (gensym? x)))
-
-          (fn [e x]
-
-            (cp x
-
-                ;; symbols
-                sym?
-                (cs [qs (qualsym e x)] qs ;; x is qualifiable in e
-                    (unqualifiable? x) x ;; unqualifiable symbol (gensyms or clojure special forms) left as is
-                    (c/resolve x) (ns-resolve-sym x) ;; else we use clojure/resolve
-                    (env.get e 'env.qualify:strict) (error "unqualifiable symbol: " x)
-                    ((env.get.val e 'env.qualify.fail) x)) ;; else we use qualify.fail on x
-
-                ;; fullquote we do nothing
-                p/quote? x
-
-                seq?
-                (cs
-                 ;; if x is a macro call, we qualify the verb (the macro identifier)
-                 ;; and mark the expression as expansion
-                 [p (-> x car path)
-                  ? (or (ppath? p) (macpath? p))
-                  p (qualsym e (path p :mac))]
-                 (mark-exp (cons p (cdr x)))
-                 ;; else we just map
-                 (p/$ x (p rec e)))
-
-                ;; for clojure's collection, we map qualify
-                holycoll?
-                (p/$ x (p rec e))
-
-                ;; else do nothing
-                x))
-
-          strict
-          (fn [e x]
-            (qualify
-             (env.put.val
-              e 'env.qualify.fail
-              #(error "not resolvable: " %))
-             x))]
-
          expand
          [
           "expansion compiler step"
@@ -1832,12 +1778,17 @@
                   (fn [k]
                     (if (c/get-in expand-module [:flags k])
                       (p (env.get.val e (sym 'env.expand. (sym k))) e)
-                      id))]
+                      (fn [x] (pp k 'no-op) x)))]
               (c/comp
+               #_(p p/prob 4)
                (get-expanding-step :composite)
+               #_(p p/prob 3)
                (get-expanding-step :method-calls)
+               #_(p p/prob 2)
                (p env.expand.raw e)
-               (get-expanding-step :top-lvl-unquotes))))
+               #_(p p/prob 1)
+               (get-expanding-step :top-lvl-unquotes)
+               #_(p p/prob 0))))
 
           raw
           [
@@ -1870,6 +1821,7 @@
             ([e x] (rec e 0 x))
 
             ([e lvl x]
+             #_(pp 'top-lvl-unquotes)
              (cp x
 
                  (p quotes.quote? e)
@@ -1879,6 +1831,8 @@
                  (cs (zero? lvl)
                      (c/eval (res e (exp e (second x))))
                      (rec e (dec lvl) (second x)))
+
+                 mcall? x
 
                  holycoll?
                  ($ x (p rec e lvl))
@@ -1914,11 +1868,16 @@
          [
           "qualify and expand x with e"
           (fn [e x & [opts]]
+            #_(pp 'exp x)
             (let [e
                   (env.upd e
                            'env.expand:flags (fn [v] (c/merge v opts))
                            'env.qualify:strict #(c/get opts :strict %))]
-              (env.expand e (env.qualify e x))))]})
+              #_(pp 'qualified (env.qualify e x))
+              #_(pp 'mcall? (mcall? (env.qualify e x)))
+              (env.expand e (env.qualify e x))))]}
+
+        :links {exp env.exp})
 
     ;; misc
     (E+
@@ -1931,13 +1890,9 @@
      mul c/*
      eq c/= ;; eq will be rebound later, but is needed for check blocks
 
-     #_quot:mac
-     #_(fn [_ [x]]
-       (lst (sym "quote") x))
-
      and:mac
      (fn [e xs]
-       (let [xs' ($ xs (p cxp e))]
+       (let [xs' ($ xs (p exp e))]
          (qq (c/when (c/and .~(c/butlast xs')) ~(c/last xs')))))
 
      or
@@ -1947,29 +1902,16 @@
       (fn [e xs]
         (qq (c/or .~($ xs (p exp e)) nil)))]
 
-     exp
-     ["importing the asparagus.core/exp function
-       adding a macro version of it that perform the expansion at compile time using the compiling environment"
-
-      :val asparagus.core/exp ;; TODO we have to put the :val, else it throws a cryptic error...
-
-      :mac
-      (fn [e xs]
-        (let [arity (count xs)]
-          (if (= 1 arity)
-            (exp:val e (car xs))
-            (exp:val e (qq (exp:val .~xs))))))]
-
      check
      {:doc "a quick way to assert things"
       :mac
       (fn [e xs]
-        (cxp e (qq (p/asserts . ~xs))))
+        (exp e (qq (p/asserts . ~xs))))
 
       thunk
       {:mac
        (fn [e xs]
-         (cxp e (qq (fn [] (p/asserts . ~xs)))))
+         (exp e (qq (fn [] (p/asserts . ~xs)))))
        :upd
        (fn [e xs] {:check (qq (check.thunk . ~xs))})}
 
@@ -2033,11 +1975,7 @@
        ;; is equivalent to
        (E+ foo {:tags #{:iop :pouet} :val 1}
            bar {:tags #{:iop :pouet} :val 2})
-       )]
-
-     
-
-     )
+       )])
 
     (init-top-forms check is isnt)
 
@@ -2105,9 +2043,9 @@
                  ;; we use the fresh links to give 'here a :val
                  (lst (.bar.a) (add 1 .qux))])
 
-          (!! bar.a:doc) ;;=> "foobar a"
-          (!! qux:val) ;;=> 42
-          (!! here:val) ;;=> '(foobara 43)
+          (!! bar.a:doc)    ;;=> "foobar a"
+          (!! qux:val)      ;;=> 42
+          (!! here:val)     ;;=> '(foobara 43)
 
           ;; the :all syntax ----
 
@@ -2121,7 +2059,7 @@
           ;; chain --------------
 
           (E+ mymodule
-              [;; import several things at once
+              [ ;; import several things at once
                (import foo [bar qux]
                        foot :all)
                ;; we use the fresh links to bind mymodule:val
@@ -2146,7 +2084,6 @@
          reduced:upd
          (fn [e [argv & decls]]
            (let [[arg1 varg] (p/gensyms)]
-             #_(pp "yop" [argv decls])
              (qq (generic
                   ([~arg1] ~arg1)
                   (~argv . ~decls)
@@ -2154,15 +2091,14 @@
                    .~(c/mapcat
                       (fn [[t i]]
                         [t (qq (reduce (fn ~argv ~i) ~i ~varg))])
-                      (c/partition 2 decls))
-                   )))))
+                      (c/partition 2 decls)))))))
 
          lambda-wrapper (qq fn)
 
          lambda-case-compiler
          (fn [e]
            (fn [case]
-             (nth (cxp e (lst* lambda-wrapper case)) 2)))
+             (nth (exp e (lst* lambda-wrapper case)) 2)))
 
          spec
          (fn [e gsym bod]
@@ -2172,25 +2108,20 @@
 
          module
          (fn [gsym]
-           #_(pp "module " gsym)
-           (id ;;p/pprob
-            (qq {:val ~gsym
-                 inspect:val
-                 (fn [] ((g/get-reg) '~gsym))
-                 ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
-                 extension-form:mac
-                 (fn [e bod]
-                   (g/extension-form
-                    (spec e '~gsym bod)
-                    #_(g/compile-cases
-                       (g/generic-spec '~gsym bod)
-                       (lambda-case-compiler e))))
-                 ;; now entend:upd just emit a macro call that will wait expansion time
-                 extend:upd
-                 (fn [e bod]
-                   {:fx (lst* (qq extension-form) bod)})
+           (qq {:val ~gsym
+                inspect:val
+                (fn [] ((g/get-reg) '~gsym))
+                ;; this was previously handled directly in the extend:upd but needs to wait for expansion time
+                extension-form:mac
+                (fn [e bod]
+                  (g/extension-form
+                   (spec e '~gsym bod)))
+                ;; now entend:upd just emit a macro call that will wait expansion time
+                extend:upd
+                (fn [e bod]
+                  {:fx (lst* (qq extension-form) bod)})
 
-                 })))
+                }))
 
          symbol
          (fn [n]
@@ -2199,15 +2130,7 @@
          init:mac
          (fn [e [n body]]
            (g/declaration-form
-            (spec e n body)
-            #_(g/compile-cases
-             (g/generic-spec n body) 
-             (lambda-case-compiler e)
-             #_(fn [xs]
-                 (let [[_ _ cas]
-                       (p/pprob "---" xs
-                                (asparagus.core/exp e (lst* (qq fn) xs)))]
-                   cas)))))
+            (spec e n body)))
 
          type+
          {:doc
@@ -2476,7 +2399,7 @@
            (eq '(0 1 2)
                (idxs '(1 2 3))
                (idxs [1 2 3]))
-           (eq '(:a :b :c)
+           (eq (lst :a :b :c)
                (sort (idxs {:a 1 :b 2 :c 3}))
                (sort (idxs #{:a :b :c}))))]
 
@@ -2864,29 +2787,29 @@
          :tries
          (__
 
-            (res @E '(guard.types-definition nil nil))
+          (res @E '(guard.types-definition nil nil))
 
-            (!! (map? []))
-            (!! (nil? nil))
-            (!! (vec? []))
+          (!! (map? []))
+          (!! (nil? nil))
+          (!! (vec? []))
 
-            (res @E '(guard.declare-types-guards))
+          (res @E '(guard.declare-types-guards))
 
-            (res @E '(guard.import neg? 1))
-            (env-upd? (exp @E '(guard.imports [neg? 1]
-                                              [pos? 1]
-                                              [gt 2 >])))
+          (res @E '(guard.import neg? 1))
+          (env-upd? (exp @E '(guard.imports [neg? 1]
+                                            [pos? 1]
+                                            [gt 2 >])))
 
-            (!! (line? [1 2]))
+          (!! (line? [1 2]))
 
-            (E+ (guard.import neg? 1))
-            (E+ (guard.imports [neg? 1]
-                               [pos? 1]
-                               [gt 2 >]))
-            (!! (neg? -2))
-            ((!! (guard.unary pos?)) 2)
-            ((!! (guard.variadic =)) 2 (+ 1 1) (- 4 2))
-            (res @E '(guard.template nil)))]
+          (E+ (guard.import neg? 1))
+          (E+ (guard.imports [neg? 1]
+                             [pos? 1]
+                             [gt 2 >]))
+          (!! (neg? -2))
+          ((!! (guard.unary pos?)) 2)
+          ((!! (guard.variadic =)) 2 (+ 1 1) (- 4 2))
+          (res @E '(guard.template nil)))]
 
         (import guards [guard]
                 guards.builtins :all))
@@ -3281,7 +3204,7 @@
           (fn [e [p1 e1 & bs] expr mode]
             (cs
              ;; no more bindings we just expand the body expression
-             (not p1) (cxp e expr)
+             (not p1) (exp e expr)
              ;; if both e1 is syms we can just substitute
              ;; instead of adding a binding
              ;; we also check if p1 has not a different mode (have to think of this further)
@@ -3293,10 +3216,10 @@
               e' (env.add-sub e [p1 (exp e e1)])]
              (form e' bs expr mode)
              ;; else we add a binding
-             [;; step-mode (or (sym->mode p1) mode)
+             [ ;; step-mode (or (sym->mode p1) mode)
               [e' pat] (hygiene.shadow e p1)]
              (step-form
-              pat (cxp e e1)
+              pat (exp e e1)
               (form e' bs expr mode)
               (next-mode mode p1)
               #_step-mode
@@ -3635,7 +3558,7 @@
                       fixed-arity (vec* seeds)
                       :else ['& fs])]
 
-               (cxp e
+               (exp e
                     (lst (qq primitives.fn) . (if name [name] [])
                          binding-form
                          (lst (binding-verb opts) bs body)))
@@ -3794,11 +3717,11 @@
           !fu1:mac (compiler :unary :unified :strict)
           fu1:mac  (compiler :unary :unified :short)
 
-          f_:mac   (f [e xs] (cxp e (lst* 'f1 '_ xs)))
-          ?f_:mac  (f [e xs] (cxp e (lst* '?f1 '_ xs)))
-          !f_:mac  (f [e xs] (cxp e (lst* '!f1 '_ xs)))
-          !fu_:mac (f [e xs] (cxp e (lst* '!fu1 '_ xs)))
-          fu_:mac  (f [e xs] (cxp e (lst* 'fu1 '_ xs)))
+          f_:mac   (f [e xs] (exp e (lst* 'f1 '_ xs)))
+          ?f_:mac  (f [e xs] (exp e (lst* '?f1 '_ xs)))
+          !f_:mac  (f [e xs] (exp e (lst* '!f1 '_ xs)))
+          !fu_:mac (f [e xs] (exp e (lst* '!fu1 '_ xs)))
+          fu_:mac  (f [e xs] (exp e (lst* 'fu1 '_ xs)))
 
           cf:mac   (cased.compiler)
           !cf:mac  (cased.compiler :strict)
@@ -3816,7 +3739,7 @@
                          :arity (count (:bs opts))
                          :body [(:expr opts)]
                          :name (:name opts)}))
-                (cxp e ($ (:bs opts) second)))))
+                (exp e ($ (:bs opts) second)))))
 
     (E+ generic.lambda-wrapper (qq f))
 
@@ -4835,7 +4758,7 @@
                        {:tag ~name
                         :fields ~fields
                         :parents ~parents
-                        ;:class-sym ~class-sym
+                                        ;:class-sym ~class-sym
                         }))
              ;; constructors (positional and from hashmap)
              name-sym (qq (f ~fields (merge (~(sym "->" class-sym) .~fields) ~proto-sym)))
@@ -4910,88 +4833,6 @@
           ;; using generic implmentations
           (!! (+ (fut 1 2) (fut 1 2) )))]
 
-        )
-
-    (do :object-oriented-syntax
-
-        #_(E+ composite.cxp composite.cxp-old)
-
-        (E+ compile-method-calls
-
-            ["this compilation step will insert § in front of sexpr starting with a litteral vec or map
-              and will handle object oriented syntax (sexpr starting with a keyword) like the janet language do"
-
-             method-not-found
-             (f [o k]
-                (error "object:\n" o "\nhas no "
-                       k " implementation"))
-
-             (f [e x]
-                (cp x
-                    seq?
-                    (clet [x1 (key? (car x))
-                           [o . _xs] (cdr x)
-                           o (rec e o)]
-                          (lst* (exp e (qq §))
-                                (exp e (qq (or (c/get ~o ~x1) (.method-not-found ~o ~x1))))
-                                o (when _xs ($ _xs (p rec e))))
-                          ($ x (p rec e)))
-                    holycoll?
-                    ($ x (p rec e))
-                    x))
-
-             :demo
-             (__
-
-              ;; a light way to mimic object oriented programming in clojure is to put methods inside a map
-
-              (let [obj
-                    { ;; the greet method, taking the object has first argument and a name
-                     ;; returning a greet string
-                     :greet
-                     (fn [o name]
-                       (str "Hello " name " my name is "
-                            (c/get o :name))) ;; we use the object to retreive its name
-                     ;; a name attribute
-                     :name "Bob"}]
-
-                ;; in asparagus when the verb of the expression is a literal keyword, it denotes a method call
-                ;; this syntax comes from the Janet language (which you should check if you haven't already)
-                (is (:greet obj "Joe")
-                    "Hello Joe my name is Bob")
-
-                ;; (:greet obj "Joe") it is compiled roughly to
-                ;; notice that the method receives the object as first argument
-                (§ (c/get obj :greet) obj "Joe")
-
-                ;; since it compile to an explicit invocation
-                ;; anything with an § impl can be fetch with this syntax
-
-                (is (:name obj) "Bob")
-
-                ;; (:name obj) will be compiled to
-                (§ (c/get obj :name) obj)
-
-                ;; it can seems problematic at first, but strings are constant and constants returns them self when invoked
-                ;; so it returns "Bob" as we want
-
-                (throws (:bark obj))
-
-                ::ok
-
-                )
-
-
-              )])
-
-        ;; we keep a copy of the actual cxp function
-        (E+ composite.cxp-old composite.cxp)
-
-        ;; we overide it with one that do the same plus implicit-invoc stuff
-        (E+ composite.cxp
-            (f [e x]
-               (compile-method-calls
-                e (composite.cxp-old e x))))
         )
 
     (pp 'will-declare-topforms)
