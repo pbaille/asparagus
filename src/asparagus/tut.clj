@@ -1974,7 +1974,7 @@
  (_
   ;; a simple macro definition
 
-  (E+ postfix:mac ;; note the :mac prefix
+  (E+ postfix:mac ;; note the :mac sufix
       (fn [e args]
         (reverse args)))
 
@@ -2074,7 +2074,7 @@
 
  (_
 
-  ;; 'substitutions' are another metaprograming device that deserve attention i think
+  ;; 'substitutions' are another metaprograming device that deserve attention I think
   ;; it gives the user a way to replace a simple symbol with an arbitrary expression
 
   ;; trivial substitution
