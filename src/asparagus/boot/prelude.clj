@@ -297,24 +297,11 @@
        (seq? xs) (first (drop i xs)))
       (gat (reverse xs) (- (inc i)))))
 
-    #_(defn deep-merge
-      "Like merge, but merges maps recursively."
-      [& xs]
-      (cond
-        (every? #(or (holymap? %) (nil? %)) xs)
-        (apply merge-with deep-merge xs)
-
-        (every? #(or (set? %) (nil? %)) xs)
-        (reduce into #{} xs)
-
-        :else
-        (last xs)))
-
     (defn deep-merge
       ([x y]
        (cond
-         (not x) y
-         (not y) x
+         (nil? x) y
+         (nil? y) x
 
          (every? holymap? [x y])
          (merge-with deep-merge x y)
