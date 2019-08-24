@@ -4,7 +4,8 @@
 ;;                              Introduction
 ;; ------------------------------------------------------------------------
 
-(_
+(do 
+
  ;; Asparagus is my last experience in language design
  ;; after several attempt, i've compiled some of the ideas I like, found in other languages/books/papers
 
@@ -41,13 +42,13 @@
 ;;                            the environment
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; the asparagus environment is holded by the asparagus.core/E atom
 
  @E
 
- (_
+ (do
   ;; you can define a variable like this (E+ stands for extend-environment)
   ;; its like a really (really!) fancy 'def
 
@@ -63,7 +64,7 @@
   (!! foo) ;; return the value under foo e.g 1
 
   ;; the 'is macro just assert equality of its arguments
-  
+
   (is 1 foo)
   (is 42 baz)
   (is \a bar)
@@ -275,7 +276,7 @@
 
  ;; bubbling resolution -----
 
- (_
+ (do
 
   ;; using absolute and relative paths for all our vars is kind of painfull and ugly
   ;; sometimes it is needed to desambiguate but certainely not all the time
@@ -298,11 +299,14 @@
 
   (is 1 (bubling.demo.b.c))
   (is 2 (bubling.demo.c.b))
+
+  
+
   )
 
  ;; links --------------------
 
- (_
+ (do
 
   ;; the :links attribute let you define shorter accesses to other modules or members
   ;; when a non relative symbol cannot be resolved at the current location
@@ -328,15 +332,31 @@
   ;; with this we can acheive some of the things we do with :require and :use in clojure ns's form
   ;; it will not be oftenly used directly, but will be used under the hood by higher level macros...
 
-  ))
+  (E- links.demo)
+  )
+
+ ;; E- -----------------------
+
+ (do
+
+   ;; you can remove global environment's members with E-
+   (E-
+    foo bar baz my.module
+    stats myval myvar rawvals relative-access bubling.demo links.demo)
+
+   ;; it no longer exists
+   (isnt (env.get @E 'relative-access))
+   )
+
+ )
 
 ;; ------------------------------------------------------------------------
 ;;                            data primitives
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
- (_
+ (do
   ;; literals works the same way as clojure ones (except for some extensions that will be explained later)
 
   {:a 1}
@@ -355,7 +375,7 @@
 
  ;; collections -------------------------------------
 
- (_
+ (do
 
   ;; constructor functions
   ;; compared to clojure, the API have been uniformized
@@ -400,7 +420,7 @@
 
  ;; words -------------------------------------------
 
- (_
+ (do
 
   ;; constructors
   ;; symbols and keywords have their core/str(ish) construtors
@@ -434,12 +454,12 @@
 ;;                            joining things
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; joining things together with +
  ;; ------------------------------
 
- (_
+ (do
 
   ;; as I mentioned in the rational, core operations are generic functions that can be extended
   ;; + is one of them
@@ -477,7 +497,7 @@
  ;; sip add one or several element into something
  ;; ---------------------------------------------
 
- (_
+ (do
 
   (is (sip [] 1 2)
       [1 2])
@@ -504,7 +524,7 @@
  ;; 'pure returns the empty version of the given argument
  ;; ---------------------------------------------------
 
- (_
+ (do
 
   (is (pure "foobar") "")
 
@@ -519,7 +539,7 @@
  ;; pure? test for purity
  ;; ---------------------
 
- (_
+ (do
 
   (is {} (pure? {}))
 
@@ -531,11 +551,11 @@
 ;;                           composing  things
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; vectors ----
 
- (_
+ (do
 
   (let [a 1
         b 2
@@ -557,37 +577,41 @@
 
  ;; maps ---------
 
- (_
+ (do
 
   (let [a {:a 1}
         b {:b 2}
         c [1 2 3]]
 
+    {:a 1
+     :c 3
+     . b}
+
     (is {:a 1
-         :c 3
-         . b} ;; we are merging b into the host map
+           :c 3
+           . b} ;; we are merging b into the host map
 
-        ;; if you want to splice several map into your literal use .. []
-        {:c 3
-         .. [a b]}
+          ;; if you want to splice several map into your literal use .. []
+          {:c 3
+           .. [a b]}
 
-        {:a 1 :b 2 :c 3})
+          {:a 1 :b 2 :c 3})
 
     ;; it can be nested
 
     (is
-     {:foo [0 . c 4] ;; a composite vector
-      :bar {:baz 1 . b}
-      . a}
+       {:foo [0 . c 4] ;; a composite vector
+        :bar {:baz 1 . b}
+        . a}
 
-     {:foo [0 1 2 3 4]
-      :bar {:baz 1 :b 2}
-      :a 1})
+       {:foo [0 1 2 3 4]
+        :bar {:baz 1 :b 2}
+        :a 1})
     ))
 
  ;; lists ----------
 
- (_
+ (do
 
   (let [nums [2 3 4]]
 
@@ -616,11 +640,11 @@
 ;;                            binding things
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; let --------------------------------------------------------------------
 
- (_
+ (do
   ;; asparagus has a whole family of let like binding forms
   ;; but unlike clojure's one, the binding behavior can be extended by the user in several ways
 
@@ -665,9 +689,9 @@
 
  ;; let variants -----------------------------------------------------------
 
- (_
+ (do
 
-  (_
+  (do
    ;; ?let (shortcircuiting let) ------
 
    ;; is behaving like let, but the ? prefix is implicit to all binding symbols
@@ -689,7 +713,7 @@
 
   ;; !let (strict let) ------------------
 
-  (_
+  (do
    ;; is like ?let but with implicit prefix !, it support ? and _ prefixes
    (is :catched
        (try (!let [a nil] :never)
@@ -698,7 +722,7 @@
 
   ;; lut (unified let) ------------------
 
-  (_
+  (do
    ;; in a unified let, all symbols that appears several times have to bind to the same value (equal values)
    ;; otherwise it will shortcircuits
 
@@ -713,7 +737,7 @@
 
   ;; !lut (unified strict let) ----------
 
-  (_
+  (do
    (is :catched
        (try (!lut [a 1
                    a 2] ;; this will throw because a is already bound to 1
@@ -723,11 +747,11 @@
 
  ;; destructuration --------------------------------------------------------
 
- (_
+ (do
 
   ;; literals ---------------------------
 
-  (_
+  (do
    ;; like clojure's let we support destructuration
    ;; but unlike clojure, destructuration is an extensible mecanism
    ;; the user can define its own destructuration special forms
@@ -765,7 +789,7 @@
 
   ;; operators ---------------------------
 
-  (_
+  (do
    ;; ks is a builtin binding operator
    ;; it behaves like clojure's :keys
    (is (let [(ks a b) {:a 1 :b 2 :c 3}] (add a b))
@@ -846,16 +870,16 @@
 
    ;; at compile time the implementation is called with args: '(a b) and seed: 'x
    ;; =>
-   (bind {:a 'a :b 'b} 'x) ;; we are using the map impl of bind
+   '(bind {:a 'a :b 'b} 'x) ;; we are using the map impl of bind
    ;; =>
    '[G__244129 x
-     G__244128 (_.guards.builtins.map? G__244129)
+     G__244128 (do.guards.builtins.map? G__244129)
      a (clojure.core/get G__244129 :a)
      b (clojure.core/get G__244129 :b)]
 
    ;; finally it is substituted in the original form
-   (let [G__244129 x
-         G__244128 (_.guards.builtins.map? G__244129)
+   '(let [G__244129 x
+         G__244128 (do.guards.builtins.map? G__244129)
          a (clojure.core/get G__244129 :a)
          b (clojure.core/get G__244129 :b)]
      ...)
@@ -864,7 +888,7 @@
 
   ;; special bindings --------------------
 
-  (_
+  (do
    ;; when an sexpr in found in binding position (left side of let bindings)
    ;; if it is not a binding operator call (like we've just seen 'ks and '& for instance)
    ;; it can be what we call a guard pattern
@@ -913,7 +937,7 @@
 
   ;; value patterns ----------------------
 
-  (_
+  (do
    ;; any value can be used in pattern position,
 
    (is :ok (let [a (inc 2)
@@ -942,7 +966,7 @@
 
   ;; user type patterns ------------------
 
-  (_
+  (do
    ;; any type can implement the 'bind operation and join the party
    ;; TODO
    )
@@ -950,7 +974,7 @@
 
  ;; cased let --------------------------------------------------------------
 
- (_
+ (do
 
   ;; cased let is like a cascade of shortcircuiting let forms
   ;; it can be be compared to cond-let but is more powerful
@@ -1004,11 +1028,11 @@
 ;;                               lambdas
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; the f macro --------------------------------
 
- (_
+ (do
   ;; all the binding forms that we have seen so far have their lambda equivalent
 
   ;; regular monoarity lambda
@@ -1066,7 +1090,7 @@
 
  ;; variants -----------------------------------
 
- (_
+ (do
 
   ;; like let, f has its binding mode variants, ?f, !f
 
@@ -1089,7 +1113,7 @@
 
  ;; syntactic sugar ----------------------------
 
- (_
+ (do
 
   ;; arity 1 syntax (f1)
   ;; function that takes one argument are so common that it deserves, i think, some syntactic sugar
@@ -1115,7 +1139,7 @@
 
  ;; case lambda --------------------------------
 
- (_
+ (do
   ;; the cf macro is a bit like clojure's fn, it let's you define polyarity functions, but it benefits from all asparagus binding capabilities
 
   (let [fun (cf [a] 1
@@ -1153,7 +1177,7 @@
 
  ;; case ---------------------------------------
 
- (_
+ (do
 
   (let [x (range 12)]
     ;; try those values:  42 "iop" :pouet
@@ -1192,11 +1216,11 @@
 ;;                              iterables
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; basic operations
 
- (_
+ (do
 
   ;; car (is like Lisp's car or clojure.core/first)
   (is 1 (car (lst 1 2)))
@@ -1276,7 +1300,7 @@
 
  ;; map reduce and friends
 
- (_
+ (do
 
   ;; map ($)
 
@@ -1383,7 +1407,7 @@
 
  ;; iter, idxs and vals
 
- (_
+ (do
 
   ;; under the hood many of the functions described in the previous section rely on those three basics operations
 
@@ -1417,7 +1441,7 @@
 
  ;; extra operations
 
- (_
+ (do
 
   ;; scan (like core/partition)
   (is [[1 2] [3 4]]
@@ -1455,7 +1479,7 @@
   )
 
  ;; walk
- (_
+ (do
 
   ;; depth first
   (!! (dfwalk [1 2 {:a 1 :b [1 2 3]}] p/prob))
@@ -1476,7 +1500,7 @@
 ;;                         functional programing
 ;; ------------------------------------------------------------------------
 
-(_
+(do
   
  ;; one thing we all love in functional programming is the ability to compose functions together
  ;; manipulate them easily, passing them to other functions, partially apply them etc...
@@ -1484,7 +1508,7 @@
 
  ;; application and invocation
 
- (_
+ (do
 
   ;; application and invocation are generic function that can be implemented for any type
   ;; those operations are so central in functional programming that i've decided to give them really short symbols
@@ -1545,7 +1569,7 @@
 
  ;; the object convention
 
- (_
+ (do
 
   ;; in asparagus, many functions takes what we can call the object as first argument
   ;; I mean, the thing we are working on, for instance, in the expression (assoc mymap :a 1 :b 2), mymap is what we call the object
@@ -1560,14 +1584,15 @@
 
   ;; many of the asparagus functions that follow this convention, have their subjectified version with the same name suffixed with _
   ;; this is handy, for instance, to create chains of 1 argument functions
-  (> myseq (take_ 3) (dropend_ 2)) ;; will thread 'myseq thru 2 functions, the semantics is analog to core/-> but it is a function
+  (is (> (range 10) (drop_ 3) (dropend_ 2)) ;; will thread '(range 10) thru 2 functions, the semantics is analog to core/-> but it is a function
+      (range 3 8))
   ;; the '> function is defined in the :invocation-application-mapping section of asparagus.core
-  (>_ (take_ 3) (dropend_ 2)) ;; will return a function that wait for its first argument ('myseq in the previous example)
+  (!! (>_ (take_ 3) (dropend_ 2))) ;; will return a function that wait for its first argument ('myseq in the previous example)
   )
 
  ;; guards
 
- (_
+ (do
 
   ;; one other thing that ease function composition is what I call guards (for lack of better name)
   ;; guards differs from predicate by the fact that they can either return nil or something (in most case the given 'object' unchanged)
@@ -1660,7 +1685,7 @@
 
  ;; flow
 
- (_
+ (do
 
   ;; ?> --------------------------------------------------------------
   ;; thread the object thru guards shorting on first nil result
@@ -1768,7 +1793,7 @@
 
  ;; 'df (data function)
 
- (_
+ (do
 
   ;; df: data function,
   ;; create a function from a data structure that
@@ -1865,7 +1890,7 @@
 ;;                          quoting, templating
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; asparagus does not have the same quasiquote semantics and syntax than clojure (in clojure, the ` character)
  ;; inspired by brandon bloom's backtic library, I tried to separate symbol qualification from templating
@@ -1874,7 +1899,7 @@
  ;; sq (syntax-quote or quasiquote)
  ;; -----------------------------------------------------------------
 
- (_
+ (do
   ;; quasiquote expressions are useful for constructing datastructures when most but not all of the desired structure is known in advance.
   ;; If no ~ (unquote) appear within the template (the first and only argument of the quasiquote form),
   ;; the result of evaluating (sq template) is equivalent to the result of evaluating 'template.
@@ -1904,7 +1929,7 @@
 
   (let [amap {:b 2 :c 3}]
     (is (sq {:a 1 .~amap})
-        '{:a 1, :b 2, :c 3}))
+          {:a 1, :b 2, :c 3}))
 
   ;; Quasiquote forms may be nested.
   ;; Substitutions are made only for unquoted components appearing at the same nesting level as the outermost backquote.
@@ -1922,7 +1947,7 @@
  ;; qq (qualified quasiquote)
  ;; -----------------------------------------------------------------
 
- (_
+ (do
   ;; is somehow similar to clojure quasiquote, in the sense that it let you template a structure like sq do, but also qualifies symbols
 
   (is (qq (+ 1 ~(+ 2 3)))
@@ -1944,7 +1969,7 @@
 
  ;; the behavior is the same as 'qq but it throws when encountering an unqualifiable symbol
 
- (_
+ (do
   (is (qq! (+ 1 ~(+ 2 3)))
       '(_.joining.+ 1 5))
 
@@ -1957,7 +1982,7 @@
 ;;                         environment (continued)
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; it's time to go deep into the environment and the E+
  ;; let's talk about metaprograming first
@@ -1982,7 +2007,7 @@
 
  ;; macros -----------------------------------
 
- (_
+ (do
   ;; a simple macro definition
 
   (E+ postfix:mac ;; note the :mac sufix
@@ -2025,7 +2050,7 @@
 
  ;; regular macros with the 'mac macro -------
 
- (_
+ (do
   ;; and as you may have guessed, we can implement regular Lisp behavior in terms of those semantics
   ;; using the builtin 'mac macro, we will define a dummy 'fi macro (same as clojure's if-not)
 
@@ -2048,7 +2073,7 @@
 
  ;; dual stage -------------------------------
 
- (_
+ (do
   ;; our fancy-add function, will check the presence of litteral numbers in its operands and preprocess them at compile time
   ;; living others operands as is for runtime
   (E+ fancy-add
@@ -2062,8 +2087,8 @@
                  (qq (fancy-add:val ;; we have to explicitly write the :val suffix in this case
                       ;; we peform the compile time work
                       ~(* add lit-nums)
-                      ;; we thread the expansion mapping cxp (composite expand) on others operands and splice the result
-                      .~($ others (p cxp e)))))))
+                      ;; we thread the expansion mapping exp on others operands and splice the result
+                      .~($ others (p exp e)))))))
 
        ;; runtime behavior, a normal addition
        ;; using the scheme's variadic args syntax and the composite syntax (the dot)
@@ -2083,7 +2108,7 @@
 
  ;; substitutions ----------------------------
 
- (_
+ (do
 
   ;; 'substitutions' are another metaprograming device that deserve attention I think
   ;; it gives the user a way to replace a simple symbol with an arbitrary expression
@@ -2122,7 +2147,7 @@
 
  ;; updates ----------------------------------
 
- (_
+ (do
   ;; extending E+ behavior with the :upd attribute
 
   ;; it can hold a function that creates an update datastructure (like the one E+ takes), hold on, see the exemple:
@@ -2150,7 +2175,7 @@
 
  ;; effects ----------------------------------
 
- (_
+ (do
   ;; sometimes you need to do dirty/real things,
   ;; :fx let you write an expression that will be executed at environment extension time
   ;; the expression being previously compiled with the current environment
@@ -2169,13 +2194,13 @@
 ;;                               generics
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; generic functions are at heart of asparagus, every core operations are defined this way
 
  ;; mono arity
 
- (_
+ (do
   ;; we will define a my-generic function and implement it for some built in types
 
   (E+ my-generic
@@ -2196,7 +2221,7 @@
 
  ;; poly arity
 
- (_
+ (do
 
   ;; as clojure.core/fn generics a multi arity syntax
   (E+ my-generic2
@@ -2237,7 +2262,7 @@
 
  ;; inspection, extension
 
- (_
+ (do
   ;; we can inspect your generic like this
   (!! (my-generic2.inspect))
 
@@ -2285,7 +2310,7 @@
 
  ;; a la carte polymorphism
 
- (_
+ (do
   ;; one consideration that came to my mind and that is experimented at the end of asparagus.boot.generics
   ;; is that each implementation should be callable directly when there is no need for polymorphism
   ;; candidate syntaxes would be:
@@ -2301,7 +2326,7 @@
 ;;                                types
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; declaring a simple new type
  (E+ (type+
@@ -2347,7 +2372,7 @@
 ;;                          object orientation
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; a light way to mimic object oriented programming in clojure is to put methods inside a map
 
@@ -2427,11 +2452,11 @@
 ;;                             dive and tack
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; dive
 
- (_
+ (do
 
   ;; the dive generic function, let you get something inside something else
   ;; its first argument represent the address of what you want to get
@@ -2483,10 +2508,9 @@
   ;; As you may have deduced by yourself, dive.ops can be extended with new operations
   ;; Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :))
 
- 
   ;; extension 
 
-  (_
+  (do
 
    ;; adding a wtf op that do something that does not make sense
    (E+ (dive.op+ wtf [x]
@@ -2503,7 +2527,7 @@
 
  ;; tack
 
- (_
+ (do
 
   ;; tack is not really intended to be used directly
   ;; in most cases we will use put and upd (that are defined in terms of it)
@@ -2607,7 +2631,7 @@
 ;;                               at last
 ;; ------------------------------------------------------------------------
 
-(_
+(do
 
  ;; first of all, If you made it until here, thank you very much :)
 

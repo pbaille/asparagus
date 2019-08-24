@@ -607,6 +607,21 @@
           (doseq [s (shrink+ (keys (ns-publics *ns*)) pathvar-sym?)]
             (ns-unmap *ns* s)))
 
+        (defn clean-member-vars! [p]
+          (let [prefix
+                (-> (ppath p)
+                    path->varsym str
+                    (str/split #"__")
+                    first)]
+            (doseq [s (shrink+ (keys (ns-publics 'asparagus.core)) pathvar-sym?)]
+              (when (re-find (re-pattern prefix) (str s))
+                #_(println 'removing-member-var  s)
+                (ns-unmap 'asparagus.core s)))))
+
+        (defn clean-members-vars! [xs]
+          (doseq [x xs]
+           (clean-member-vars! (path x))))
+
         (defn clean-top-forms! []
           (doseq [s @top-forms]
             (ns-unmap *ns* s))
@@ -797,6 +812,10 @@
         (defn env-add-member [e p x]
           (update-in e (env-member-path p) deep-merge x))
 
+        (defn env-rem-member [e p]
+          (let [segments (env-member-path p)]
+            (update-in e (butlast segments) dissoc (last segments))))
+
         (defn env-merge-members [e xs]
           (reduce (p* env-add-member) e xs))
 
@@ -832,7 +851,7 @@
           [e expr]
           (let [at (loc e)
                 qualified (qualify e expr)
-                ;expanded (expand e qualified)
+                                        ;expanded (expand e qualified)
                 expanded (exp e expr)
                 resolved (resolve e expanded)]
             {:at at
@@ -853,12 +872,34 @@
           (let [{:as m r :resolved at :at}
                 (env-detailed-steps (mv e p) x)
                 evaluated (c/eval r)]
-            #_(pp 'compiled-add at (mv e at) r)
+            ;; TODO this thing cannot be here...
             (when @varmode (deep-merge-pathvar! p r)
                   #_(set-pathvar! p r))
             (-> e
                 (env-add-member at evaluated)
-                (env-add-meta at m)))))
+                (env-add-meta at m))))
+
+        ;; removing members ---
+
+        (defn env-clear-member! [p]
+          (let [p (path p)]
+            (when @varmode (clean-member-vars! p))
+            (swap! E env-rem-member p)))
+
+        (defn E-minus [at [x1 & rxs :as xs]]
+          (when xs
+            (concat
+             (cp x1
+                 symbol? [`(env-clear-member! (path '~(path->sym (path at x1))))]
+                 holymap? (c/mapcat (fn [[k v]] (pp 'iop) (E-minus (path at k) [v])) x1)
+                 vector? (c/mapcat (fn [x] (pp 'o x) (E-minus at [x])) x1))
+             (E-minus at rxs))))
+
+        (_
+         #_(E-minus 'Env root-path '[iop foo])
+         #_(E-minus 'Env root-path '[iop foo [bar baz] {hey {bob [a z e] bae {iop [i o p]}}}])
+         #_(macroexpand '(E- iop foo))
+         #_(macroexpand '(E- iop foo [bar baz] {hey {bob [a z e] bae {iop [i o p]}}}))))
 
     (do :updates
 
@@ -1013,14 +1054,25 @@
 (do :API
 
     (defmacro E+
-      "the main way to extend and update the asparagus environment
-       for implementation details refer to the previous section (:extension)"
+      "the main way to extend and update the asparagus global environment
+       for implementation details refer to the previous section (:extension)
+       for usage, see ./tutorial.clj"
       [& xs]
       `(do ~(when (symbol? (first xs))
               `(println "E+ " '~(first xs)))
            ~@(map (fn [u]
                       `(env-upd_exe @E (env-upds @E '~u)))
-                    (env-upd_split xs))))
+                  (env-upd_split xs))))
+
+    (defmacro E-
+      "removes given member-paths|coresponding-symbols from the global env
+       ex:
+       (E- iop foo)
+       (E- {hey {bob [a z e] bae {iop [i o p]}}})
+       "
+
+      [& xs]
+      (cons 'do (E-minus root-path xs)))
 
     (defmacro !!
       "a little convenience, that is mainly useful for development
@@ -1804,7 +1856,7 @@
                  ;; macro call
                  mcall? (expand-mcall e x)
                  ;; clojure collection
-                 holycoll? ($ x (p expand e))
+                 holycoll? ($ x (p rec e))
                  ;; anything else
                  x))]
 
@@ -1816,7 +1868,8 @@
           ;; impls
 
           composite
-          (fn [_ x] (composite.expand x))
+          (fn [_ x] #_(pp 'composite.expand x)
+            (composite.expand x))
 
           top-lvl-unquotes
           (fn
