@@ -1779,7 +1779,7 @@
                   (fn [k]
                     (if (c/get-in expand-module [:flags k])
                       (p (env.get.val e (sym 'env.expand. (sym k))) e)
-                      (fn [x] (pp k 'no-op) x)))]
+                      (fn [x] #_(pp k 'no-op) x)))]
               (c/comp
                #_(p p/prob 4)
                (get-expanding-step :composite)
@@ -1789,7 +1789,8 @@
                (p env.expand.raw e)
                #_(p p/prob 1)
                (get-expanding-step :top-lvl-unquotes)
-               #_(p p/prob 0))))
+               #_(p p/prob 0)
+               )))
 
           raw
           [
@@ -1797,6 +1798,7 @@
             will handle substitutions and macro calls"
            (fn [e x]
              (cp x
+                 p/quote? x
                  ;; subsitution
                  subpath? (expand-subpath e x)
                  ;; macro call
@@ -1822,8 +1824,9 @@
             ([e x] (rec e 0 x))
 
             ([e lvl x]
-             #_(pp 'top-lvl-unquotes)
              (cp x
+
+                 p/quote? x
 
                  (p quotes.quote? e)
                  (rec e (inc lvl) (second x))
@@ -1847,17 +1850,22 @@
 
            (fn [e x]
              (cp x
+
+                 p/quote? x
+
                  seq?
                  (cs [x1 (car x)
                       ? (keyword? x1)
-                      [o . _xs] (cdr x)
+                      [o & _xs] (cdr x)
                       o (rec e o)]
                      (lst* (env.exp e (qq §))
                            (env.exp e (qq (or (c/get ~o ~x1) (.method-not-found ~o ~x1))))
                            o (when _xs ($ _xs (p rec e))))
                      ($ x (p rec e)))
+
                  holycoll?
                  ($ x (p rec e))
+
                  x))
 
            method-not-found
@@ -3229,17 +3237,17 @@
           compile
           {:val
            (fn [e opts]
-             (if (:name? opts)
+             (if (c/get opts :name?)
                (.named e opts)
                (.anonymous e opts)))
 
            anonymous
-           (fn [e opts]
+           (fn [e {:as opts :keys [unified bs expr]}]
              (bindings.let.form
-              e (if (:unified opts)
-                  (bindings.unified (cat* (:bs opts)))
-                  (bindings (cat* (:bs opts))))
-              (:expr opts)
+              e (if unified
+                  (bindings.unified (cat* bs))
+                  (bindings (cat* bs)))
+              expr
               (cp opts
                   :strict :strict
                   :short :short
@@ -3605,9 +3613,9 @@
            check-variadic-sigs
            ["ensure that all variadic cases have the same min arity"
             (fn [xs]
-              (assert (apl eq ($ xs #(:min-arity %)))
+              (assert (apl eq ($ xs #(c/get % :min-arity)))
                       (str* "variadic arities count mismatch\n"
-                            (interleave ($ xs #(:pat %)) (repeat "\n")))))]
+                            (interleave ($ xs #(c/get % :pat)) (repeat "\n")))))]
 
            ;; main
            (fn [[fst & nxt :as form]]
@@ -3638,7 +3646,7 @@
 
 
                (when variadic
-                 (parse.check-variadic-sigs (:& arities)))
+                 (parse.check-variadic-sigs (c/get arities :&)))
 
                {:name name
                 :monadic monadic
@@ -3686,7 +3694,7 @@
             variadic
             (fn [verb cases]
               (let [vsym (gensym)
-                    prefcnt (:min-arity (car cases))
+                    prefcnt (c/get (car cases) :min-arity)
                     argv-prefix (take (gensyms) prefcnt)
                     argv (vec+ argv-prefix ['& vsym])
                     clet-cases
@@ -3734,14 +3742,14 @@
         generic.lambda-wrapper (qq f)
 
         bindings.let.compile.named
-        (fn [e opts]
+        (fn [e {:as opts :keys [bs name expr]}]
           (lst* (lambda.compile
                  e (mrg opts
-                        {:pat (mapv car (:bs opts))
-                         :arity (count (:bs opts))
-                         :body [(:expr opts)]
-                         :name (:name opts)}))
-                (exp e ($ (:bs opts) second)))))
+                        {:pat (mapv car bs)
+                         :arity (count bs)
+                         :body expr
+                         :name name}))
+                (exp e ($ bs second)))))
 
     (do :guard-macro
         (E+ guard:mac
@@ -4562,44 +4570,45 @@
                 [case casu !case !casu
                  case_ casu_ !case_ !casu_])
 
-        (assert
+        :fx
+        (check
 
-         [(let [t (case_
-                   [:point x 0] :y0
-                   [:point 0 y] :x0
-                   [:point (:num x) (:num y)] [x y]
-                   :pouet)]
-            (and
-             (eq :y0 (t [:point 1 0]))
-             (eq :x0 (t [:point 0 1]))
-             (eq [1 2] (t [:point 1 2]))
-             (eq :pouet (t [:point 1 "io"]))))
+         (let [t (case_
+                  [:point x 0] :y0
+                  [:point 0 y] :x0
+                  [:point (:num x) (:num y)] [x y]
+                  :pouet)]
+           (and
+            (eq :y0 (t [:point 1 0]))
+            (eq :x0 (t [:point 0 1]))
+            (eq [1 2] (t [:point 1 2]))
+            (eq :pouet (t [:point 1 "io"]))))
 
-          (let [t (casu_
-                   [:point x 0] :y0
-                   [:point 0 y] :x0
-                   [:point (:num x) (:num x)] :twin
-                   [:point (:num x) (:num y)] [x y]
-                   :pouet)]
-            (and
-             (eq :y0 (t [:point 1 0]))
-             (eq :x0 (t [:point 0 1]))
-             (eq :twin (t [:point 1 1]))
-             (eq [1 2] (t [:point 1 2]))
-             (eq :pouet (t [:point 1 "io"]))))
+         (let [t (casu_
+                  [:point x 0] :y0
+                  [:point 0 y] :x0
+                  [:point (:num x) (:num x)] :twin
+                  [:point (:num x) (:num y)] [x y]
+                  :pouet)]
+           (and
+            (eq :y0 (t [:point 1 0]))
+            (eq :x0 (t [:point 0 1]))
+            (eq :twin (t [:point 1 1]))
+            (eq [1 2] (t [:point 1 2]))
+            (eq :pouet (t [:point 1 "io"]))))
 
-          (let [t (!casu_
-                   [:point x 0] :y0
-                   [:point 0 y] :x0
-                   [:point (:num x) (:num x)] :twin
-                   [:point (:num x) (:num y)] [x y])]
-            (and
-             (eq :y0 (t [:point 1 0]))
-             (eq :x0 (t [:point 0 1]))
-             (eq :twin (t [:point 1 1]))
-             (eq [1 2] (t [:point 1 2]))
-             (throws (t [:point 1 "io"]))))
-          ]))
+         (let [t (!casu_
+                  [:point x 0] :y0
+                  [:point 0 y] :x0
+                  [:point (:num x) (:num x)] :twin
+                  [:point (:num x) (:num y)] [x y])]
+           (and
+            (eq :y0 (t [:point 1 0]))
+            (eq :x0 (t [:point 0 1]))
+            (eq :twin (t [:point 1 1]))
+            (eq [1 2] (t [:point 1 2]))
+            (throws (t [:point 1 "io"]))))
+         ))
 
     (E+ tack
 
@@ -4845,7 +4854,8 @@
      cf ?cf !cf cfu !cfu
      clet clut !clet !clut
      case casu !case !casu
-     throws)
+     throws
+     sq qq qq!)
 
     (pp 'DONE)
 

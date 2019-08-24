@@ -43,14 +43,14 @@
        :atom (p/kset atoms)
        :coll (p/kset colls)
        :word #{:key :str :sym}
-       :line #{:vec :seq :lst}
+       :line #{:vec :lst}
        :hash #{:map :set}})
 
     (def preds-symbols
       {:fun `fn?
        :vec `vector?
-       :seq `seq?
-       :lst `list?
+       ;:seq `seq?
+       :lst `seq?
        :set `set?
        :map `map?
        :num `number?

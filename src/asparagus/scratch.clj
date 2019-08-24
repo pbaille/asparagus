@@ -9,3 +9,6 @@
               }))
 
 (!! (env.expand.top-lvl-unquotes @E (qualify @E '(_.primitives.fn [_] nil))))
+
+(exp @E '(loop [[a b & xs] 42] :io))
+

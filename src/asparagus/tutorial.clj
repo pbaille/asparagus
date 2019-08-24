@@ -632,6 +632,13 @@
   (is (let [a 1 b a] (add a b))
       2)
 
+  ;; looping
+  ;; let can be given a name (here :rec) in order to loop
+  (is (let :rec [ret 0 [x . _xs] (range 10)]
+           (if (pure? _xs) ret
+               (rec (add ret x) _xs)))
+      36)
+
   ;; binding symbols can be prepended by special character to indicate special behavior
 
   ;; shortcircuiting bindings
@@ -1906,8 +1913,8 @@
         name2 'y]
     (is (sq (a (sq (b ~~name1 ~'~name2 d)) e))
         '(a (sq (b ~x y d)) e)))
-  )
 
+  )
  ;; qq (qualified quasiquote)
  ;; -----------------------------------------------------------------
 
