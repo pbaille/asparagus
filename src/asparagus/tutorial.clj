@@ -60,9 +60,13 @@
 
   ;; for now we will use !! macro to evaluate forms (it is kind of ugly...), but later it will no longer be needed
 
-  (is 1 foo) ;; return the value under foo e.g 1
-  (is 42 baz) ;; 42
-  (is \a bar) ;; \a
+  (!! foo) ;; return the value under foo e.g 1
+
+  ;; the 'is macro just assert equality of its arguments
+  
+  (is 1 foo)
+  (is 42 baz)
+  (is \a bar)
 
   ;; you can modularize definitions (one of the motivational point of all this)
   ;; here we use a hashmap literal to define several variables in 'mymodule and 'mymodule.c
@@ -1891,7 +1895,7 @@
         '(list a (quote a))))
 
 
-  ;; If a comma appears preceded immediately by a dot, then the following expression must evaluate to an iterable structure;
+  ;; If a tilde (~) appears preceded immediately by a dot, then the following expression must evaluate to an iterable structure;
   ;; the evaluated iterable structure will be merged into its host structure, replacing the dot, the unquote and the expression.
   ;; therefore a 'dot unquote expr' (.~expr) structure has to appears only in an iterable structure (in order to be able to be merged into it).
 
