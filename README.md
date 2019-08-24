@@ -4,5 +4,5 @@
 
 A crazy Lisp embedded in clojure
 
-See the [tutorial](https://gitlab.com/pbaille/asparagus/blob/master/src/asparagus/tut.clj)
+See the [tutorial](https://gitlab.com/pbaille/asparagus/blob/master/src/asparagus/tutorial.clj)
 

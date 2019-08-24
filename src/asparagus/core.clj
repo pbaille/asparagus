@@ -864,7 +864,7 @@
 
         ;; an asparagus update is a description of an environment mutation
         ;; those functions will be used by the main environment extension form: E+
-        ;; i've written a gentle introduction to asparagus updates in ./tut.clj
+        ;; i've written a gentle introduction to asparagus updates in ./tutorial.clj
 
         (defn env-upd_prepend-declarations [u]
           #_(pp 'will-prep-decl (doall u))
@@ -1090,7 +1090,7 @@
       `(do ~@($ xs top-form-decl))))
 
 ;; from this point asparagus is built in itself (using E+ macro)
-;; for a gentle introduction to E+, please refer to ./tut.clj
+;; for a gentle introduction to E+, please refer to ./tutorial.clj
 ;; ------------------------------------------------------------------------------
 
 (do :asparagus
@@ -1124,8 +1124,7 @@
           (c/fn [e submap]
             (c/reduce add-sub e submap))]
 
-         :links {exp env.exp
-                 qualify env.qualify}
+         :links {exp env.exp}
 
          hygiene
          {shadow
@@ -1531,6 +1530,8 @@
                e 'env.qualify.fail
                #(error "not resolvable: " %))
               x))]]
+
+         :links {qualify env.qualify}
 
          error
          ["throw an error printing some context (not so great, to improve!)"
@@ -4847,4 +4848,5 @@
      throws)
 
     (pp 'DONE)
+
     )
