@@ -52,7 +52,7 @@
        ;:seq `seq?
        :lst `seq?
        :set `set?
-       :map `map?
+       :map `p/holymap?
        :num `number?
        :key `keyword?
        :sym `symbol?

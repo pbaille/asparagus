@@ -640,7 +640,7 @@
     (do :access
 
         (defn unbound-error [p]
-          (throw (ex-info (str "Unbound path: " p)
+          (throw (ex-info (str "Unbound path: " (path->str p))
                           {:type :unbound
                            :path p})))
 
@@ -782,11 +782,11 @@
             ;; used by expand-mcall and expand-subpath via defexpansion
             e (update e :exp-ctx (fnil conj []) x)]
         (->> x (qualify e) (expand e))))
-
+<
     (defne res
       "the whole compilation process, qualify -> expand -> resolve"
       [e x]
-      (->> x (exp e) (resolve e)))
+      (->> x (qualify e) (expand e) (resolve e)))
 
     (defne eval
       "compile x in e and eval the resulting expression"
@@ -851,8 +851,8 @@
           [e expr]
           (let [at (loc e)
                 qualified (qualify e expr)
-                                        ;expanded (expand e qualified)
-                expanded (exp e expr)
+                expanded (expand e qualified)
+                ;expanded (exp e expr)
                 resolved (resolve e expanded)]
             {:at at
              :expr expr
@@ -1078,7 +1078,10 @@
       "a little convenience, that is mainly useful for development
        takes an expression and compile it at macro expansion time, resulting in an evaluable clojure form"
       [x]
-      (res @E x))
+      (->> x
+           (qualify @E)
+           (expand @E)
+           (resolve @E)))
 
     (defn env-inspect
       "resolve the given symbol in the global env
@@ -1927,17 +1930,20 @@
                     k " implementation"))]]
 
          exp
-         [
-          "qualify and expand x with e"
+         ["qualify and expand x with e"
           (fn [e x & [opts]]
             #_(pp 'exp x)
             (let [e
                   (env.upd e
                            'env.expand:flags (fn [v] (c/merge v opts))
                            'env.qualify:strict #(c/get opts :strict %))]
-              #_(pp 'qualified (env.qualify e x))
-              #_(pp 'mcall? (mcall? (env.qualify e x)))
               (env.expand e (env.qualify e x))))]}
+
+        env.exp:mac
+        (fn [e xs]
+          (if (= 2 (count xs))
+            (env.exp:val e (qq (exp:val .~xs)))
+            (qq '~(env.exp:val e (car xs)))))
 
         :links {exp env.exp})
 
@@ -1965,7 +1971,10 @@
         (qq (c/or .~($ xs (p exp e)) nil)))]
 
      check
-     {:doc "a quick way to assert things"
+     {
+      :doc
+      "a quick way to assert things"
+
       :mac
       (fn [e xs]
         (exp e (qq (p/asserts . ~xs))))
@@ -2897,7 +2906,7 @@
 
           message?
           (fn [x]
-            (c/or (keyword? x) (string? x)))
+            (or (keyword? x) (string? x)))
 
           message+
           (fn [m1 m2]
@@ -2909,7 +2918,7 @@
 
           error-str
           (fn [x m]
-            (str (c/or m "assertion fail") ":\n" x))
+            (str (or m "assertion fail") ":\n" x))
 
           mapdo:mac
           (fn [e [x f]]
@@ -2942,7 +2951,7 @@
            :string nil
 
            :any
-           (qq (c/or ~x (p/error (error-str '~x ~m)))) ;; TODO fullquote waiting
+           (qq (or ~x (p/error (error-str '~x ~m))))
            )]
 
          assert
@@ -2959,9 +2968,15 @@
 
          tests:upd
          (fn [e xs]
-           {'tests
-            {:form (qq '~(vec* (assertion.vec-split xs)))
-             :do (qq (fn [] (assert ~(vec* xs) ~(path->str (loc e)))))}})
+           (let [xs (vec* (assertion.vec-split xs))]
+             {'tests
+              {:form (qq '~xs)
+               :do (qq (fn [] .~($ xs (fn [x] (qq (assert ~x [~(path->str (loc e)) '~x]))))
+                         #_(assert ~(vec* xs) ~(path->str (loc e)))))}}))
+
+         run-all:upd
+         (fn [e xs]
+           )
 
          ;; testing this module with itself
 
@@ -3123,6 +3138,13 @@
                     or-exprs ($ (partition 2 xs) (fn [[k v]] `(or ~k ~v)))]
                 (+ ((get ops :ks-opt) keys y)
                    (interleave keys or-exprs))))
+
+            #_:cons
+            #_(fn [[a b] y]
+              (let [ysym (gensym)]
+                (+ [ysym y]
+                   (bind a (qq (car ~ysym)))
+                   (bind b (qq (cdr ~ysym))))))
 
             :tup
             (fn [xs y]
@@ -4908,7 +4930,7 @@
      clet clut !clet !clut
      case casu !case !casu
      throws
-     sq qq qq!)
+     exp sq qq qq!)
 
     (pp 'DONE)
 
