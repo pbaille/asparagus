@@ -31,32 +31,109 @@
     (bind.op+ quote [[a] y]
               [(gensym "?!") (qq (eq ~y '~a))]))
 
+(!! #_(env.members.tests:do)
+    (eq (env.mk {'foo 42})
+        (env.mk {'foo:val 42})
+        (env.mk {'foo {:val 42}})))
+
 (E+ env
     {
-     members
-     {:val (f_ (c/get _ :members))
+     mk
+     (f_ (env.merge.members env0 _))
 
-      pathmap
-      (cf [e] ($+ (leaves e) (f_ {_ (env.get e _)}))
-          [e at]
-          (> (leaves e)
-             (filt_ (p parent-path? at))
-             ($+_ (f_ {_ (env.get e _)}))))}
+     members
+     ["the env type has a :members field,
+      containing a nested map :: {path members}|{keyword any}
+      this module contains some utilities to transform such thing
+
+      used as a function, given an env, returns its members"
+
+      (f_ (c/get _ :members))
+
+      leaf?
+      (fn [x]
+        (and (map? x)
+             (?$ (idxs x) key?)))
+
+      normalize
+      [(cf
+        [x]
+        (red {}
+             (f [a [k v]]
+                (cp k
+                    key? (sip a [k v])
+                    sym? (rec a [(path k) v])
+                    path?
+                    (let [p (path k)]
+                      (if (ppath? p)
+                          ()))))
+             x)
+        [x at]
+        ())
+
+       entry
+       (f1 [k v]
+           (cp k
+               key?
+               sym?
+               path?
+               (case (path-segments k)
+                 (tup x)
+                 [[_ss . ls] ]
+                 (tack (_ss) {} v))))]
+
+      at
+      (f [ms at]
+         (get-in ms (path-segments at)))
+
+      leaves
+      [(cf
+        ;; api
+        [(:map m)] (rec m root-path [])
+        [(:map m) (path at)] (rec (members.at m at) at [])
+
+        ;; impl
+        [(pure? ms) at ret] ret
+        [(cons [k v] ms) at ret]
+        (let []
+          (rec ms at
+               (cp k
+                   key? (sip ret [(path at k) v])
+                   sym? (+ ret (rec v (path at k) []))))))
+
+       (tests
+        (eq (env.leaves @E)
+            (env.leaves @E root-path)
+            (env.members.leaves (env.members @E))
+            (env.members.leaves (env.members @E) root-path)))]
+
+      leafpaths
+      (+ leaves idxs)
+
+      (tests
+       :mk [(env.mk {})
+            (eq (env.mk {'foo 42})
+                (env.mk {'foo:val 42})
+                (env.mk {'foo {:val 42}}))])
+
+      ;:fx (members.tests:do)
+
+      ]
 
      leaves
-     (cf [e] (rec (members e) root-path [])
-         [(pure? ms) at ret] ret
-         [(cons [k v] ms) at ret]
-         (rec ms at
-              (cp k
-                  key? (sip ret (path at k))
-                  sym? (+ ret (rec v (path at k) [])))))
+     (cf [(:env e)]
+         (members.leaves (members e))
+         [(:env e) (path at)]
+         (members.leaves (members.at (members e) at) at))
+
+     leafpaths
+     (+ members members.leafpaths)
 
      subenv
      ["create a new environment from the value of 'e at 'path"
       (f [e path]
-        (env.put env0 root-path
-                 (env.get e path)))]
+         (env.put env0 root-path
+                  (env.get e path)))]
 
      merge
      {:val
@@ -70,19 +147,17 @@
 
       members
       ["add members to an environment"
-       (f [e1 e2]
-         (red e1
-              (f [a [p v]] (env.put a (path p) v))
-              e2))
+       (f [e ms]
+          (red e
+               (f [a [p v]] (env.put a p v))
+               (env.members.leaves ms)))
 
        relatively
        (f [e x]
           (env.merge.members
-           e ($+ (iter (env.members.pathmap (env.mk x)))
-                 (f1 [k v] {(path (loc e) k) v}))))]}
-
-     mk
-     (f_ (env.merge.members env0 _))})
+           e (red {}
+                  (f1 [e [k v]] (sip e [(path (loc e) k) v]))
+                  (env.members.leaves x))))]}})
 
 (E+ keep
     [
@@ -102,12 +177,12 @@
     {
      all-tests
      [(f [e]
-         ($+ (env.leaves e)
-             (f1 p
-                 (clet
+         (red {}
+              (f [m [p v]]
+                 (?let
                   [[. _ 'tests :do] (lst* (path-segments p))]
-                  {p (env.get e p)}
-                  {}))))
+                  (sip m [p v])))
+              (env.leaves e)))
       :demo
       (__ (!! (testing.all-tests @E)))]
 
@@ -191,4 +266,135 @@
 
       )])
 
+(E+ map
+    {addresses
+     (fn [x]
+       )})
+
+(do :flath
+
+            (declare flath_exp)
+
+            (defn flath_exp-entry [[p v]]
+              (cs [p (path p)]
+                  (assoc-in {} (path-segments p) (flath_exp v))))
+
+            (defn flath_exp [x]
+              (if (map? x)
+                ($ x flath_exp-entry)
+                x))
+
+            (defn flath_flatseq
+              ([x] (flath_flatseq x []))
+              ([x from]
+               (if (map? x)
+                 (mapcat (fn [[k v]] (flath_flatseq v (conj from k))) x)
+                 [[from x]])))
+
+            (defn flath_normalize [m]
+              (->> m flath_exp flath_flatseq (into {})))
+
+            (defn flath
+              ([] {})
+              ([& xs]
+               (c/let [[x & [y & z :as xs]] xs]
+                 (cp x
+                     map? (mrg (flath_normalize x) (apl flath xs))
+                     word? (apl flath {x y} z)
+                     (throw (Exception. (str "what? " x)))))))
+
+            (asserts
+
+             (flath
+              'a {'b {'c.d.e 1}})
+
+             ($keys (flath '{c {a 1 a.b {m 1 p.o 5}}})
+                    path*)
+
+             
+
+             (flath
+              {:a 1
+               'a.m.p {:b 2}
+               'c {'d 3
+                   :op {:iop 1}
+                   'e {:p 2}}})))
+
+(E+ pathmap
+    
+    ;; impl
+
+    [normalize
+     (cf
+      [x] (+ {} (rec x []))
+      [x from]
+      (if (map? x)
+          (red [] (f [a [k v]] (+ a (normalize v (sip from k)))) x)
+          [[from x]]))
+
+     preprocess
+     (f1 [x . (& xs [y . z])]
+         (cp x
+             map? (merge (normalize x) (rec xs))
+             word? (rec (cons {x y} z))
+             nil? (when (cons? xs) (rec xs))
+             (error  "map.addresses :: bad input:\n" x)))
+
+     flat-addresses
+     (f1 m
+         (map . (zip (f1 [k v] [($+ k (+ path path-segments)) v]) m)))
+
+     pathify-keys
+     [mkey-split (p c/split-with sym?)
+
+      (f1 m
+          (red {}
+               (f1 [k v]
+                   (let [[syms kws] (mkey-split k)]
+                     ))
+               m))]
+
+     ;; main
+
+     (f xs
+        (flat-addresses (preprocess xs)))
+
+     #_(check
+      (eq (map.addresses :a 1 'a.b 2)
+          (map.addresses {:a 1 'a.b 2})
+          (map.addresses {:a 1 'a {'b 2}})
+          {[:a] 1 '[a b] 2})
+
+      )]
+    )
+
+(ppenv map)
+
+(!! (map [:a 1] [:b 2]))
+(!! )
+
+(!! (map . (zip (f1 [k v] [k v]) {:a 1 :b 2})))
+(!! ($i+ {:a 1 :b 2} (f [k v] [k v])))
+
+(let [(& xs [x . y]) ()] [xs x y])
+
+(!! (map.addresses :a 1 'a.b 2))
+
+(!! (map.addresses
+     {:a 1
+      'a.m.p {:b 2}
+      'c {'d 3
+          :op {:iop 1}
+          'e {:p 2}}}
+     ;[]
+     ))
+
+(E- foo)
+(E+ foo (f [] :ho!)
+    )
+
+(ppenv foo)
+(!! (foo))
+(!! (foo.bob))
+(E+ foo [bob [iop 1 (f [] :foobob)]])
 

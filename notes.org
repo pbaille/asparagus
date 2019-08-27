@@ -1,0 +1,139 @@
+* Asparagus Dev Notes  
+
+** 26/08/19
+
+*** vec patterns
+
+the tup binding operator ensure a certain length for a sequential structure
+maybe vector patterns should do that, instead of the clojure's behavior allowing extra elements to be here
+we could use ... syntax to allow extra elements 
+
+#+begin_src clojure 
+(let [[a b ...] myseq] (do-something a b))
+;; should be more readable than ? 
+(let [[a b . _] myseq] (do-something a b))
+#+end_src
+
+*** the environment explorer 
+
+asparagus.core growing, it becomes painful to edit, nesting is not enough apparent
+with an ui explorer it could really be great, accessing exemples and tests for any function, exploring a module etc...
+be able to to run tests and evaluate code samples directly in it would be great
+be able to click on a sym and go to its definition, seeing expansion of code blocks in place etc...
+
+leave the file representation sounds great... 
+there's could be an edit window with code edotor facilities letting you write E+ content against your current environment
+when a test fail you could go to the problematic definition and edit it in place
+this is a crutial point for newcomers to be able to explore seemlessly the language
+
+*** the binding mode prefixes 
+
+when we do =(let [?a x] ?a)= should we really keep the prefix for bund value usage? seems redondant
+it will become =(let [?a x] a)=
+
+*** testing module 
+
+the tests update is a bit crude, the vec-split stuff is quick and dirty, it should be more structured
+it could be similar to E+ forms in the handling of collection literals
+each test should indicate its exact path in the error message (i look at you vector indexes))
+
+#+begin_src clojure
+(tests 
+ yop {yop1 (...)
+      another [(...) (...) (...)]}
+ bar 
+ [sub1 (...)
+  sub2 [{...} ...]])
+#+end_src
+
+*** doc or demo module 
+
+a similar module than 'testing could exist, allowing to present gently samples for our function/module
+
+*** usertypes patterns 
+
+when using type+ a binding op should be automatically defined
+
+#+begin_src clojure 
+(E+ (type+ :mytyp [a b]))
+
+(let [(mytyp x y) mytyp-instance
+      (mytyp {:a pat1 :b pat2}) my-other-instance] 
+ ...)
+#+end_src
+
+all its implementations could live into the type module too
+
+#+begin_src clojure
+;; mytyp has a + implementation  
+(E+ (type+ mytyp [a b] (+ [x y] ...)))
+;; its could be accessible like this, skiping dispatch perf cost
+(mytyp.+ ...)
+#+end_src
+
+*** binding ops 
+
+I've recently implemented the 'cons operation, there should be many like it, it makes me think of logic programming a bit, defining the backward operation...
+
+*** cons record 
+
+just done this little perf experiment, we should definitively consider the cons type 
+
+#+begin_src clojure 
+(defrecord Cons [car cdr])
+
+(defn cns [a d]
+      (Cons. a d))
+
+(defn ls [& xs]
+  (when xs
+    (cns (first xs) (apl ls (next xs)))))
+
+(defn lnth [l n]
+  (cond (nil? l) nil
+        (zero? n) (:car l)
+        :else (lnth (:cdr l) (dec n))))
+
+(time (dotimes [_ 1000000]
+        (lnth (ls 1 2 3 4 5 6 7)
+              4))) ;; 335ms, the same with a deftype is 8 times slower
+
+(time (dotimes [_ 1000000]
+        (nth (list 1 2 3 4 5 6 7)
+             4))) ;; 222ms
+#+end_src
+
+in asparagus main collection types implement cons
+can it be viewed as a casting operation?
+
+how could be the casting syntax for bindings? do we need one? does constructor syntax is enough?
+in pattern matching forms like 'cf it could be useful to disambiguate the two concepts
+
+#+begin_src clojure 
+;; constructor
+(let [(cons a b) x] ...)
+;; casting
+(let [(->cons a b) x] ...)
+(def a 1)
+ #+end_src
+
+
+** 27/08/19
+
+*** types
+
+type definitions should be namespaced (in the asparagus way)
+ #+begin_src clojure 
+(E+ foo.bar 
+    (type+ :baz [a b]))
+
+(is (type (foo.bar.baz 1 2))
+    :foo.bar.baz)
+
+(is (class (foo.bar.baz 1 2))
+    foo_bar_Baz)
+ #+end_src
+
+
+
+
