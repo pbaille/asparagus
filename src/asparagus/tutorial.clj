@@ -660,13 +660,6 @@
   (is (let [a 1 b a] (add a b))
       2)
 
-  ;; looping
-  ;; let can be given a name (here :rec) in order to loop
-  (is (let :rec [ret 0 [x . _xs] (range 10)]
-           (if (pure? _xs) ret
-               (rec (add ret x) _xs)))
-      36)
-
   ;; binding symbols can be prepended by special character to indicate special behavior
 
   ;; shortcircuiting bindings
@@ -752,40 +745,58 @@
   ;; literals ---------------------------
 
   (do
-   ;; like clojure's let we support destructuration
-   ;; but unlike clojure, destructuration is an extensible mecanism
-   ;; the user can define its own destructuration special forms
+    ;; like clojure's let we support destructuration
+    ;; but unlike clojure, destructuration is an extensible mecanism
+    ;; the user can define its own destructuration special forms
 
-   ;; sequential bindings
-   (is (let [[x . xs] (range 5)] [x xs])
-       [0 (range 1 5)])
+    ;; using a vector in pattern position do the same as clojure (at first glance)
+    (is (let [[a b] [1 2]] {:a a :b b})
+        {:a 1 :b 2})
 
-   ;; preserve collection type
-   (is (let [[x . xs] (vec 1 2 3)] [x xs])
-       [1 [2 3]]) ;; in clojure [2 3] would be a seq
+    ;; but it is more strict
+    ;; this does not pass because seed an pattern have different length 
+    (isnt (let [[a b c] [1 2]] :ok)
+          (let [[a b] [1 2 3]] :ok))
 
-   ;; post rest pattern
-   ;; in clojure the rest pattern has to be the last binding, here we can bind the last element easily
-   (is (let [[x . xs lastx] (range 6)] [x xs lastx])
-       [0 (range 1 5) 5])
+    ;; rest pattern
+    (is (let [[x . xs] (range 5)] [x xs])
+        [0 (range 1 5)])
 
-   ;; (we could also have bound several things after the rest pattern)
-   (is (let [[x . xs y1 y2 y3] (range 6)] [x xs y1 y2 y3])
-       [0 (lst 1 2) 3 4 5])
+    ;; in clojure the following is valid
+    (clojure.core/let [[a b] [1 2 3]] {:a a :b b}) ;; {:a 1 :b 2}
+    ;; the equivalent in asparagus should be written like this
+    (is (let [[a b . _] (range 10)] {:a a :b b}) ;; with the . _ we allow extra elements
+        {:a 0 :b 1})
+    ;; this way lambda argument patterns and let patterns behaves the same, which seems like a good thing
 
-   ;; maps
-   (is (let [{:a aval :b bval} {:a 1 :b 2 :c 3}] [aval bval])
-       [1 2])
+    ;; preserve collection type
+    (is (let [[x . xs] (vec 1 2 3)] [x xs])
+        [1 [2 3]]) ;; in clojure [2 3] would be a seq
 
-   ;; in clojure the same is acheived like this (I don't really understand why)
-   (c/let [{aval :a bval :b} {:a 1 :b 2 :c 3}] [aval bval])
+    ;; post rest pattern
+    ;; in clojure the rest pattern has to be the last binding, here we can bind the last element easily
+    (is (let [[x . xs lastx] (range 6)] [x xs lastx])
+        [0 (range 1 5) 5])
 
-   ;; maps have rest patterns to
-   (is (let [{:a aval . xs} {:a 1 :b 2 :c 3}] [aval xs])
-       [1 {:b 2 :c 3}])
+    ;; (we could also have bound several things after the rest pattern)
+    (is (let [[x . xs y1 y2 y3] (range 6)] [x xs y1 y2 y3])
+        [0 (lst 1 2) 3 4 5])
 
-   ;; as you may think, all binding modes are supported in destructuration bindings forms
-   )
+    ;; maps
+    (is (let [{:a aval :b bval} {:a 1 :b 2 :c 3}] [aval bval])
+        [1 2])
+
+    ;; in clojure the same is acheived like this (I don't really understand why)
+    (c/let [{aval :a bval :b} {:a 1 :b 2 :c 3}] [aval bval])
+
+    ;; maps have rest patterns to
+    (is (let [{:a aval . xs} {:a 1 :b 2 :c 3}] [aval xs])
+        [1 {:b 2 :c 3}])
+
+    
+
+    ;; as you may think, all binding modes are supported in destructuration bindings forms
+    )
 
   ;; operators ---------------------------
 
@@ -826,32 +837,40 @@
          [mymap a b c d])
        [{:a 1 :b 2 :c 3} 1 2 3 42])
 
-   ;; tup (tuple)
-   ;; sometimes we want to be more strict than regular sequential binding (vector syntax)
+   ;; cons
+   (is (let [(cons a b) [1 2 3]] [a b])
+       [1 [2 3]])
 
-   (is (?let [(tup a b) [1 2]] [a b])
-       [1 2])
+   ;; quote
+   ;; quoted things match what is equal to them
+   (is (let ['iop 'iop] :ok)
+       :ok)
 
-   ;; here it does not pass because length are different
-   (isnt (?let [(tup a b) [1]] [a b]))
-   (isnt (?let [(tup a b) [1 2 3]] [a b]))
+   (is (let [['foo :bar . xs] '[foo :bar 1 2 3]] xs)
+       [1 2 3])
 
-   ;; some tests
-   (is
-    :iop
-    (let [(tup a b) [1 2]] :iop)
-    (?let [(tup a b) [1 2]] :iop)
-    (!let [(tup a b) [1 2]] :iop))
+   (is :ok
+       (let ['(add 1 2) (lst 'add 1 2)] :ok))
 
-   (isnt (let [(tup a b) [1 2 3]] :iop)
-         (?let [(tup a b) [1 2 3]] :iop))
+   ;; experiments
 
-   (!! (throws (!let [(tup a b) [1 2 3]] :iop)))
+   (E+ (bind.op+ bind_
+                 [[p expr] y]
+                 (+ ['_ y]
+                    (bind p expr))))
 
-   (isnt (let [(tup a b) [1]] :iop)
-         (?let [(tup a b) [1]] :iop))
+   (let [(bind_ x (inc _)) 1] x)
 
-   (!! (throws (!let [(tup a b) [1]] :iop)))
+   (E+ (bind.op+ >
+                 [[x . xs] y]
+                 (+ [x y]
+                    (red [] (f [a e] (+ a (bind e x))) xs))))
+
+   (!! (bind '(& a b) 1))
+   (!! (bind '(> x (num? x) (& (dec x) (inc x))) 1))
+
+   (is (let [(> x (num? x) (& (dec x) (inc x))) 1] x)
+       [0 2])
 
 
    ;; some others builtin bindings exists, see source
@@ -1022,6 +1041,14 @@
           [[:point 0 y] p] :x0
           [[:point x y] p] [x y]))
   )
+
+ ;; loop (let rec)
+
+ ;; let can be given a name (here :rec) in order to loop
+ (is (let :rec [ret 0 [x . _xs] (range 10)]
+          (if (pure? _xs) ret
+              (rec (add ret x) _xs)))
+     36)
  )
 
 ;; ------------------------------------------------------------------------

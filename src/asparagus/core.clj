@@ -3040,18 +3040,22 @@
                (.raw x y)))
 
            body
-           (fn [x y]
-             (mapcat
-              (fn [v i] (bind v (qq (c/nth ~y ~i nil))))
-              x (range)))
+           (fn [x y cnt]
+             (+ [(gensym "?!size>=") (qq (c/= (c/count (take ~y ~cnt)) ~cnt))
+                 (gensym "?!size=") (qq (pure? (drop ~y ~cnt)))]
+                (mapcat
+                 (fn [v i] (bind v (qq (c/nth ~y ~i nil))))
+                 (iter x) (range))))
 
            raw
            (fn [x y]
-             (let [ysym (gensym)]
+             (let [ysym (gensym)
+                   cnt (c/count x)
+                   ]
                (+
                 [ysym y
                  (gensym "?!linecheck") (qq (line? ~ysym))]
-                (bind.vec.body x ysym))))
+                (bind.vec.body x ysym cnt))))
 
            dotted
            (fn [x y]
@@ -3062,14 +3066,15 @@
                    [ysym qsym cdr' cars'] (gensyms)]
                (+
                 [ysym y
-                 (gensym "?!linecheck") (qq (line? ~ysym))]
+                 #_(gensym "?!linecheck") #_(qq (line? ~ysym))]
+                (bind cars (qq (take ~ysym ~doti)))
                 (bind eli (qq (drop ~ysym ~doti)))
-                (bind.vec.body cars ysym)
+                #_(bind.vec.body cars ysym doti)
                 (when-not (zero? qcnt)
                   (+ [cdr' eli]
                      (bind eli (qq (dropend ~cdr' ~qcnt)))
                      [qsym (qq (takend ~cdr' ~qcnt))]
-                     (bind.vec.body queue qsym))))))}
+                     (bind.vec.body queue qsym qcnt))))))}
 
           map
           {:val
@@ -3121,8 +3126,8 @@
            {:&
             (fn [xs y]
               (let [ysym (gensym)]
-                (cat* [ysym y]
-                      ($ xs #(bind % ysym)))))
+                (apl + [ysym y]
+                   ($ xs #(bind % ysym)))))
 
             :ks
             (fn [xs y]
@@ -3142,15 +3147,19 @@
                 (+ ((get ops :ks-opt) keys y)
                    (interleave keys or-exprs))))
 
-            #_:cons
-            #_(fn [[a b] y]
+            :cons
+            (fn [[a b] y]
               (let [ysym (gensym)]
                 (+ [ysym y]
                    (bind a (qq (car ~ysym)))
                    (bind b (qq (cdr ~ysym))))))
 
-            :tup
-            (fn [xs y]
+            :quote
+            (fn [[a] y]
+              [(gensym "?!") (qq (eq ~y '~a))])
+
+            #_:tup
+            #_(fn [xs y]
               (let [xs (vec* xs)
                     [ysym] (gensyms)]
                 (+
@@ -3159,6 +3168,11 @@
                   (gensym "?!countable") (qq (c/counted? ~ysym))
                   (gensym "?!countcheck") (qq (= ~(count xs) (count ~ysym)))]
                  (bind.vec.body xs ysym))))
+
+            :bind_
+            (fn [[p expr] y]
+              (+ ['_ y]
+                 (bind p expr)))
 
             :!
             (fn [[f & [p]] y]
@@ -3367,8 +3381,24 @@
 
           ;; sequential bindings
 
-          (eq (let [[x . xs] (range 5)] [x xs])
-              [0 (range 1 5)])
+          (eq (let [[a b c] [1 2 3]] [a b c])
+              (let [[a b c] '(1 2 3)] [a b c])
+              (let [[a b c] (next (range 4))] [a b c])
+              [1 2 3])
+
+          (eq nil
+              (let [[a b c] [1 2]] [a b c])
+              (let [[a b c] [1 2]] [a b c])
+              (let [[a b c] [1 2 3 4]] [a b c])
+              (let [[a b c] '(1 2 3 4 5)] [a b c])
+              (let [[a b c] (range)] [a b c]))
+
+          (eq (let [[a b c . xs] (range 10)] [a b c xs])
+              [0 1 2 '(3 4 5 6 7 8 9)])
+          (eq (let [[a b c . xs] (range 3)] [a b c xs])
+              [0 1 2 ()])
+
+          (nil? (let [[a b c . xs] (range 2)] [a b c xs]))
 
           ;; preserve collection type
 
@@ -3622,7 +3652,7 @@
                 (ks arity pat name body unary) opts
 
                 ;; fresh syms for emited lambda's argv
-                (& [fs] ss) (take (gensyms) 20)
+                (& [fs . _] ss) (take (gensyms) 20)
 
                 ;; if the given binding form (pat) is a vector (not dotted)
                 ;; we will compile into fixed arity lambda for performance
@@ -4189,7 +4219,8 @@
            :any (when (c/= x y) x))
 
           ([x y & xs]
-           (* eq (eq x y) xs)))
+           :nil (c/every? nil? (cons y xs))
+           :any (* eq (eq x y) xs)))
 
          neq
          (guard [x y]
@@ -4554,7 +4585,7 @@
         (E+ mlet
             ["let you bind local macros"
              :mac
-             (fn [e [ms & bod]]
+             (f [e [ms . bod]]
                (let [local-path #(path (loc e) % :mac)
                      ;; this should be abstracted (local env extension)
                      e (red e (f [e [s x]] (env-add-member e (local-path s) (eval e x)))
@@ -4577,7 +4608,7 @@
               ;=> (G__198743 G__198744 G__198745)"
              :mac
              (fn [e [xs & bod]]
-               (exp e (qq (let [~xs (gensyms)] . ~bod))))])
+                (exp e (qq (let [~xs (take (gensyms) ~(count xs))] . ~bod))))])
 
         (E+ mac
             ["let you define a macro that behave as regular lisps ones do
@@ -4858,16 +4889,16 @@
 
           ;; extra signatures
 
-          [e (tup name fields (:map proto))]
+          [e [name fields (:map proto)]]
           (rec e [name fields [] proto []])
 
-          [e (tup name fields (:map proto) impls)]
+          [e [name fields (:map proto) impls]]
           (rec e [name fields [] proto impls])
 
-          [e (tup name fields (:vec parents) (:vec impls))]
+          [e [name fields (:vec parents) (:vec impls)]]
           (rec e [name fields parents {} []])
 
-          [e (tup name fields (:vec parents) (:map proto))]
+          [e [name fields (:vec parents) (:map proto)]]
           (rec e [name fields parents proto []])
 
           [e [name fields parents proto impls]]
@@ -4882,10 +4913,10 @@
         ["an update to declare a new type"
 
          :upd
-         (cf [e (tup name fields)]
+         (cf [e [name fields]]
              (obj+:upd e [{:name name :fields fields}])
 
-             [e (tup name fields (:lst impl1))]
+             [e [name fields (:lst impl1)]]
              (obj+:upd e [{:name name :fields fields :impls [impl1]}])
 
              [e [name fields (:lst impl1) . _impls]]

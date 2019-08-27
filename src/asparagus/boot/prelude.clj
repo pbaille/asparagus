@@ -318,7 +318,26 @@
       (cp x
           p (list x)
           coll? (mapcat #(findeep % p) x)
-          ())))
+          ()))
+
+    (_ :split-at-xp
+
+        (defn split-at
+          ([x idx] (split-at x idx []))
+          ([x idx acc]
+           (if (zero? idx) [acc x]
+               (recur (rest x) (dec idx) (conj acc (first x))))))
+
+        (time (dotimes [_ 100000]
+                (let [[pre post] (c/split-at 42 (range 100))]
+                  [(doall pre) (doall post)]))) ;; 602ms
+
+        ;; a little faster
+        (time (dotimes [_ 100000]
+                (let [[pre post] (split-at (range 100) 42)]
+                  [(doall pre) (doall post)]))) ;; 502ms
+        ) 
+    )
 
 (do :symbols
 

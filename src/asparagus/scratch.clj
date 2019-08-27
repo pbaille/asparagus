@@ -398,3 +398,15 @@
 (!! (foo.bob))
 (E+ foo [bob [iop 1 (f [] :foobob)]])
 
+
+
+(!! (bindings.bind 'x 'y))
+(!! (bindings.bind '[a b c . d e] 'y))
+(!! (bindings.bind '(& m {:a a}) 'y))
+
+(!! (eq nil nil nil))
+
+(exp @E '(let
+     [(& mymap (ks a b)) {:a 1, :b 2, :c 3}]
+   [mymap a b]))
+
