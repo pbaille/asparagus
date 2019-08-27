@@ -83,7 +83,9 @@
     ;; a path will be used in conjonction with a positioned environment
     ;; relative path will be resolved relativelly to the current position of the evaluating environment
 
-    (defrecord Path [rel xs mkey])
+    #_(defrecord Path [rel xs mkey])
+
+    (t/type+ :path [rel xs mkey])
 
     (do :base
 
@@ -333,7 +335,9 @@
     ;; at: a Path representing current position
     ;; members: a nested map holding environment bindings
 
-    (defrecord Env [at members])
+    #_(defrecord Env [at members])
+
+    (t/type+ :env [at members])
 
     (do :base
 
@@ -2896,7 +2900,7 @@
                    (try ~(exp e x)
                         (catch Exception err {::catched err}))
                    ::catched)
-                  (p/error ~(c/or m "this should throws")
+                  (p/error ~(or m "this should throws")
                            ":\n" ~expr)))))
 
          assertion
@@ -2979,7 +2983,6 @@
            )
 
          ;; testing this module with itself
-
          (assert
           {:errors
            [(throws (assert (pos? -1) "not pos!"))
@@ -3996,7 +3999,7 @@
          ["core/map(ish)"
           (f
            [f . xs]
-           (* c/map f ($ xs vals)))]
+           (* c/map f ($ xs iter)))]
 
          red
          ["reduce with seed (init) as first argument
