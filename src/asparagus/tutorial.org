@@ -1,0 +1,351 @@
+
+#+begin_src clojure
+(in-ns 'asparagus.core)
+#+end_src
+
+* Introduction
+
+Asparagus is my last experience in language design.
+after several attempt, i've compiled some of the ideas I like, found in other languages/books/papers
+
+it is embedded in clojure, but at the same time is quite far from it.
+it has its own environment/namespaces mecanism, and another kind of macro system.
+it is far from being production ready, but I hope that it can be interesting as an experiment for some of you.
+
+I'm an autodidact with no proper computer science degree, my approch to programming is quite empirical.
+first of all I'm seeking for feedback, advices, discussions and even people to work with (and I'm also searching for a real job!)
+
+for now the main goals are:
+
+- flexibility
+- extensibility
+- expressivity
+- performance (close to clojure)
+
+the main ways/devices to acheive them:
+
+(environment/expansion)-passing-style macros (a more general/powerful macro system)
+pattern matching (built in to lambdas and binding-forms, extensible binding semantics)
+functional control flow (heavy use of function composition and guards, nil based shortcuiting constructs)
+generic functions at heart (all core operations of the language will be implementable by user types and implemented meaningfully by core types)
+holy datastructures's litterals (maps, vecs, lists and sets) at the heart (giving them more usages and extra syntax sugar)
+
+this tutorial assumes familiarity with clojure. or at least another Lisp.
+
+in order to be able to evaluate the forms contained in this file,
+you should start a REPL and load asparagus.core
+
+* the environment
+
+the asparagus environment is holded by the asparagus.core/E atom
+
+#+begin_src clojure
+@E
+#+end_src
+
+** simple defintions
+
+#+begin_src clojure 
+
+;; you can define a variable like this (E+ stands for extend-environment)
+;; its like a really (really!) fancy 'def
+
+(E+ foo 1)
+
+;; or several at once
+
+(E+ bar \a
+    baz 42)
+
+;; for now we will use !! macro to evaluate forms (it is kind of ugly...), but later it will no longer be needed
+
+(!! foo) ;; return the value under foo e.g 1
+
+;; the 'is macro just assert equality of its arguments
+
+(is 1 foo)
+(is 42 baz)
+(is \a bar)
+
+;; you can modularize definitions (one of the motivational point of all this)
+;; here we use a hashmap literal to define several variables in 'mymodule and 'mymodule.c
+
+(E+ mymodule
+    {a 1
+     b "hey"
+     c {d 42
+        e :pouet}})
+
+;; we can achieve the same with vector litteral syntax
+;; the semantic difference between hash and vec literals will be explained later
+
+(E+ mymodule
+    [a 1
+     b "hey"
+     c [d 42
+        e :pouet]])
+
+;; we use dot notation to access nested environment members
+
+(is 43
+    (add mymodule.a mymodule.c.d)) ;; will add 1 and 42
+
+;; dot notation can be used in definitions too
+
+(E+ mymodule.c.f 2
+    foo.bar 'foob)
+
+;; this definition does not overide our previous ones
+
+;; foo is still defined
+
+(is 1 foo)
+(is 'foob foo.bar)
+
+;; one handy usage of this behavior is scoped helpers definition
+
+(E+
+
+ ;; our intent is to implement a stat function that takes any number of numeric arguments and return a map holding some statistics
+
+ ;; first we are defining some helpers, that will be scoped under the stats identifier
+ stats.sum
+ (fn [xs] (apl add xs))
+ stats.mean
+ (fn [xs] (div (stats.sum xs) (count xs)))
+
+ ;; then we are defining the main implementation with the help of the above definitions
+ stats
+ (fn [& xs]
+   {:xs xs
+    :sum (stats.sum xs)
+    :mean (stats.mean xs)}))
+
+;; in my clojure practice I was often annoyed to put stats.sum and stats.mean at the same level than stats
+;; Certainly I can create a stats namespace holding those helpers, but... it seems heavy for such a common/natural thing...
+
+(is (stats 1 2 3 4)
+    {:xs '(1 2 3 4), :sum 10, :mean 5/2})
+
+;; it could be defined with a map literal too
+
+(E+ stats
+    {;; for now i've hidden an important detail,
+     ;; each identifier can have any number of what we will call attributes (or meta-keys, not really sure about the naming yet...)
+     ;; attributes are stored and accessible using clojure keywords
+     ;; for instance an identifier 'foo can have an attribute :size
+     ;; it would be defined like this (E+ foo:size 3) and accessed like this 'foo:size, simple enough...
+
+     ;; one of those attributes, that is systematically used under the hood is the :val attribute
+     ;; :val hold the main value of the current identifier (here 'stats)
+     ;; if the identifier 'stats' appears as is in the code this is the value we are refering to
+
+     ;; note that the sum and mean helpers function (defined after) are available
+     ;; when using map literal for definition, all members are available to each others
+     :val
+     (fn [& xs]
+       {:xs xs
+        :sum (.sum xs) ;; relative access, more on this later...
+        :mean (.mean xs)
+        })
+
+     ;; helper submodules
+     sum
+     (fn [xs] (apl add xs))
+     mean
+     (fn [xs] (div (..sum xs) (count xs)))})
+
+;; the :val thing is implicit in most cases
+;; those three forms are equivalent
+(E+ myval {:val 1})
+(E+ myval:val 1)
+(E+ myval 1)
+
+;; any environment variable can have any number of those attributes
+
+(E+ stats
+    {:doc "a functions that takes some numbers and do some statistics on it"
+     :version 0.1
+     :tags #{:math}
+     :foo :bar})
+
+;; they can be refered in code with colon notation
+
+(is stats:doc
+    "a functions that takes some numbers and do some statistics on it")
+
+(is stats stats:val)
+
+;; we also could have used vector syntax to define stats
+
+(E+ stats
+    [;; in vector literal definitions occurs sequentially
+     ;; so we have to define helpers before 
+     sum
+     (fn [xs] (apl add xs))
+     mean
+     (fn [xs] (div (..sum xs) (count xs))) ;; once again ..sum is relative environment access, more later
+
+     ;; here the :val of stats (the :val keyword can be omitted)
+     (fn [& xs]
+       {:xs xs
+        :sum (.sum xs)
+        :mean (.mean xs)})])
+
+;; in E+, top level's strings literals represent documentation
+;; (a bold choice maybe... maybe not so much if we really want to make documentation a first class citizen)
+;; and I've said to myself, maybe hardcoded string in code are not so common? far less than keywords for instance.
+
+(E+ myvar
+    ["myvar doc" 42])
+
+;;  is equivalent to
+
+(E+ myvar {:val 42 :doc "myvar doc"})
+
+(is  "myvar doc"
+     myvar:doc)
+
+;; finally we can redefine stats with doc litterals
+
+(E+ stats
+    [sum
+     (fn [xs] (apl add xs))
+
+     mean
+     ["given a seq of numbers, return the mean of it"
+      (fn [xs] (div (..sum xs) (count xs)))]
+
+     "returns a map of statistics concerning given numbers"
+     (fn [& xs]
+       {:xs xs
+        :sum (.sum xs)
+        :mean (.mean xs)})])
+
+;; so you may have a question now :)
+;; If hashmaps, vectors and strings have special semantics in E+,
+;; how can I use them as normal values for my variables?!
+;; the answer is the :val field
+
+(E+ rawvals
+    [h:val {:a 1 :b 2}
+     v:val [1 2 3]
+     s:val "iop"])
+
+(is {:a 1 :b 2} rawvals.h)
+(is "iop" rawvals.s)
+
+;; one thing that may have intrigued you is relative environment member accesses
+;; e.g .sum, .mean and ..sum (in the stats previous definition)
+
+(E+ relative-access
+    {demo1
+     {a
+      (fn []
+        ;; we are resolving b and c in the parent module
+        (add ..b ..c))
+      b 1
+      c 2}
+
+     demo2
+     {:val
+      (fn [x]
+        ;; the :val field is at the current module level
+        ;; so we only need one dot here (meaning, 'in the current module')
+        (add .b .c x))
+      b 3
+      c 4}
+
+     demo3
+     (fn [x]
+       (add (..demo2 x)
+            ;; relative dotted
+            ..demo1.c))})
+
+(is (relative-access.demo1.a) 3)
+(is (relative-access.demo2 5) 12)
+(is (relative-access.demo3 9) 18)
+
+;; you may wonder about interop... it is not supportted for now, More thinking is required on that matter
+;; at those early stages I tought that the core design is the main focus,
+;; Asparagus is not at the get-the-things-done stage for now ;)
+
+#+end_src
+
+
+** bubbling resolution
+
+using absolute and relative paths for all our vars is kind of painfull and ugly
+sometimes it is needed to desambiguate but certainely not all the time
+when a symbol cannot be resolved at the current level, it will be searched bubling up the environment
+
+#+begin_src clojure 
+
+(E+ bubling.demo
+    {a 1
+     b.c
+     (fn []
+       ;; here 'a will be resolved bubling up the environment
+       ;; in this case it will be resolved to bubling.demo.a
+       a)
+     c
+     {a 2
+      b
+      (fn []
+        ;; here it will be resolved to bubling.demo.c.a
+        a)}}
+    )
+
+(is 1 (bubling.demo.b.c))
+(is 2 (bubling.demo.c.b))
+
+#+end_src
+
+** links
+
+the :links attribute let you define shorter accesses to other modules or members
+when a non relative symbol cannot be resolved at the current location
+its first segment will be searched in the current module links
+if there is an existant link it will be substituted by it
+if there is no link at the current level, we go up (bubling) and loop, until root
+
+
+#+begin_src  clojure
+
+(E+ links.demo
+    {mod1 {a 1 b 2 c {d 3 e 4}} ;; a bunch of things that we will link to
+
+     mod2
+     {:links {m1 links.demo.mod1
+              m1c links.demo.mod1.c
+              bub bubling.demo} ;; <- defined in previous section
+      f
+      (fn []
+        ;; here m1.a will be substituted by links.demo.mod1.a
+        ;; and m1c.d by links.demo.mod1.c.d
+        (add m1.a m1c.d bub.a))}})
+
+(is (links.demo.mod2.f) 5)
+
+;; with this we can acheive some of the things we do with :require and :use in clojure ns's form
+;; it will not be oftenly used directly, but will be used under the hood by higher level macros...
+
+(E- links.demo)
+
+#+end_src
+ 
+** E-
+
+you can remove global environment's members with E-
+
+#+begin_src  clojure 
+
+(E-
+ foo bar baz my.module
+ stats myval myvar rawvals relative-access bubling.demo links.demo)
+
+;; it no longer exists
+(isnt (env.get @E 'relative-access))
+
+#+end_src
+
