@@ -557,23 +557,23 @@
 
  (do
 
-  (let [a 1
-        b 2
-        c [3 4]
-        d [5 6]]
+   (let [a 1
+         b 2
+         c [3 4]
+         d [5 6]]
 
-    ;; with a dot you can do splicing
-    (is [a b . c] [1 2 3 4])
-    ;; the spliced part can be anywhere
-    (is [a b . c b a] [1 2 3 4 2 1])
-    ;; several spliced parts
-    (is [a b . c . d] [1 2 3 4 5 6])
-    ;; shortcut (everything after the double dot is spliced)
-    (is [a b .. c d] [1 2 3 4 5 6])
-    ;; nested
-    (is [a b [42 . d] . c]
-        [1 2 [42 5 6] 3 4])
-    ))
+     ;; with a dot you can do splicing
+     (is [a b . c] [1 2 3 4])
+     ;; the spliced part can be anywhere
+     (is [a b . c b a] [1 2 3 4 2 1])
+     ;; several spliced parts
+     (is [a b . c . d] [1 2 3 4 5 6])
+     ;; shortcut (everything after the double dot is spliced)
+     (is [a b .. c d] [1 2 3 4 5 6])
+     ;; nested
+     (is [a b [42 . d] . c]
+         [1 2 [42 5 6] 3 4])
+     ))
 
  ;; maps ---------
 
@@ -811,12 +811,10 @@
 
     ;; opt-ks for keys that may not be here
     (is "foo"
-        (?let [(ks-opt foo) {:foo "foo"}] foo)
-        (exp @E '(?let [(ks-opt foo) {}] (or _foo "foo"))))
+        (?let [(ks-opt foo) {:foo "foo"}] foo))
 
     (exp @E '(let [{:foo _foo} {}] (or foo "foo")))
 
-    (exp @E '(let ~(bind '(ks-opt foo) 'y) _foo))
     ;; or keys let you define defult values for missing keys
     (is "default"
         (?let [(ks-or foo "default") {}] foo))
@@ -1047,11 +1045,13 @@
 
  ;; loop (let rec)
 
- ;; let can be given a name (here :rec) in order to loop
- (is (let :rec [ret 0 [x . _xs] (range 10)]
-          (if (pure? _xs) ret
-              (rec (add ret x) _xs)))
-     36)
+ (do
+   ;; let can be given a name (here :rec) in order to loop
+   (is (let :rec [ret 0 [x . xs] (range 10)]
+            (if (pure? xs) ret
+                (rec (add ret x) xs)))
+       36))
+
  )
 
 ;; ------------------------------------------------------------------------
@@ -1094,7 +1094,7 @@
 
   ;; like let, different binding modes are available via prefix syntax
 
-  (let [fun (f [!a ?b] (lst !a ?b))] ;; a is mandatory, and b can short the execution
+  (let [fun (f [!a ?b] (lst a b))] ;; a is mandatory, and b can short the execution
     (is (fun 1 2) (lst 1 2))
     (isnt (fun 1 nil))
     (throws (fun nil 2)))
