@@ -50,7 +50,7 @@ each test should indicate its exact path in the error message (i look at you vec
 
 a similar module than 'testing could exist, allowing to present gently samples for our function/module
 
-*** usertypes patterns 
+*** usertypes patterns DONE
 
 when using type+ a binding op should be automatically defined
 
@@ -120,7 +120,7 @@ in pattern matching forms like 'cf it could be useful to disambiguate the two co
 
 ** 27/08/19
 
-*** types
+*** types DONE
 
 type definitions should be namespaced (in the asparagus way)
  #+begin_src clojure 

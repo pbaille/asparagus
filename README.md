@@ -1,6 +1,6 @@
 # Asparagus
 
-![alt text](./asparagus.jpg "Logo Title Text 1")
+![alt text](./asperges-manet.jpg "Logo Title Text 1")
 
 A crazy Lisp embedded in clojure
 
