@@ -44,7 +44,7 @@ The asparagus environment is holded by the `asparagus.core/E` atom
 
 ** simple defintions
 
-You can define a variable like this (`E+` stands for extend-environment).
+You can define a variable like this (=E+= stands for extend-environment).
 Its like a really (really!) fancy `def`
 
 #+begin_src clojure 
