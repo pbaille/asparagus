@@ -690,11 +690,11 @@
    ;; is behaving like let, but the ? prefix is implicit to all binding symbols
    (?let [a 1 b 2] (add a b))
    ;; is equivalent to
-   (let [?a 1 ?b 2] (add ?a ?b))
+   (let [?a 1 ?b 2] (add a b))
    ;; we can use strict bindings in a ?let form, it will behave as in let
    (is :catched
        (try (?let [a 1
-                   !b (pos? -1)] (add a !b))
+                   !b (pos? -1)] (add a b))
             (catch Exception _ :catched)))
    ;; if we want to allow regular bindings (as normal symbols in a classic let)
    ;; we use the _ prefix
@@ -801,109 +801,112 @@
   ;; operators ---------------------------
 
   (do
-   ;; ks is a builtin binding operator
-   ;; it behaves like clojure's :keys
-   (is (let [(ks a b) {:a 1 :b 2 :c 3}] (add a b))
-       3)
+    ;; ks is a builtin binding operator
+    ;; it behaves like clojure's :keys
+    (is (let [(ks a b) {:a 1 :b 2 :c 3}] (add a b))
+        3)
 
-   ;; in a ?let form it shorts on nil keys
-   (isnt (?let [(ks a) {}] (error "never")))
+    ;; in a ?let form it shorts on nil keys
+    (isnt (?let [(ks a) {}] (error "never")))
 
-   ;; opt-ks for keys that may not be here
-   (is "foo"
-       (?let [(ks-opt foo) {:foo "foo"}] foo)
-       (?let [(ks-opt foo) {}] (or foo "foo")))
+    ;; opt-ks for keys that may not be here
+    (is "foo"
+        (?let [(ks-opt foo) {:foo "foo"}] foo)
+        (exp @E '(?let [(ks-opt foo) {}] (or _foo "foo"))))
 
-   ;; or keys let you define defult values for missing keys
-   (is "default"
-       (?let [(ks-or foo "default") {}] foo))
+    (exp @E '(let [{:foo _foo} {}] (or foo "foo")))
 
-   ;; you can use previous binding in further expressions
-   (is "Bob Doe"
-       (?let [(ks-or name "John"
-                    firstname "Doe"
-                    fullname (+ name " " firstname)) ;; <- here
-             {:name "Bob"}]
-         fullname))
+    (exp @E '(let ~(bind '(ks-opt foo) 'y) _foo))
+    ;; or keys let you define defult values for missing keys
+    (is "default"
+        (?let [(ks-or foo "default") {}] foo))
 
-   ;; & (parrallel bindings)
-   ;; several patterns can be bound to the same seed
-   ;; something that i've sometimes missed in clojure (lightly)
-   (is (?let [(& mymap
-                (ks a b)
-                (ks-opt c)
-                (ks-or d 42))
-             {:a 1 :b 2 :c 3}]
-         [mymap a b c d])
-       [{:a 1 :b 2 :c 3} 1 2 3 42])
+    ;; you can use previous binding in further expressions
+    (is "Bob Doe"
+        (?let [(ks-or name "John"
+                      firstname "Doe"
+                      fullname (+ name " " firstname)) ;; <- here
+               {:name "Bob"}]
+              fullname))
 
-   ;; cons
-   (is (let [(cons a b) [1 2 3]] [a b])
-       [1 [2 3]])
+    ;; & (parrallel bindings)
+    ;; several patterns can be bound to the same seed
+    ;; something that i've sometimes missed in clojure (lightly)
+    (is (?let [(& mymap
+                  (ks a b)
+                  (ks-opt c)
+                  (ks-or d 42))
+               {:a 1 :b 2 :c 3}]
+              [mymap a b c d])
+        [{:a 1 :b 2 :c 3} 1 2 3 42])
 
-   ;; quote
-   ;; quoted things match what is equal to them
-   (is (let ['iop 'iop] :ok)
-       :ok)
+    ;; cons
+    (is (let [(cons a b) [1 2 3]] [a b])
+        [1 [2 3]])
 
-   (is (let [['foo :bar . xs] '[foo :bar 1 2 3]] xs)
-       [1 2 3])
+    ;; quote
+    ;; quoted things match what is equal to them
+    (is (let ['iop 'iop] :ok)
+        :ok)
 
-   (is :ok
-       (let ['(add 1 2) (lst 'add 1 2)] :ok))
+    (is (let [['foo :bar . xs] '[foo :bar 1 2 3]] xs)
+        [1 2 3])
 
-   ;; experiments
+    (is :ok
+        (let ['(add 1 2) (lst 'add 1 2)] :ok))
 
-   (E+ (bind.op+ bind_
-                 [[p expr] y]
-                 (+ ['_ y]
-                    (bind p expr))))
+    ;; experiments
+    (_
+     (E+ (bind.op+ bind_
+                   [[p expr] y]
+                   (+ ['_ y]
+                      (bind p expr))))
 
-   (let [(bind_ x (inc _)) 1] x)
+     (let [(bind_ x (inc _)) 1] x)
 
-   (E+ (bind.op+ >
-                 [[x . xs] y]
-                 (+ [x y]
-                    (red [] (f [a e] (+ a (bind e x))) xs))))
+     (E+ (bind.op+ >
+                   [[x . xs] y]
+                   (+ [x y]
+                      (red [] (f [a e] (+ a (bind e x))) xs))))
 
-   (!! (bind '(& a b) 1))
-   (!! (bind '(> x (num? x) (& (dec x) (inc x))) 1))
+     (!! (bind '(& a b) 1))
+     (!! (bind '(> x (num? x) (& (dec x) (inc x))) 1))
 
-   (is (let [(> x (num? x) (& (dec x) (inc x))) 1] x)
-       [0 2])
+     (is (let [(> x (num? x) (& (dec x) (inc x))) 1] x)
+         [0 2]))
 
 
-   ;; some others builtin bindings exists, see source
+    ;; some others builtin bindings exists, see source
 
-   ;; defining new binding operators
-   ;; ------------------------------------------------
+    ;; defining new binding operators
+    ;; ------------------------------------------------
 
-   ;; we can extend binding ops like this
+    ;; we can extend binding ops like this
 
-   ;; as an exemple we are redefining the & operation
-   (E+ (bind.op+ ks [xs seed] ;; xs are the arguments passed to the operation, y is the expr we are binding
-                 (bind (zipmap ($ xs keyword) xs) seed)))
+    ;; as an exemple we are redefining the & operation
+    (E+ (bind.op+ ks [xs seed] ;; xs are the arguments passed to the operation, y is the expr we are binding
+                  (bind (zipmap ($ xs keyword) xs) seed)))
 
-   ;; when this operation is used
-   '(let [(ks a b) x] ...)
+    ;; when this operation is used
+    '(let [(ks a b) x] ...)
 
-   ;; at compile time the implementation is called with args: '(a b) and seed: 'x
-   ;; =>
-   '(bind {:a 'a :b 'b} 'x) ;; we are using the map impl of bind
-   ;; =>
-   '[G__244129 x
-     G__244128 (do.guards.builtins.map? G__244129)
-     a (clojure.core/get G__244129 :a)
-     b (clojure.core/get G__244129 :b)]
+    ;; at compile time the implementation is called with args: '(a b) and seed: 'x
+    ;; =>
+    '(bind {:a 'a :b 'b} 'x) ;; we are using the map impl of bind
+    ;; =>
+    '[G__244129 x
+      G__244128 (do.guards.builtins.map? G__244129)
+      a (clojure.core/get G__244129 :a)
+      b (clojure.core/get G__244129 :b)]
 
-   ;; finally it is substituted in the original form
-   '(let [G__244129 x
-         G__244128 (do.guards.builtins.map? G__244129)
-         a (clojure.core/get G__244129 :a)
-         b (clojure.core/get G__244129 :b)]
-     ...)
+    ;; finally it is substituted in the original form
+    '(let [G__244129 x
+           G__244128 (do.guards.builtins.map? G__244129)
+           a (clojure.core/get G__244129 :a)
+           b (clojure.core/get G__244129 :b)]
+       ...)
 
-   )
+    )
 
   ;; special bindings --------------------
 
@@ -2393,6 +2396,23 @@
  ;;TODO when evaluating several times those types declarations a weird thing occurs
  (:mytyp (t/get-reg)) ;; @#?!
 
+
+ ;; also have pattern matching for free
+ (let [p1 (mytyp "Bob" "Wallace")
+       (mytyp x y) p1]
+   (is [x y]
+       ["Bob" "Wallace"]))
+
+ ;; types can be sort-of namespaced
+ ;; the folling declare a foo.kons type
+ (E+ foo ;; we are in the foo module
+     (type+ :kons [kar kdr]) ;; we declare a type
+     )
+
+ (let [p1 (foo.kons 12 34)
+       (foo.kons x y) p1]
+   (is [12 34] [x y]))
+
  )
 
 ;; ------------------------------------------------------------------------
@@ -2460,7 +2480,7 @@
            [] ;; a vector of generic implementations
            ))
 
- (env-inspect 'named)
+ #_(env-inspect 'named)
 
  (let [o (named "Bob")]
    (is (:greet o "Joe")
@@ -2473,7 +2493,8 @@
        "i'm walking")
    person.proto)
 
- )
+
+)
 
 ;; ------------------------------------------------------------------------
 ;;                             dive and tack

@@ -1,5 +1,5 @@
 * Asparagus Dev Notes  
-
+  
 ** 26/08/19
 
 *** vec patterns
@@ -137,3 +137,4 @@ type definitions should be namespaced (in the asparagus way)
 
 
 
+ 

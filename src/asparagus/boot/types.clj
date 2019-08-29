@@ -4,7 +4,8 @@
              :refer [cs $ $vals]]
             [asparagus.boot.state :refer [state]]
             [clojure.core :as c]
-            [clojure.set :as set]))
+            [clojure.set :as set]
+            [clojure.string :as str]))
 
 ;; this is a thin layer over clojure class hierarchy
 ;; the need for this comes from asparagus.boot.generics
@@ -342,7 +343,8 @@
 
       ([{:as spec
          :keys [tag parents impls fields childs class-sym]}]
-       (let [class-sym (or class-sym (symbol (clojure.string/capitalize (name tag))))
+       (let [class-str (apply str (map str/capitalize (str/split (name tag) #"\.")))
+             class-sym (or class-sym (symbol class-str))
              spec (update spec :childs (fnil conj []) class-sym)]
          `(do (defrecord ~class-sym ~fields)
               (tag+ ~spec))))
@@ -353,9 +355,10 @@
 
     (comment
 
-      (tag+ :fop [:vec :set] [:hash])
+      (get-reg)
+      (tag+ :iop.fop [:vec :set] [:hash])
 
-      (type+ :pouet [iop foo] nil
+      (type+ :pou.pouet [iop foo] nil
              #_(g1 [x] "g1foo"))
 
       (type+ {:tag :pouet
