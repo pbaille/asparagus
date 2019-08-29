@@ -10,4 +10,4 @@ See the [tutorial](https://gitlab.com/pbaille/asparagus/blob/master/src/asparagu
 
 A la recherche du temps perdu - Marcel Proust .
 
-[traduction](https://www.goodreads.com/quotes/465985-asparagus-tinged-with-ultramarine-and-rosy-pink-which-ran-from)
+[traduction](https://edwarddesautels.com/2010/02/14/craft-note-marcel-prousts-asparagus/)
