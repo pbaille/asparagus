@@ -1,8 +1,3 @@
-
-#+begin_src clojure
-(in-ns 'asparagus.core)
-#+end_src
-
 * Introduction
 
 Asparagus is my last experience in language design.
@@ -35,6 +30,10 @@ this tutorial assumes familiarity with clojure. or at least another Lisp.
 in order to be able to evaluate the forms contained in this file,
 you should start a REPL and load asparagus.core
 
+#+begin_src clojure
+(in-ns 'asparagus.core)
+#+end_src
+
 * the environment
 
 the asparagus environment is holded by the asparagus.core/E atom
@@ -45,65 +44,80 @@ the asparagus environment is holded by the asparagus.core/E atom
 
 ** simple defintions
 
+you can define a variable like this (E+ stands for extend-environment)
+its like a really (really!) fancy 'def
+
 #+begin_src clojure 
-
-;; you can define a variable like this (E+ stands for extend-environment)
-;; its like a really (really!) fancy 'def
-
 (E+ foo 1)
+#+end_src
 
-;; or several at once
+or several at once
 
+#+begin_src clojure 
 (E+ bar \a
     baz 42)
+#+end_src
 
-;; for now we will use !! macro to evaluate forms (it is kind of ugly...), but later it will no longer be needed
+for now we will use !! macro to evaluate forms (it is kind of ugly...), but later it will no longer be needed
 
+#+begin_src clojure 
 (!! foo) ;; return the value under foo e.g 1
+#+end_src
 
-;; the 'is macro just assert equality of its arguments
+the 'is macro just assert equality of its arguments
 
+#+begin_src clojure 
 (is 1 foo)
 (is 42 baz)
 (is \a bar)
+#+end_src
 
-;; you can modularize definitions (one of the motivational point of all this)
-;; here we use a hashmap literal to define several variables in 'mymodule and 'mymodule.c
+You can modularize definitions (one of the motivational point of all this).
+Here we use a hashmap literal to define several variables in 'mymodule and 'mymodule.c
 
+#+begin_src clojure 
 (E+ mymodule
     {a 1
      b "hey"
      c {d 42
         e :pouet}})
+#+end_src
 
-;; we can achieve the same with vector litteral syntax
-;; the semantic difference between hash and vec literals will be explained later
+We can achieve the same with vector litteral syntax.
+The semantic difference between hash and vec literals will be explained later.
 
+#+begin_src clojure 
 (E+ mymodule
     [a 1
      b "hey"
      c [d 42
         e :pouet]])
+#+end_src
 
-;; we use dot notation to access nested environment members
+We use dot notation to access nested environment members
 
+#+begin_src clojure 
 (is 43
     (add mymodule.a mymodule.c.d)) ;; will add 1 and 42
+#+end_src
 
-;; dot notation can be used in definitions too
+Dot notation can be used in definitions too
 
+#+begin_src clojure 
 (E+ mymodule.c.f 2
     foo.bar 'foob)
+#+end_src
 
-;; this definition does not overide our previous ones
+This definition does not overide our previous ones, 'foo is still defined
 
-;; foo is still defined
-
+#+begin_src clojure 
 (is 1 foo)
 (is 'foob foo.bar)
+#+end_src
 
-;; one handy usage of this behavior is scoped helpers definition
+One handy usage of this behavior is scoped helpers definition
 
+#+begin_src clojure 
 (E+
 
  ;; our intent is to implement a stat function that takes any number of numeric arguments and return a map holding some statistics
@@ -120,15 +134,19 @@ the asparagus environment is holded by the asparagus.core/E atom
    {:xs xs
     :sum (stats.sum xs)
     :mean (stats.mean xs)}))
+#+end_src
 
-;; in my clojure practice I was often annoyed to put stats.sum and stats.mean at the same level than stats
-;; Certainly I can create a stats namespace holding those helpers, but... it seems heavy for such a common/natural thing...
+In my clojure practice I was often annoyed to put stats.sum and stats.mean at the same level than stats
+Certainly I can create a stats namespace holding those helpers, but... it seems heavy for such a common/natural thing...
 
+#+begin_src clojure 
 (is (stats 1 2 3 4)
     {:xs '(1 2 3 4), :sum 10, :mean 5/2})
+#+end_src
 
-;; it could be defined with a map literal too
+It could be defined with a map literal too
 
+#+begin_src clojure 
 (E+ stats
     {;; for now i've hidden an important detail,
      ;; each identifier can have any number of what we will call attributes (or meta-keys, not really sure about the naming yet...)
@@ -154,30 +172,39 @@ the asparagus environment is holded by the asparagus.core/E atom
      (fn [xs] (apl add xs))
      mean
      (fn [xs] (div (..sum xs) (count xs)))})
+#+end_src
 
-;; the :val thing is implicit in most cases
-;; those three forms are equivalent
+The :val thing is implicit in most cases.
+Those three forms are equivalent:
+
+#+begin_src clojure 
 (E+ myval {:val 1})
 (E+ myval:val 1)
 (E+ myval 1)
+#+end_src
 
-;; any environment variable can have any number of those attributes
+Any environment variable can have any number of those attributes
 
+#+begin_src clojure 
 (E+ stats
     {:doc "a functions that takes some numbers and do some statistics on it"
      :version 0.1
      :tags #{:math}
      :foo :bar})
+#+end_src
 
-;; they can be refered in code with colon notation
+They can be refered in code with colon notation
 
+#+begin_src clojure 
 (is stats:doc
     "a functions that takes some numbers and do some statistics on it")
 
 (is stats stats:val)
+#+end_src
 
-;; we also could have used vector syntax to define stats
+We also could have used vector syntax to define stats
 
+#+begin_src clojure 
 (E+ stats
     [;; in vector literal definitions occurs sequentially
      ;; so we have to define helpers before 
@@ -191,23 +218,25 @@ the asparagus environment is holded by the asparagus.core/E atom
        {:xs xs
         :sum (.sum xs)
         :mean (.mean xs)})])
+#+end_src
 
-;; in E+, top level's strings literals represent documentation
-;; (a bold choice maybe... maybe not so much if we really want to make documentation a first class citizen)
-;; and I've said to myself, maybe hardcoded string in code are not so common? far less than keywords for instance.
+In E+, top level's strings literals represent documentation (a bold choice maybe...)
+But I've said to myself, maybe hardcoded string in code are not so common? (at least at the top level) far less than keywords for instance.
 
+#+begin_src clojure 
 (E+ myvar
     ["myvar doc" 42])
 
 ;;  is equivalent to
-
 (E+ myvar {:val 42 :doc "myvar doc"})
 
 (is  "myvar doc"
      myvar:doc)
+#+end_src
 
-;; finally we can redefine stats with doc litterals
+Finally we can redefine stats with doc litterals
 
+#+begin_src clojure 
 (E+ stats
     [sum
      (fn [xs] (apl add xs))
@@ -221,12 +250,14 @@ the asparagus environment is holded by the asparagus.core/E atom
        {:xs xs
         :sum (.sum xs)
         :mean (.mean xs)})])
+#+end_src
 
-;; so you may have a question now :)
-;; If hashmaps, vectors and strings have special semantics in E+,
-;; how can I use them as normal values for my variables?!
-;; the answer is the :val field
+So you may have a question now :)
+If hashmaps, vectors and strings have special semantics in E+,
+How can I use them as normal values for my variables?!
+The answer is the :val field
 
+#+begin_src clojure 
 (E+ rawvals
     [h:val {:a 1 :b 2}
      v:val [1 2 3]
@@ -234,10 +265,12 @@ the asparagus environment is holded by the asparagus.core/E atom
 
 (is {:a 1 :b 2} rawvals.h)
 (is "iop" rawvals.s)
+#+end_src
 
-;; one thing that may have intrigued you is relative environment member accesses
-;; e.g .sum, .mean and ..sum (in the stats previous definition)
+One thing that may have intrigued you is relative environment member accesses
+e.g .sum, .mean and ..sum (in the stats previous definition)
 
+#+begin_src clojure 
 (E+ relative-access
     {demo1
      {a
@@ -265,13 +298,11 @@ the asparagus environment is holded by the asparagus.core/E atom
 (is (relative-access.demo1.a) 3)
 (is (relative-access.demo2 5) 12)
 (is (relative-access.demo3 9) 18)
-
-;; you may wonder about interop... it is not supportted for now, More thinking is required on that matter
-;; at those early stages I tought that the core design is the main focus,
-;; Asparagus is not at the get-the-things-done stage for now ;)
-
 #+end_src
 
+You may wonder about interop... it is not supportted for now, More thinking is required on that matter.
+At those early stages I tought that the core design is the main focus,
+Asparagus is not at the get-the-things-done stage for now ;)
 
 ** bubbling resolution
 
