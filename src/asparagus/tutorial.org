@@ -45,7 +45,7 @@ The asparagus environment is holded by the `asparagus.core/E` atom
 ** simple defintions
 
 You can define a variable like this (=E+= stands for extend-environment).
-Its like a really (really!) fancy `def`
+Its like a really (really!) fancy =def=
 
 #+begin_src clojure 
 (E+ foo 1)
@@ -64,7 +64,7 @@ For now we will use =!!= macro to evaluate forms (it is kind of ugly...), but la
 (!! foo) ;; return the value under foo e.g 1
 #+end_src
 
-The `is` macro just assert equality of its arguments.
+The =is= macro just assert equality of its arguments.
 
 #+begin_src clojure 
 (is 1 foo)
@@ -300,7 +300,7 @@ e.g =.sum=, =.mean= and =..sum= (in the stats previous definition)
 (is (relative-access.demo3 9) 18)
 #+end_src
 
-You may wonder about interop... it is not supportted for now, More thinking is required on that matter.
+You may wonder about interop... it is not supported for now, more thinking is required on that matter.
 At those early stages I tought that the core design is the main focus,
 Asparagus is not at the get-the-things-done stage for now ;)
 
@@ -379,3 +379,297 @@ You can remove global environment's members with =E-=
 
 #+end_src
 
+* Data Primitives
+
+** Literals
+
+literals works the same way as clojure ones (except for some extensions that will be explained later)
+
+#+begin_src clojure
+{:a 1}
+[1 2 3]
+'(1 2 3)
+#{1 2}
+"hello"
+:iop
+'mysym
+\A
+42
+1.8
+1e-7
+#+end_src
+
+** Collections
+
+*** Constructor functions
+
+Compared to clojure, the API have been uniformized
+
+#+begin_src clojure
+(is (vec 1 2 3) [1 2 3])
+(is (lst 1 2 3) '(1 2 3))
+(is (set 1 2 3) #{1 2 3})
+(is (map [:a 1] [:b 2]) {:a 1 :b 2})
+#+end_src
+
+With sequential last argument (like =core/list*=).
+
+#+begin_src clojure 
+(is (vec* (lst 1 2 3 4)) ;; with one argument it behaves like core.vec
+    (vec* 1 2 [3 4])
+    [1 2 3 4]) 
+
+(is (lst* [1 2 3 4])
+    (lst* 1 2 [3 4])
+    (lst* 1 2 3 4 [])
+    '(1 2 3 4))
+
+(is #{1 2 3 4}
+    (set* 1 2 [3 4]))
+
+(is (map* [:a 1] [:b 2] {:c 3 :d 4})
+    (map* [:a 1] [[:b 2] [:c 3] [:d 4]])
+    {:a 1 :b 2 :c 3 :d 4})
+#+end_src
+
+*** preds
+
+Each collection have its pred, that returns the given collection on success or nil otherwise.
+
+#+begin_src clojure
+(is (vec? [1 2 3]) [1 2 3])
+(is (lst? (lst 1 2 3)) (lst 1 2 3))
+(is (set? #{1 2 3}) #{1 2 3})
+(is (map? {:a 1}) {:a 1})
+#+end_src
+
+We will see that in asparagus we avoid predicates (functions that returns booleans)
+in favor of guards (functions that can return nil indicating failure, or data).
+For instance (pos? 1) may be, more useful if it returns 1 in case of success and nil otherwise.
+This way it can be composed more easily I think.
+More on control flow, shortcircuiting and stuff later...
+
+** Words
+
+*** Constructors 
+
+Symbols and keywords have their core/str(ish) construtors
+
+#+begin_src clojure 
+(is (sym "foo") 'foo)
+(is (key "foo") :foo)
+
+(is (sym :foo "bar") 'foobar)
+(is (key "foo" :bar "baz") :foobarbaz)
+#+end_src
+
+**** Star variants
+
+#+begin_src clojure
+(is (sym* "ab" (lst "cd" "ef" "gh"))
+      'abcdefgh)
+(is (key* "my" :keyword "_" [:foo :bar "baz"])
+    :mykeyword_foobarbaz)
+(is (str* "mystr_" ["a" "b"])
+    "mystr_ab")
+#+end_src
+
+*** Guards
+
+As for collections, we use guards instead of preds
+
+#+begin_src clojure
+(is (sym* "ab" (lst "cd" "ef" "gh"))
+    'abcdefgh)
+(is (key* "my" :keyword "_" [:foo :bar "baz"])
+    :mykeyword_foobarbaz)
+(is (str* "mystr_" ["a" "b"])
+    "mystr_ab")
+#+end_src
+
+* Joining Things
+
+** joining things together with =+=
+
+As I mentioned in the rational, core operations are generic functions that can be extended. 
+=+= is one of them
+
+#+begin_src clojure
+(is (+ [1 2] '(3 4))
+    [1 2 3 4])
+
+(is (+ (lst 1 2) [3 4])
+    '(1 2 3 4))
+
+(is (+ {:a 1 :b 0} {:b 2})
+    {:a 1 :b 2})
+
+;; + is variadic
+(is (+ #{} (lst 1 2) [3 4] #{3 5})
+    #{1 2 3 4 5})
+#+end_src
+
+As you have seen, the return type is determined by the first argument
+
+*** strs syms and keywords
+
+#+begin_src clojure
+(is (+ 'foo "bar") 'foobar)
+(is (+ :foo 'bar) :foobar)
+(is (+ "foo" 'bar :baz) "foobar:baz")
+#+end_src
+
+*** functions 
+
+On function it do composition (left to right, not like core.comp do)
+
+#+begin_src clojure
+(is ((+ inc inc (p mul 2)) 0)
+    4)
+#+end_src
+
+** =sip= add one or several element into something
+
+#+begin_src clojure 
+(is (sip [] 1 2)
+    [1 2])
+#+end_src
+
+For lists it adds at the end (not like conj do)
+It is a choice that can be discutable, in my own pratice i'm not realying often on way that clojure lists implements conj
+=sip= being a generic operation (extendable by user types) we could add a datatype that conj elements at its head like clojure lists...
+
+#+begin_src clojure
+(is (sip (lst 1 2) 3)
+    '(1 2 3))
+
+(is (sip #{3 4} 1 2)
+    #{1 2 3 4})
+#+end_src
+
+For maps it works on entries
+
+#+begin_src clojure 
+(is (sip {:a 1} [:b 2] [:c 3])
+    {:a 1 :b 2 :c 3})
+#+end_src
+
+For function it partially apply given args
+(i'm not sure it should behave that way, it's more like an experimental fantasy that is not used in core code)
+
+#+begin_src clojure
+(is ((sip add 1 2) 3)
+    6)
+#+end_src
+
+
+** =pure= returns the empty version of the given argument
+
+
+#+begin_src clojure
+(is (pure "foobar") "")
+
+(is (pure {:a 1 :b 2}) {})
+
+(is (pure inc) id)
+#+end_src
+
+Like =sip= and =+=, =pure= is a generic operation that can be implemented by user types
+
+** =pure?= test for purity
+
+#+begin_src clojure
+(is {} (pure? {}))
+
+(isnt (pure? {:a 1}))
+#+end_src
+
+* Composing Things
+
+** Vectors 
+
+#+begin_src clojure
+(let [a 1
+      b 2
+      c [3 4]
+      d [5 6]]
+
+  ;; with a dot you can do splicing
+  (is [a b . c] [1 2 3 4])
+  ;; the spliced part can be anywhere
+  (is [a b . c b a] [1 2 3 4 2 1])
+  ;; several spliced parts
+  (is [a b . c . d] [1 2 3 4 5 6])
+  ;; shortcut (everything after the double dot is spliced)
+  (is [a b .. c d] [1 2 3 4 5 6])
+  ;; nested
+  (is [a b [42 . d] . c]
+      [1 2 [42 5 6] 3 4]))
+#+end_src
+
+** Maps
+
+#+begin_src clojure
+(let [a {:a 1}
+      b {:b 2}
+      c [1 2 3]]
+
+  {:a 1
+   :c 3
+   . b}
+
+  (is {:a 1
+       :c 3
+       . b} ;; we are merging b into the host map
+
+      ;; if you want to splice several map into your literal use .. []
+      {:c 3
+       .. [a b]}
+
+      {:a 1 :b 2 :c 3})
+
+  ;; it can be nested
+
+  (is
+   {:foo [0 . c 4] ;; a composite vector
+    :bar {:baz 1 . b}
+    . a}
+
+   {:foo [0 1 2 3 4]
+    :bar {:baz 1 :b 2}
+    :a 1})
+  )
+#+end_src
+
+** Lists 
+
+#+begin_src clojure
+(let [nums [2 3 4]]
+
+  ;; in conjunction with 'lst you can do the same things that we have shown with vectors
+  (is (lst 1 . nums)
+      (lst 1 2 3 4))
+
+  ;; but more interesting is this
+  ;; you can achieve apply semantics with dot notation
+  (is (add 1 . nums)
+      (c/apply add 1 nums)
+      10)
+
+  ;; but unlike with apply it does not have to be the last argument that is a collection
+  (is (add 1 . nums 5) 15)
+
+  ;; we have doubledot also
+  (is (add .. nums nums nums)
+      (add . nums . nums . nums)
+      27)
+  )
+#+end_src
+
+* Binding Things
+
+** Let
+** Let variants
+** Destruction 
+** Cased Let
+** Loop
