@@ -397,11 +397,11 @@
 
         (defne cd
           [x & xs]
-          (assoc x :at (path* xs)))
+          (assoc x :at (apath (path* xs))))
 
         (defne mv
           [x & xs]
-          (update x :at #(path* % xs))))
+          (update x :at #(apath (path* % xs)))))
 
     (do :getters
 
@@ -411,7 +411,7 @@
           [e] (.at e))
 
         (defne root?
-          [e] (= root-path (loc e)))
+          [e] (= root-path (apath (loc e))))
 
         ;; getting environment members
 
@@ -467,6 +467,7 @@
           "bubbling find, the main resolution function
            which is used by the compilation process"
           [e p]
+          #_(pp 'bubfind (loc e) p)
           (cs
 
            ;; if path consists only of a dot, we ignore it
@@ -1066,7 +1067,8 @@
               `(println "E+ " '~(first xs)))
            ~@(map (fn [u]
                       `(env-upd_exe @E (env-upds @E '~u)))
-                  (env-upd_split xs))))
+                  (env-upd_split xs))
+           (-> @E :members :val)))
 
     (defmacro E-
       "removes given member-paths|coresponding-symbols from the global env
@@ -3060,7 +3062,7 @@
                 (bind.vec.body x ysym cnt))))
 
            dotted
-           (fn [x y]
+           #_(fn [x y]
              (let [doti (indexof x cp.dot)
                    cars (take x doti)
                    [eli queue] (uncs (drop x (inc doti)))
@@ -3070,6 +3072,23 @@
                 [ysym y
                  #_(gensym "?!linecheck") #_(qq (line? ~ysym))]
                 (bind cars (qq (take ~ysym ~doti)))
+                (bind eli (qq (drop ~ysym ~doti)))
+                #_(bind.vec.body cars ysym doti)
+                (when-not (zero? qcnt)
+                  (+ [cdr' eli]
+                     (bind eli (qq (dropend ~cdr' ~qcnt)))
+                     [qsym (qq (takend ~cdr' ~qcnt))]
+                     (bind.vec.body queue qsym qcnt))))))
+           (fn [x y]
+             (let [doti (indexof x cp.dot)
+                   cars (take x doti)
+                   [eli queue] (uncs (drop x (inc doti)))
+                   qcnt (count queue)
+                   [ysym qsym cdr' cars'] (gensyms)]
+               (+
+                [ysym y
+                 (gensym "?!linecheck") (qq (line? ~ysym))]
+                (bind.vec.body cars (qq (take ~ysym ~doti)) doti)
                 (bind eli (qq (drop ~ysym ~doti)))
                 #_(bind.vec.body cars ysym doti)
                 (when-not (zero? qcnt)
@@ -4395,7 +4414,9 @@
                 ['dive.ops:val
                  {(key name)
                   (qq (f1 ~argv ~expr))}])
-             }))
+             })
+
+        )
 
     (do :flow
 
@@ -4880,6 +4901,9 @@
 
          ))
 
+    (E+ (subjectify.definitions
+         dive tack))
+
     (E+ obj+
         ["an update to declare a new object"
 
@@ -5015,6 +5039,63 @@
 
         )
 
+    (E+ org
+        {:val
+         (cf [e (vec? x)]
+             ((at org.ops:val :section) e x)
+
+             [e (& (lst? x) [(sym? verb) . args])]
+             (clet [f (at org.ops:val (key verb))]
+                   (f e args)
+                   ((at org.ops:val :code) e [x]))
+             [e x]
+             (str x))
+
+         :mac
+         (f [e [x]]
+            (concat-code-blocks (org:val e x)))
+
+         concat-code-blocks
+         (f_ (str/replace
+              _ #"#\+end_src(\n)*#\+begin_src clojure\n" ""))
+
+         clojure-comment
+         (?f1 (:str x)
+              (str "\n;; " x "\n"))
+
+         ops:val
+         {:code
+          (f [e xs]
+             (str "\n#+begin_src clojure\n"
+                  . ($ xs (?<_ clojure-comment id))
+                  "\n#+end_src"))
+
+          :header
+          (f [e [txt]]
+             (str . (repeat (get e :org-lvl 1) "*") " " txt "\n"))
+
+          :section
+          (f [e [title . content]]
+             (let [e' (update e :org-lvl (fnil inc 1))]
+               (+ ((at org.ops:val :header) e [title])
+                  . (braid ($ content (f_ (org:val e' _)))
+                           (repeat "\n")))))
+
+          :demo
+          (__
+           (spit "org-try.org"
+                 (org ["iop"
+                       "some text"
+                       :iop
+                       ["pouet"
+                        1 2
+                        (add 42 (let [a 43] :iop))
+                        (add 42 (let [a 44] :iop))]
+                       ["Three"
+                        (code (yop foo)
+                              "a comment"
+                              (+ m p))]])))}})
+
     (pp 'will-declare-topforms)
 
     (init-top-forms
@@ -5026,7 +5107,8 @@
      clet clut !clet !clut
      case casu !case !casu
      throws
-     exp sq qq qq!)
+     exp
+     sq qq qq!)
 
     (pp 'DONE)
 

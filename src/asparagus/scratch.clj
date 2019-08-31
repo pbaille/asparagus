@@ -502,3 +502,28 @@
 
 (bind (list '& 'a 'b) 'x)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#+begin_src clojure
+#+end_src
+
+
+
+
+
+
+
+
+
