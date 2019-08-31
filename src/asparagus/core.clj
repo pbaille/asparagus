@@ -1,6 +1,6 @@
 (ns asparagus.core
   (:refer-clojure
-   :exclude [eval resolve])
+   :exclude [eval resolve let case])
   (:require
    [clojure.core :as c]
    [clojure.string :as str]
@@ -48,11 +48,32 @@
 ;;dev
 ;; ------------------------------------------------------------------------------
 
-;; a convenience that will reset the asparagus global environment and do some cleaning when the file is reloaded
-(when-let [! (c/resolve 'rEset!)] (!))
+;; when this file is reloaded
+;; reset the asparagus environment
+;; clean emitted vars
+;; reset generics registry
+(do
+  (if (c/resolve 'rEset!)
+    (do ((c/resolve 'rEset!))
+        (g/reset-registry!))
+    (println
+     "
+ ▄▄▄        ██████  ██▓███   ▄▄▄       ██▀███   ▄▄▄        ▄████  █    ██   ██████
+▒████▄    ▒██    ▒ ▓██░  ██▒▒████▄    ▓██ ▒ ██▒▒████▄     ██▒ ▀█▒ ██  ▓██▒▒██    ▒
+▒██  ▀█▄  ░ ▓██▄   ▓██░ ██▓▒▒██  ▀█▄  ▓██ ░▄█ ▒▒██  ▀█▄  ▒██░▄▄▄░▓██  ▒██░░ ▓██▄
+░██▄▄▄▄██   ▒   ██▒▒██▄█▓▒ ▒░██▄▄▄▄██ ▒██▀▀█▄  ░██▄▄▄▄██ ░▓█  ██▓▓▓█  ░██░  ▒   ██▒
+ ▓█   ▓██▒▒██████▒▒▒██▒ ░  ░ ▓█   ▓██▒░██▓ ▒██▒ ▓█   ▓██▒░▒▓███▀▒▒▒█████▓ ▒██████▒▒
+ ▒▒   ▓▒█░▒ ▒▓▒ ▒ ░▒▓▒░ ░  ░ ▒▒   ▓▒█░░ ▒▓ ░▒▓░ ▒▒   ▓▒█░ ░▒   ▒ ░▒▓▒ ▒ ▒ ▒ ▒▓▒ ▒ ░
+  ▒   ▒▒ ░░ ░▒  ░ ░░▒ ░       ▒   ▒▒ ░  ░▒ ░ ▒░  ▒   ▒▒ ░  ░   ░ ░░▒░ ░ ░ ░ ░▒  ░ ░
+  ░   ▒   ░  ░  ░  ░░         ░   ▒     ░░   ░   ░   ▒   ░ ░   ░  ░░░ ░ ░ ░  ░  ░
+      ░  ░      ░                 ░  ░   ░           ░  ░      ░    ░           ░
+                                                                                   "))
+  (p/import-macros let c/let))
 
 ;;env
 ;; ------------------------------------------------------------------------------
+
+
 
 (do :path
 
@@ -629,6 +650,7 @@
 
         (defn clean-top-forms! []
           (doseq [s @top-forms]
+            #_(pp 'remove-top-form s)
             (ns-unmap *ns* s))
           (reset! top-forms #{}))
 
@@ -1327,7 +1349,7 @@
                (if p1
                  (c/let [[e' pat] (hygiene.shadow e p1)]
                    (recur e' (conj ret pat (exp e e1)) pes))
-                 (lst `let ret (exp e (if monobody (car body) (cons 'do body)))))))
+                 (lst `c/let ret (exp e (if monobody (car body) (cons 'do body)))))))
            :mac
            (fn [e form]
              (.expand
@@ -1416,7 +1438,7 @@
 
             let-expr?
             (fn [x]
-              (when (and (seq? x) (= `let (car x)))
+              (when (and (seq? x) (= `c/let (car x)))
                 x))
 
             collapse
@@ -2158,7 +2180,9 @@
          (fn [e body]
            (let [gsym (generic.symbol (loc e))]
              (assoc (generic.module gsym)
-                    :fx (qq (generic.init ~gsym ~body)))))
+                    :fx (qq (do #_(pp 'gen-init '~(loc e))
+                                (generic.init ~gsym ~body)
+                                #_(pp 'gen-init-end))))))
 
          reduced:upd
          (fn [e [argv & decls]]
@@ -3296,9 +3320,9 @@
           step-form
           (fn [s e1 e2 mode]
             (condp = mode
-              :opt `(let [~s ~e1] ~e2)
-              :short `(let [~s ~e1] (when ~s ~e2))
-              :strict `(let [~s (or ~e1 (error "nil! " '~e1))] ~e2)))
+              :opt `(c/let [~s ~e1] ~e2)
+              :short `(c/let [~s ~e1] (when ~s ~e2))
+              :strict `(c/let [~s (or ~e1 (error "nil! " '~e1))] ~e2)))
 
           mode
           {
@@ -3660,8 +3684,6 @@
                 bindings
                 [bind])
         )
-
-    #_(error "stop after bindings")
 
     (E+ lambda
         {:links {cp composite}
@@ -4038,13 +4060,13 @@
                                (mapv list [1 2 3] [1 2 3] [1 2 3]))))
            (qbench (!! (* [add sub add] (list [1 2 3] [1 2 3] [1 2 3]))))))
 
-    (E+ subjectify
+    (E+ argumentation
         {:doc
          "in asparagus, many functions takes what we can call the object as first argument
           I mean, the thing we are working on, for instance, in the expression (assoc mymap :a 1 :b 2), mymap is what we call the object
-          the subjectify function will help to turn this kind of function into a one that takes only the arguments (in the previous exemple: :a 1 :b 2)
+          the argumentation function will help to turn this kind of function into a one that takes only the arguments (in the previous exemple: :a 1 :b 2)
           and return a function that takes only the target object, and return the result.
-          (let [assoc_ (subjectify assoc)
+          (let [assoc_ (argumentation assoc)
                 assoc-a-and-b (assoc_ :a 1 :b 2)]
              (assoc-a-and-b {})) ;=> {:a 1 :b 2}
 
@@ -4057,19 +4079,24 @@
           the idea behind this is to ease function composition, the preference for guards over predicates is also a step in this direction
           the further 'flow section will introduce some useful functional constructs that go even further (in conjunction with this and guards)"
          :val
-         (f1 f
-             (fn& [] (f1 s (f s ...))))
+         (f [g . args]
+            (if (pure? args)
+              (fn& [] (f1 s (g s ...)))
+              (f1 s (g s . args))))
          :mac
-         (f [e [g]]
-            (exp e (qq (fn& [] (f1 s (~g s ...))))))
+         (f [e [g . args]]
+            (if (pure? args)
+              (exp e (qq (fn& [] (f1 s (~g s ...)))))
+              (qq (~(rec e [g]) .~($ args (p exp e))))))
+
          definitions:upd
          (f [e xs]
             (zipmap
              ($ xs #(sym % '_))
-             ($ xs (p lst (qq subjectify)))))}
+             ($ xs (p lst (qq argumentation)))))}
 
         ;; here we are defining subjectified versions of some important functions
-        (subjectify.definitions
+        (argumentation.definitions
          take takend drop dropend section
          sip + * § $ $i >
          eq neq gt gte lt lte
@@ -4147,7 +4174,7 @@
          ["like core/interleave"
           (p zip+ (p sip ()))]
 
-         (subjectify.definitions
+         (argumentation.definitions
           red $+ scan chunk nths))
 
         (check
@@ -4519,7 +4546,7 @@
            (c/or (§ f x)
                  (c/when (cons? fs) (* ?< x fs))))]
 
-         (subjectify.definitions
+         (argumentation.definitions
           ?$ ?$i filt rem ?> ?<)
 
          :fx
@@ -4580,7 +4607,7 @@
            [x . bs]
            (* ?> x ($ bs (* ?<_))))]
 
-         (subjectify.definitions
+         (argumentation.definitions
           ?c> ?c ?><)
 
          :fx
@@ -4694,11 +4721,20 @@
     (E+ bindings.case
         ["the case form and its variants casu, !case, and !casu"
 
+         case
+         ["format a single case, if pattern is a make it a guard"
+          (f [seed [p e]]
+             (if (sym? p)
+               [[(lst p (gensym)) seed] e]
+               [[p seed] e]
+               ))]
+
          form
          (f [verb symseed xs]
             (if (even? (count xs))
-              (lst verb .(* + ($ (chunk xs 2) (f1 [p e] [[p symseed] e]))))
-              (rec verb symseed [.(butlast xs) '_ (last xs)])))
+              (lst verb .(* + ($ (chunk xs 2) #_(f1 [p e] [[p symseed] e])
+                                 (p bindings.case.case symseed))))
+              (rec verb symseed [.(butlast xs) '(& _) (last xs)])))
 
          verb
          (f1 (ks strict unified)
@@ -4738,6 +4774,13 @@
 
         :fx
         (check
+
+         ;; support guard syms and patterns
+         (case :zer ;42 ;'zer ;"iop"
+           num? :num
+           str? :hey
+           (:sym x) x
+           :nope)
 
          (let [t (case_
                   [:point x 0] :y0
@@ -4857,7 +4900,7 @@
                     (tack k x (f (dive k x))))
                  (chunk xs 2)))]
 
-        (subjectify.definitions put upd)
+        (argumentation.definitions put upd)
 
         :fx
         (check
@@ -4901,7 +4944,7 @@
 
          ))
 
-    (E+ (subjectify.definitions
+    (E+ (argumentation.definitions
          dive tack))
 
     (E+ obj+

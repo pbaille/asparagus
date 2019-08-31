@@ -143,3 +143,4 @@ type definitions should be namespaced (in the asparagus way)
 
 =clet= is not as convenient as =cs= and has a longer name
 
+the loading of core is slow, mainly due to generics ()

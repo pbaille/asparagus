@@ -16,14 +16,17 @@
 
 (do :state
 
-    (swap! state assoc :fns {})
-
     (defn get-reg []
       (:fns @state))
 
     (defn get-spec! [name]
       (p/assert (get-in @state [:fns name])
-                (str "Cannot find spec " name))))
+                (str "Cannot find spec " name)))
+
+    (defn reset-registry! []
+      (swap! state assoc :fns {}))
+
+    (reset-registry!))
 
 (do :impl
 
@@ -243,6 +246,7 @@
       [xs]
       (let [sync? #(seq (clojure.set/intersection (set xs) (set %)))]
         (doseq [[name ts] (implementers-map)]
+          #_(pp 'generics/sync-types name)
           (when (sync? ts) (sync-spec! name)))))
 
     #_(sync-types! [:num :str])

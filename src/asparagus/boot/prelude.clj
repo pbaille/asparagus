@@ -588,7 +588,7 @@
           [[b1 b2 & bs] e]
           `(~(if (or (generated-binding-sym? b1)
                      (= \_ (first (name b1))))
-               `let `when-let)
+               `c/let `c/when-let)
             [~b1 ~b2]
             ~(if bs (cs-case bs e)
                  ;; this wrapping is nescessary for the case e eval to nil

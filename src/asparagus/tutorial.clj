@@ -1240,6 +1240,25 @@
             (str? x) :str
             (vec? x) :vec))))
 
+ ;; with the help of case_ we can rewrite the first exemple more concisely
+ (let [t (case_
+          [:point x 0] :y0
+          [:point 0 y] :x0
+          [:point (:num x) (:num y)] [x y]
+          :pouet)]
+   (and
+    (eq :y0 (t [:point 1 0]))
+    (eq :x0 (t [:point 0 1]))
+    (eq [1 2] (t [:point 1 2]))
+    (eq :pouet (t [:point 1 "io"]))))
+
+ ;; we can put guard symbols in pattern position
+ (case :zer ;42 ;'zer ;"iop"
+   num? :num ;; is equivalent to: (num? x) :num
+   str? :hey
+   (:sym x) x
+   :nope)
+
  )
 
 ;; ------------------------------------------------------------------------
@@ -1531,7 +1550,7 @@
 ;; ------------------------------------------------------------------------
 
 (do
-  
+
  ;; one thing we all love in functional programming is the ability to compose functions together
  ;; manipulate them easily, passing them to other functions, partially apply them etc...
  ;; in asparagus I've tried to push all those things further than clojure
@@ -1606,11 +1625,15 @@
   ;; all functions that can be viewed this way, will always take the 'object' as first argument
   ;; with this simple convention we can achieve a regularity that yield to easier function composition
 
-  ;; the subjectify function will help to turn this kind of function into a one that takes only the arguments (in the previous exemple: :a 1 :b 2)
+  ;; the argumentation function will help to turn this kind of function into a one that takes only the arguments (in the previous exemple: :a 1 :b 2)
   ;; and return a function that takes only the target object, and return the result.
-  (let [assoc_ (subjectify assoc)
+  (let [assoc_ (argumentation:val assoc)
         assoc-a-and-b (assoc_ :a 1 :b 2)]
     (assoc-a-and-b {})) ;;=> {:a 1 :b 2}
+
+  ;; you can also pass arguments immediatly
+  (let [f (argumentation assoc :a 1)]
+    (f {}))
 
   ;; many of the asparagus functions that follow this convention, have their subjectified version with the same name suffixed with _
   ;; this is handy, for instance, to create chains of 1 argument functions
@@ -1899,13 +1922,17 @@
        ;; (here we receiving 0 and returning {:val 0, :inc 1, :dec -1}
        (df {:val id :++ inc :-- dec})]
 
+      ;p/prob
+
       (case_ [:bar x] {:bar x}
              [:foo (& x (ks val))] ;; we check that data idx 0 is :foo, and that the idx 1 has a :val key
-             (case x
+             (case val
                pos? {:positive-foo x}
                neg? {:negative-foo x}
                {:zero-foo x})
-             x {:fail x})
+             (id x) {:fail x})
+
+      ;p/prob
 
       (?c_ (?f1 {:fail x}) (f_ (pp "fail: " _) _) ;; shortcircuiting lambdas can be useful in those contexts
            (?f1 {:zero-foo x}) (f_ (pp "zero-foo " _) _)
@@ -1913,7 +1940,7 @@
 
       )
 
-  {:positive-foo {:val 0, :++ 1, :-- -1}})
+  {:zero-foo {:val 0, :++ 1, :-- -1}})
  )
 
 ;; ------------------------------------------------------------------------
