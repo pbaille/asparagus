@@ -1,5 +1,6 @@
 {:deps 
  {org.clojure/clojure {:mvn/version "1.10.1-beta2"}
-  criterium {:mvn/version "0.4.4"}}
+  criterium {:mvn/version "0.4.4"}
+  instaparse {:mvn/version "1.4.10"}}
  :aliases {}
  :paths ["src"]}

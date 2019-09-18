@@ -368,162 +368,192 @@
       )]
     )
 
-(ppenv map)
+(do :misc
+ (ppenv map)
 
-(!! (map [:a 1] [:b 2]))
-(!! )
+ (!! (map [:a 1] [:b 2]))
+ (!! )
 
-(!! (map . (zip (f1 [k v] [k v]) {:a 1 :b 2})))
-(!! ($i+ {:a 1 :b 2} (f [k v] [k v])))
+ (!! (map . (zip (f1 [k v] [k v]) {:a 1 :b 2})))
+ (!! ($i+ {:a 1 :b 2} (f [k v] [k v])))
 
-(let [(& xs [x . y]) ()] [xs x y])
+ (let [(& xs [x . y]) ()] [xs x y])
 
-(!! (map.addresses :a 1 'a.b 2))
+ (!! (map.addresses :a 1 'a.b 2))
 
-(!! (map.addresses
-     {:a 1
-      'a.m.p {:b 2}
-      'c {'d 3
-          :op {:iop 1}
-          'e {:p 2}}}
-     ;[]
-     ))
+ (!! (map.addresses
+      {:a 1
+       'a.m.p {:b 2}
+       'c {'d 3
+           :op {:iop 1}
+           'e {:p 2}}}
+                                        ;[]
+      ))
 
-(E- foo)
-(E+ foo (f [] :ho!)
+ (E- foo)
+ (E+ foo (f [] :ho!)
+     )
+
+ (ppenv foo)
+ (!! (foo))
+ (!! (foo.bob))
+ (E+ foo [bob [iop 1 (f [] :foobob)]])
+
+ (!! (bindings.bind 'x 'y))
+ (!! (bindings.bind '[a b c . d e] 'y))
+ (!! (bindings.bind '(& m {:a a}) 'y))
+
+ (!! (eq nil nil nil))
+
+ (exp @E '(let
+              [(& mymap (ks a b)) {:a 1, :b 2, :c 3}]
+              [mymap a b]))
+ )
+
+(do :bindings
+    (E+ bindings.let
+        {
+         remove-mode-prefix
+         (fn [s]
+           (->> (str s)
+                (c/drop-while #{\? \!})
+                (apl str)
+                symbol))
+
+         mode
+         {
+          from-sym
+          ["s: symbol
+        turn a prefixed into a modesym or return nil for non-prefixed syms"
+           (fn [s]
+             (or (maybe-strict-sym? s)
+                 (condp = (car (str s))
+                   \! :strict
+                   \? :short
+                   \_ :opt
+                   nil)))]
+
+          maybe-strict?
+          ["when a symbol starts by ?! it indicates that the resulting binding mode
+        cannot be :opt, if current mode is strict it will be strict else it will be :short"
+           (fn [s]
+             (and (= '(\? \!) (c/take 2 (str s)))
+                  :maybe-strict))]
+
+          next
+          ["m1: modesym s: symbol
+        return the mode to use for binding s"
+           (fn [m1 s]
+             (let [m2 (from-sym s)]
+               (cs (= :maybe-strict m2)
+                   (cs (= :opt m1) :short m1)
+                   m2 m2
+                   m1)))]
+
+          to-num:val {:opt 0 :short 1 :strict 2}
+          compare (fn [m1 m2] (c/compare (to-num m1) (to-num m2)))
+          gte (fn [m1 m2] (#{0 1} (compare m1 m2)))
+          lte (fn [m1 m2] (#{0 -1} (compare m1 m2)))
+          eq (fn [m1 m2] (zero? (compare m1 m2)))}
+
+         form
+         (fn
+           ([e bs expr mode]
+            (rec e bs expr mode {}))
+
+           ([e [p1 e1 & bs] expr mode sym->mode]
+            ;; the sym->mode map is holding previoously bound syms with their corresponding mode
+            (cs
+             ;; no more bindings we just expand the body expression
+             (not p1) (exp e expr)
+             ;; if both e1 is syms we can just substitute
+             ;; instead of adding a binding
+             ;; we also check if p1 has not a different mode (have to think of this further)
+             [? (sym? e1)
+              m1 (mode.next mode p1)
+              ? (mode.lte m1 (sym->mode e1))
+              p1' (remove-mode-prefix p1)
+              e' (env.add-sub e [p1' (exp e e1)])]
+             (form e' bs expr mode
+                   (assoc sym->mode p1' m1))
+             ;; else we add a binding
+             [p1' (remove-mode-prefix p1)
+              [e' pat] (hygiene.shadow e p1')
+              m1' (mode.next mode p1)]
+             (step-form
+              pat (exp e e1)
+              (form e' bs expr mode
+                    (assoc sym->mode p1' m1'))
+              m1'
+              ))))})
+
+    (!! (bindings.let.form @E '[a 1 b a] '(+ a b) :strict))
+    (!! (bindings.let.form @E '[a 1 ?b a] '(+ a b) :opt))
+    (!! (bindings.let.form @E '[a 1 ?b a] '(+ a b) :strict))
+    (!! (bindings.let.form @E '[!a 1 ?b a] '(+ a b) :opt))
+    (!! (bindings.let.form @E '[!a 1 !b a] '(+ a b) :opt))
+    (!! (bindings.let.form @E '[?a 1 b a] '(+ a b) :strict))
+
+    (updxp (type+ :pierre [a b]))
+
+    (E+ (type+ :pierre [a b]))
+
+    (let [(pierre [x . xs] y) (pierre (range 10) 42)]
+      [x xs y])
+
+    (bind (list '& 'a 'b) 'x)
     )
 
-(ppenv foo)
-(!! (foo))
-(!! (foo.bob))
-(E+ foo [bob [iop 1 (f [] :foobob)]])
+(do :org-script
 
+    (import '(java.io BufferedReader StringReader))
 
+    (spit "src/asparagus/tutorial-without-comment.clj"
+          (apply str
+                 (interpose "\n"
+                            (mapv (fn [line]
+                                    (if (re-matches #"^ *;;.*" line)
+                                      (-> line
+                                          (str/replace #"\"" "\\\"")
+                                          (str/replace #";; *" "\"")
+                                          (str "\""))
+                                      line))
+                                  (line-seq (BufferedReader. (StringReader. (slurp "src/asparagus/tutorial.clj"))))))))
+    )
 
-(!! (bindings.bind 'x 'y))
-(!! (bindings.bind '[a b c . d e] 'y))
-(!! (bindings.bind '(& m {:a a}) 'y))
+(do :instaparse
 
-(!! (eq nil nil nil))
+    (require '[instaparse.core :as insta])
 
-(exp @E '(let
-     [(& mymap (ks a b)) {:a 1, :b 2, :c 3}]
-   [mymap a b]))
+    (def parser
+      (insta/parser
+       "expr = number | vector | operation
+    operation = operator space+ vector
+    operator = '+' | '-' | '*' | '/'
+    vector = snumber+ number
+    <snumber> = (number space)*
+    <space> = <#'[ ]+'>
+    number = #'[0-9]+'"))
 
-(E+ bindings.let
-    {
-     remove-mode-prefix
-     (fn [s]
-       (->> (str s)
-            (c/drop-while #{\? \!})
-            (apl str)
-            symbol))
+    (parser "+ 1 2 3 4")
 
-     mode
-     {
-      from-sym
-      ["s: symbol
-        turn a prefixed into a modesym or return nil for non-prefixed syms"
-       (fn [s]
-         (or (maybe-strict-sym? s)
-             (condp = (car (str s))
-               \! :strict
-               \? :short
-               \_ :opt
-               nil)))]
+    (defn choose-operator [op]
+      (case op
+        "+" +
+        "-" -
+        "*" *
+        "/" /))
 
-      maybe-strict?
-      ["when a symbol starts by ?! it indicates that the resulting binding mode
-        cannot be :opt, if current mode is strict it will be strict else it will be :short"
-       (fn [s]
-         (and (= '(\? \!) (c/take 2 (str s)))
-              :maybe-strict))]
+    (def transform-options
+      {:number read-string
+       :vector (comp vec list)
+       :operator choose-operator
+       :operation apply
+       :expr identity})
 
-      next
-      ["m1: modesym s: symbol
-        return the mode to use for binding s"
-       (fn [m1 s]
-         (let [m2 (from-sym s)]
-           (cs (= :maybe-strict m2)
-               (cs (= :opt m1) :short m1)
-               m2 m2
-               m1)))]
+    (defn parse [input]
+      (->> (parser input) (insta/transform transform-options)))
 
-      to-num:val {:opt 0 :short 1 :strict 2}
-      compare (fn [m1 m2] (c/compare (to-num m1) (to-num m2)))
-      gte (fn [m1 m2] (#{0 1} (compare m1 m2)))
-      lte (fn [m1 m2] (#{0 -1} (compare m1 m2)))
-      eq (fn [m1 m2] (zero? (compare m1 m2)))}
+    (parse "+ 1 2 3 4")                 ;=> 10
 
-     form
-     (fn
-       ([e bs expr mode]
-        (rec e bs expr mode {}))
-
-       ([e [p1 e1 & bs] expr mode sym->mode]
-        ;; the sym->mode map is holding previoously bound syms with their corresponding mode
-        (cs
-         ;; no more bindings we just expand the body expression
-         (not p1) (exp e expr)
-         ;; if both e1 is syms we can just substitute
-         ;; instead of adding a binding
-         ;; we also check if p1 has not a different mode (have to think of this further)
-         [? (sym? e1)
-          m1 (mode.next mode p1)
-          ? (mode.lte m1 (sym->mode e1))
-          p1' (remove-mode-prefix p1)
-          e' (env.add-sub e [p1' (exp e e1)])]
-         (form e' bs expr mode
-               (assoc sym->mode p1' m1))
-         ;; else we add a binding
-         [p1' (remove-mode-prefix p1)
-          [e' pat] (hygiene.shadow e p1')
-          m1' (mode.next mode p1)]
-         (step-form
-          pat (exp e e1)
-          (form e' bs expr mode
-                (assoc sym->mode p1' m1'))
-          m1'
-          ))))})
-
-(!! (bindings.let.form @E '[a 1 b a] '(+ a b) :strict))
-(!! (bindings.let.form @E '[a 1 ?b a] '(+ a b) :opt))
-(!! (bindings.let.form @E '[a 1 ?b a] '(+ a b) :strict))
-(!! (bindings.let.form @E '[!a 1 ?b a] '(+ a b) :opt))
-(!! (bindings.let.form @E '[!a 1 !b a] '(+ a b) :opt))
-(!! (bindings.let.form @E '[?a 1 b a] '(+ a b) :strict))
-
-(updxp (type+ :pierre [a b]))
-
-(E+ (type+ :pierre [a b]))
-
-(let [(pierre [x . xs] y) (pierre (range 10) 42)]
-  [x xs y])
-
-(bind (list '& 'a 'b) 'x)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#+begin_src clojure
-#+end_src
-
-
-
-
-
-
-
-
-
+    )

@@ -212,6 +212,11 @@
                (count (filter f x)))
         (c/or x true)))
 
+    (defn walk? [x node? f]
+      (if (node? x)
+        ($ x #(walk? % node? f))
+        (f x)))
+
     )
 
 (do :colls

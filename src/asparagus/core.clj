@@ -53,27 +53,19 @@
 ;; clean emitted vars
 ;; reset generics registry
 (do
-  (if (c/resolve 'rEset!)
-    (do ((c/resolve 'rEset!))
-        (g/reset-registry!))
-    (println
-     "
- ▄▄▄        ██████  ██▓███   ▄▄▄       ██▀███   ▄▄▄        ▄████  █    ██   ██████
-▒████▄    ▒██    ▒ ▓██░  ██▒▒████▄    ▓██ ▒ ██▒▒████▄     ██▒ ▀█▒ ██  ▓██▒▒██    ▒
-▒██  ▀█▄  ░ ▓██▄   ▓██░ ██▓▒▒██  ▀█▄  ▓██ ░▄█ ▒▒██  ▀█▄  ▒██░▄▄▄░▓██  ▒██░░ ▓██▄
-░██▄▄▄▄██   ▒   ██▒▒██▄█▓▒ ▒░██▄▄▄▄██ ▒██▀▀█▄  ░██▄▄▄▄██ ░▓█  ██▓▓▓█  ░██░  ▒   ██▒
- ▓█   ▓██▒▒██████▒▒▒██▒ ░  ░ ▓█   ▓██▒░██▓ ▒██▒ ▓█   ▓██▒░▒▓███▀▒▒▒█████▓ ▒██████▒▒
- ▒▒   ▓▒█░▒ ▒▓▒ ▒ ░▒▓▒░ ░  ░ ▒▒   ▓▒█░░ ▒▓ ░▒▓░ ▒▒   ▓▒█░ ░▒   ▒ ░▒▓▒ ▒ ▒ ▒ ▒▓▒ ▒ ░
-  ▒   ▒▒ ░░ ░▒  ░ ░░▒ ░       ▒   ▒▒ ░  ░▒ ░ ▒░  ▒   ▒▒ ░  ░   ░ ░░▒░ ░ ░ ░ ░▒  ░ ░
-  ░   ▒   ░  ░  ░  ░░         ░   ▒     ░░   ░   ░   ▒   ░ ░   ░  ░░░ ░ ░ ░  ░  ░
-      ░  ░      ░                 ░  ░   ░           ░  ░      ░    ░           ░
-                                                                                   "))
+  (println "
+ ▄▄▄· .▄▄ ·  ▄▄▄· ▄▄▄· ▄▄▄   ▄▄▄·  ▄▄ • ▄• ▄▌.▄▄ · 
+▐█ ▀█ ▐█ ▀. ▐█ ▄█▐█ ▀█ ▀▄ █·▐█ ▀█ ▐█ ▀ ▪█▪██▌▐█ ▀. 
+▄█▀▀█ ▄▀▀▀█▄ ██▀·▄█▀▀█ ▐▀▀▄ ▄█▀▀█ ▄█ ▀█▄█▌▐█▌▄▀▀▀█▄
+▐█ ▪▐▌▐█▄▪▐█▐█▪·•▐█ ▪▐▌▐█•█▌▐█ ▪▐▌▐█▄▪▐█▐█▄█▌▐█▄▪▐█
+ ▀  ▀  ▀▀▀▀ .▀    ▀  ▀ .▀  ▀ ▀  ▀ ·▀▀▀▀  ▀▀▀  ▀▀▀▀")
+
+  (when-let [reset (c/resolve 'rEset!)] (reset))
+  (g/reset-registry!)
   (p/import-macros let c/let))
 
 ;;env
 ;; ------------------------------------------------------------------------------
-
-
 
 (do :path
 
@@ -103,8 +95,6 @@
 
     ;; a path will be used in conjonction with a positioned environment
     ;; relative path will be resolved relativelly to the current position of the evaluating environment
-
-    #_(defrecord Path [rel xs mkey])
 
     (t/type+ :path [rel xs mkey])
 
@@ -1086,9 +1076,9 @@
        for usage, see ./tutorial.clj"
       [& xs]
       `(do ~(when (symbol? (first xs))
-              `(println "E+ " '~(first xs)))
+                `(println "E+ " '~(first xs)))
            ~@(map (fn [u]
-                      `(env-upd_exe @E (env-upds @E '~u)))
+                    `(env-upd_exe @E (env-upds @E '~u)))
                   (env-upd_split xs))
            (-> @E :members :val)))
 
@@ -5110,7 +5100,7 @@
          {:code
           (f [e xs]
              (str "\n#+begin_src clojure\n"
-                  . ($ xs (?<_ clojure-comment id))
+                  . (interpose "\n" ($ xs (?<_ clojure-comment id)))
                   "\n#+end_src"))
 
           :header
