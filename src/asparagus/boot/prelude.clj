@@ -83,6 +83,9 @@
                   :nop))
         )
 
+    (defmacro error [& xs]
+      `(throw (Exception. (str ~@xs))))
+
     (declare pretty-str)
     (defmacro assert [x & [m]]
       (let [s (gensym)
@@ -95,6 +98,15 @@
 
     #_(macroexpand (assert (= 0 (/ 2 0)) "by zero"))
     #_(assert (= 0 (/ 1 1)) "by zero")
+
+    (defmacro is [x & xs]
+      (let [xval (gensym)]
+         `(let [~xval ~x]
+           ~@(mapv (fn [y]
+                     `(when-not (= ~xval ~y)
+                        (p/error (str "not equal! \na: " '~x " -> " ~xval "\nb: " '~y " -> " ~y))))
+                   xs)
+           ~xval)))
 
     (defmacro asserts [& xs]
       `(do ~@(map (fn [x] `(assert ~x)) xs)))
@@ -109,9 +121,6 @@
 
     (defmacro let! [bs & xs]
       `(let ~bs (asserts ~@xs) ~(last xs)))
-
-    (defmacro error [& xs]
-      `(throw (Exception. (str ~@xs))))
 
     (defmacro import-macros [x y & nxt]
       `(do (def ~x (var ~y))
@@ -357,6 +366,13 @@
           (if-let [ns (namespace x)]
             (str ns "/" (name x))
             (name x))))
+
+    (defn qualified-sym [x]
+      (->> (resolve x)
+          str
+          (drop 2)
+          (apply str)
+          symbol))
 
     (defn qualify-sym [x]
       (symbol (str *ns*) (name x)))
