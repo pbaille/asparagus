@@ -46,19 +46,21 @@
   (and (symbol? x)
        (some-> x resolve deref type-predicate?)))
 
+(defn predicate-symbol? [x]
+  (and (symbol? x)
+       (= \? (last (name x)))))
+
 ;; core.match extension
 
 (do 
-  (defmethod m/emit-pattern ::type 
-    [[c & xs]]
-    (apply c xs))
 
   (extend-protocol mp/ISyntaxTag
     clojure.lang.ISeq
     (syntax-tag [[x1 & xs]]
       (cond
         (type-constructor-varsym? x1) ::type
-        (type-predicate-varsym? x1) ::pred
+        (or (type-predicate-varsym? x1)
+            (predicate-symbol? x1)) ::pred
         :else ::m/seq)))
 
   (defmethod m/emit-pattern ::type [[c & ms]]
@@ -128,7 +130,7 @@
 
 ;; match functions
 
-(defmacro fm [x & xs]
+(defmacro fm-fixed [x & xs]
   (let [[name clauses] (if (symbol? x) [x xs] [(gensym) (cons x xs)])
         by-arity (group-by (comp count first) (partition 2 clauses))]
     `(fn ~name
@@ -136,6 +138,50 @@
                 `(~argv (m/match ~argv ~@(apply concat clauses))))
               (map-keys (fn [n] (vec (repeatedly n gensym)))
                         by-arity)))))
+
+
+(defmacro fm [x & xs]
+  (let [[name clauses] (if (symbol? x) [x xs] [(gensym) (cons x xs)])
+        clauses (partition 2 clauses)
+        arity (comp count first)
+        variadic-pattern? #(-> % reverse next first (= '&))
+        variadic-clause? (comp variadic-pattern? first)
+        fixed-clauses (remove variadic-clause? clauses)
+        variadic-clauses (filter variadic-clause? clauses)
+        by-arity (group-by arity fixed-clauses)
+        variadic-arity (and (seq variadic-clauses)
+                            (-> variadic-clauses first first count dec))]
+
+    (when variadic-arity
+
+      (assert (apply = (map arity variadic-clauses))
+              "variadic patterns should be equals in length")
+
+      (assert (every? (partial > variadic-arity) (keys by-arity))
+              (str "fixed arity > variadic arity"
+                   (take-nth 2 clauses))))
+
+    `(fn ~name
+
+       ;; fixed clauses
+       ~@(map (fn [[argv clauses]]
+                `(~argv (m/match ~argv ~@(apply concat clauses))))
+              (map-keys (fn [n] (vec (repeatedly n gensym)))
+                        by-arity))
+
+       ;; variadic clauses
+       ~@(when variadic-arity
+           (let [argv
+                 (-> (dec variadic-arity)
+                     (repeatedly gensym)
+                     (concat ['& (gensym)])
+                     vec)
+                 variadic-clauses
+                 (map (fn [[pat expr]] [(vec (remove '#{&} pat)) expr])
+                      variadic-clauses)]
+
+             [`(~argv (m/match ~(vec (remove '#{&} argv))
+                               ~@(apply concat variadic-clauses)))])))))
 
 (defmacro defm
   "a simple pattern matched function"
@@ -189,7 +235,7 @@
 
     (= 1 ((myfun identity) 1))
 
-    ;; pattern-matching
+    ;; pattern-matched function
 
     (defm sum
       [(num x) (num y)] (num (+ x y))
@@ -219,13 +265,6 @@
 
        [(num 1) 2 3])
 
-
-    ;; even a type has the same structure it will not match
-    (comment
-      (deft false-fork [left right])
-      (sum (false-fork (num 1) (num 2))
-           (num 1)))
-
     ;; defm can have several arities
 
     (defm myfun
@@ -241,18 +280,38 @@
     (= :d (myfun 0 :foo :bar))
     (= :e (myfun 0 :foo :bar :baz))
 
+    ;; even varidic
+
+    (defm add
+      [x] x
+      [0 x] x
+      [x 0] x
+      [x y] (+ x y)
+      [x y & xs] (reduce add x (cons y xs)))
+
+    (= 3 (add 1 2))
+    (= 10 (add 1 2 3 4))
+
+    ;; you can put several variadic patterns
+
+    (defm add
+      [x y & nil] (+ x y)
+      [x y & xs] (apply add (add x y) xs))
+
+    (= 18 (add 3 4 5 )6)
+
     ;; defc
 
-    ;; defc define a new type, like deft
-    ;; but with a pattern matched constructor function
+    ;; defc defines a new type, like deft
+    ;; along with a pattern matched constructor function
 
-    (defc duo [a b] ;; this is the same as deft
+    (defc duo [a b] ;; this is the same as deft, a and b are the record fields
       ;; constructor cases
-      ;; each case return the fields values
-      [(num x) (num y)] [x y]
+      ;; each case returns the fields values
+      [(num x) (num y)] [x y] ;; here x and y will be bound to a and b fields
       [(fork x _) (fork _ y)] [x y]
       [x y] [x y]
-      ;; the constructor can have several arities as long as it returns the required fields
+      ;; the constructor can have several arities as long as it returns the required fields values
       [(num x) (num y) z] [(+ x y) z]) 
 
     (duo (num 1) (num 2)) ;;=> (duo 1 2)
@@ -260,13 +319,20 @@
     (duo :what :ever) ;=> (duo :what :ever)
     (duo (num 1) (num 2) 3) ;=> (duo 3 3)
 
-    ;; extra features
-
-    ;; maybe it could be nice to extend pattern matching with predicate syntax
-
-    (m/match [(num 1) :foobar]
-             [(num? x) y] [x y]) ;=> [(num 1) :foobar] x has been bound without destructuring
-
-    ;; for this we should marktype predicate with meta tag and implement match
-
   )
+
+(deft node [val sub])
+
+(defm ++
+  [(node v1 s1) (node v2 s2)] (node (++ v1 v2) (++ s1 s2))
+  [])
+
+(let [f (fm [(pos? x)] [:pos x]
+            [(neg? x)] [:neg x])]
+  [(f 1) (f -1)])
+
+(vector
+ (time (dotimes [_ 10000] (m/match [1] [(x :guard pos?)] x)))
+ (time (dotimes [_ 10000] (try (let [x 1] (cond (pos? x) x)) (catch Exception e nil))))
+ (time (dotimes [_ 10000] (let [x 1] (cond (pos? x) x)))))
+

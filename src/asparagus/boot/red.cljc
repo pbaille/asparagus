@@ -50,7 +50,7 @@
             §name_ (p/sym §name '_)
             def* (fn [n] `(def ~(p/sym n '*) (partial apply ~n)))
             def_ (fn [n] `(defn ~(p/sym n '_) [& xs#] (A #(~(p/sym n '*) % xs#))))]
-        `(do (defn ~name ~@body )
+        `(do (defn ~name ~@body)
              ~(def* name)
              ~(def_ name)
              ~(def* name_)
@@ -259,16 +259,21 @@
              [& body#]`(~'~nam ~'~'_ ~@body#))
            (defmacro ~defnam
              [name# & xs#]
-             `(def ~name# (~'~nam ~@xs#)))
-           (defmacro ~defnam_
-             [name# & xs#]
-             `(def ~name# (~'~nam_ ~@xs#))))))
+             `(do 
+                (def ~name# (~'~nam ~@xs#))
+                (def ~(p/sym name# '_) (~'~nam_ ~@xs#))
+                (def ~(p/sym name# '*) (partial apply (~'~nam ~@xs#)))
+                (def ~(p/sym name# '_*) (partial apply (~'~nam_ ~@xs#))))))))
 
     (decline-macros § A)
     (decline-macros §§ (> A A))
     (decline-macros §§§ (> A A A))
     (decline-macros guard
                     (fn [f] (§_ (and (or (f _) nil) _))))
+
+    (def§ negate)
+
+    
 
     (defn default [x] (§_ (or _ x)))
     (defn overide [x] (§ (constantly x)))
@@ -405,7 +410,7 @@
 
     (do :base
 
-        ;; red we deal a lot with functions taking only one argument
+        ;; In red we deal a lot with functions taking only one argument
         ;; so we have syntax for this
 
         (§ x (+ x x)) ;<=> (fn [x] (+ x x)
@@ -430,13 +435,6 @@
         ;; In red their is 2 main forms > (threading) < (forking)
         ;; that can be viewed as 'and and 'or somehow
 
-        
-
-        ;; expression can be viewed like a threading expression, data flows from left to right
-        ;; In red we create "functions" (represented by the Abastraction record) like this
-        ;; since red functions takes only one argument we can remove the vector around it
-
-
         ;; threading/and/>
         ;; take the initial value as first arguments and a serie of transformers
 
@@ -454,17 +452,17 @@
                (§ x (+ x x))
                (§ x (+ x x))))
 
+        ;; nil is a no op
 
-        ;; In this exemple 2 is in 'function position' so it act has is (returning itself)
-
-        (is 2
-            (> 1 2))
+        (is 1 (> 1 nil) (> nil 1))
 
         ;; constants
 
         (is 'iop (> 1 'iop))
         (is :iop (> 1 :iop))
         (is "Yo" (> 1 "Yo"))
+        (fn? (> 1 inc)) ;; functions are constants too
+        ;; function as value are disambiguated from function as transformation/computation
 
         ;; collections
 
@@ -484,18 +482,17 @@
         (is {:a 1 :b 4 :c 0}
             (> {:a 1 :b 2} {:c 0 :b 4}))
 
-        ;; functions can go into collections
+        ;; abstractions can go into collections and will be applied at its position in the received argument
+        ;; here the abstraction is under the :a key and will be given 1 (the :a value of the argument)
 
-        (is {:a 2 :b 1}
-            (> {:a 1 :b 1}
+        (is {:a 2 :b 0}
+            (> {:a 1 :b 0}
                {:a (§ x (+ x x))}))
+
+        ;; in vector it do the same but index based
 
         (is [1 0]
             (> [0 0] [(§ inc) nil]))
-
-        ;; nil is a no op
-
-        (is 1 (> 1 nil) (> nil 1))
 
         ;; nested collection
 
@@ -505,12 +502,14 @@
 
             {:a {:b [1 3 3],
                  :c '(1 2 3)}
-             :foo 'bar}))
+             :foo 'bar})
+
+        )
 
     (do :functions
 
-        ;; functions
-        ;; Has we just seen in the previous exemple, the § form can take a clojure function
+        ;; (abstraction / function as computation/transformation)
+        ;; as we just seen in the previous exemple, the § form can take a clojure function
 
         (is 2
             (> 1 (§ inc)))
@@ -520,24 +519,33 @@
         (is [-1 42 1]
             (> 0 (§ [(§ dec) 42 (§ inc)])))
 
+        ;; when an abstracted datastructure receives an argument
+        ;; it send it into all its deep leaves
+        ;; the is handy to decompose an algorythmn or to create structured data from something
+
         ;; nested
 
         (is {:ret {:a 2, :b [0 -1]}}
             (> {:a 1 :b [0 0]}
                (§ {:ret {:a (§ inc) :b [nil (§ dec)]}})))
 
-        ;; composed 
+        ;; composed
+
         (is (> 10 (> (§ {:dec §dec
                          :inc §inc})
                      (§ {:id nil
                          :neg (k (§ -))
                          })))
             {:dec 9, :inc 11,
-             :neg -10, :id 10}))
+             :neg -10, :id 10})
+
+    )
 
     (do :defs
 
         ;; def§
+
+        ;;we have shorthand for defining abstraction at the top level
 
         (def§ negate x (- x))
 
@@ -546,23 +554,8 @@
         (is -1
             (> 1 negate)))
 
-    (do :default-overside
-        ;; default and overide
-
-        (> nil (default 12))
-
-        (> '(1 2 3) (overide '(2 3 4)))
-
-        ;; 'default is also named 'else and 'overide 'k
-
-        (> nil
-           (§ {:a (k '(a b c))
-               :b (else {:a 2})
-               :c (>_ (else 0) §inc)}))
-
-        (> nil (§ 12)))
-
     (do :guards
+
         ;; guards and shortcircuiting
 
         ;; guards returns their argument on success or nil otherwise
@@ -574,6 +567,7 @@
            §dec         ;; neither
            )
 
+        ;; with fork
         (< 1
            (>_ (guard pos?) :pos)
            (guard neg?)
@@ -586,6 +580,26 @@
           (is :pos (f 1) (> 1 f))
           (is -1 (f -1) (> -1 f))
           (is :zero! (f 0) (> 0 f))))
+
+    (do :default-overide
+
+        ;; default and overide
+
+
+        ;; (default 1) returns an abstraction that will return 1 if given nil or its argument unchanged
+        (is 12 (> nil (default 12)))
+        (is 12 (> 12 (default 1)))
+
+        ;; (overide :foo) will ignore its given arg and always return :foo
+        (> '(1 2 3) (overide '(2 3 4)))
+
+        ;; 'default is also named 'else and 'overide 'k
+        (> nil
+           (§ {:a (k '(a b c))
+               :b (else {:a 2})
+               :c (>_ (else 0) §inc)}))
+
+        (> nil (§ 12)))
 
     (do :importing
         ;; importing
@@ -600,30 +614,42 @@
 
     (do :variations
 
-        ;; an applied version of >
+
+        ;; every defined function is red will automatically define several variations
+
+        ;; we will look at the variations of the > funtion
+        ;; an applied version
         ;; (is to > what  core/list* is to core/list)
+        ;; it takes a sequential value as last argument
         (is 3
             (>* 1 [§inc §inc])
             (>* 1 §inc [§inc])
             (> 1 §inc §inc))
 
         ;; underscore version
+        ;; (>_ §inc §inc) <-> #(> % §inc §inc)
+        ;; useful to compose functions together
         (is 3
             (> 1 §inc §inc)
             ((>_ §inc §inc) 1)
             ((>_* [§inc §inc]) 1))
 
-        ;; abstracted >
+        ;; abstracted
         ;; all n+1 arguments will be abstracted before being fed to >
         (is 3
             (§> 1 inc inc)
             (> 1 §inc §inc))
 
-        ;; variations
+        ;; combined variations
         (is 3
             (§>* 1 [inc inc])
             ((§>_ inc inc) 1)
             ((§>_* [inc inc]) 1))
+
+        ;; when defining an abstraction, all variations are automatically defined
+        (def§ negate x (- x))
+
+        
 
         )
 

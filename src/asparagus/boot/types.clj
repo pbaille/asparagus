@@ -294,7 +294,6 @@
      (isa #{:sym :key} 'a)
      ((isa :word) :pouet))
 
-    
     )
 
 (do :extension
@@ -380,91 +379,97 @@
 
 (comment
 
- ;; asparagus.boot.type is a thin and simple layer on top of clojure's class hierarchy
- ;; lets first inpect the registry, which old the state of the system
+  ;; asparagus.boot.type is a thin and simple layer on top of clojure's class hierarchy
+  ;; lets first inpect the registry, which old the state of the system
 
- '(clojure.pprint/pprint  @reg)
+  (clojure.pprint/pprint  (get-reg))
 
- ;; looks like:
- '{:prims
-   {:num [java.lang.Number],
-    :fun [clojure.lang.Fn],
-    :vec ...},
-   :groups
-   {:prim #{:num :fun :vec :key :sym :str :nil :seq :set :map},
+  ;; looks like:
+  '{:num #{java.lang.Number},
+    :fun #{clojure.lang.Fn},
+    :lst #{clojure.lang.ISeq},
+    :hash #{:set :map},
+    :vec #{clojure.lang.IPersistentVector},
+    :key #{clojure.lang.Keyword},
+    :coll #{:lst :vec :set :map},
+    :sym #{clojure.lang.Symbol},
+    :str #{java.lang.String},
+    :line #{:lst :vec},
+    :word #{:key :sym :str},
+    :nil #{nil},
+    :set #{clojure.lang.IPersistentSet},
     :atom #{:num :fun :key :sym :str},
-    :coll ...}}
+    :map
+    #{clojure.lang.PersistentArrayMap clojure.lang.PersistentHashMap},
+    :prim #{:num :fun :lst :vec :key :sym :str :nil :set :map}}
 
- ;; so we use keyword to represent what I will refer from now as 'typetags'
+  ;; so we use keyword to represent what I will refer from now as 'typetags'
 
- ;; it contains 2 keys
+  ;; in the registry the keys are the typetags of our system
+  ;; registry values are sets of classes and/or typetags which represent the members of the corresponding typetag
+  ;; any instance of one of its members belongs to the parent type
 
- ;; :prims which holds a map of typetag -> [class]
- ;; it simply stays that a typetag correspond to some classes
- ;; for example, the entry: :map -> [clojure.lang.PersistentArrayMap clojure.lang.PersistentHashMap]
- ;; stays that :map type tag correspond to the classes clojure.lang.PersistentArrayMap and clojure.lang.PersistentHashMap
- ;; a typetag can correspond to several classes
+  ;; you can extend the registry like this
 
- ;; :groups which holds a map of typetag -> #{typetag}
- ;; it lets you group several typetags together under another typetag
- ;; as an example, the entry: :coll -> #{:vec :seq :set :map}
- ;; stays that :vec, :seq, :set and :map belong to the :coll group
-
- ;; you can extend the registry like this
-
- ;; adding a primitive
- (prim+ :char                ;; the introduced typetag 
-        [java.lang.Character] ;; the classes that belongs to it
-        [:prim :atom]         ;; the groups it belongs to
+  ;; adding a typetag
+  (tag+ :char                  ;; the introduced typetag
+        [java.lang.Character]  ;; the classes|typetags that belongs to it
+        [:prim :atom]          ;; the typetags it belongs to
         )
 
- ;; enriching or declaring a group
- (group+ :hash      ;; the introduced or enriched typetag
-         [:map :set] ;; the members that belongs to it
-         )
+  ;; enriching or declaring a typetag
+  (tag+ :hash         ;; the introduced or enriched typetag
+        [:map :set]   ;; the members that belongs to it
+        )
 
- ;; inspection utilities
+  ;; there is also a way to create clojure record along with declaring a new typetag
+  (type+ :pouet ;; declare a new typetag :pouet for a the record Pouet (created)
+         [iop foo] ;; with two fields
+         [:hash] ;; belongs to the hash type 
+         (g1 [x] "g1foo")) ;; implement some generic function (see asparagus.boot.generics)
 
- (childs :hash) ;;=> (:set :map)
+  ;; inspection utilities
 
- (childof :set :hash) ;;=> :set
- (childof :vec :hash) ;;=> nil
+  (childs :hash) ;;=> (:set :map)
 
- ;; >= behaves like childof but is also true if the two given typetag are equals
- (<= :hash :hash) ;;=> :hash
- (<= :map :hash)  ;;=> :map
- (<= :vec :hash)  ;;=> nil
+  (childof :set :hash) ;;=> :set
+  (childof :vec :hash) ;;=> nil
 
- (parents :map) ;;=> (:prim :coll :hash)
+  ;; >= behaves like childof but is also true if the two given typetag are equals
+  (<= :hash :hash) ;;=> :hash
+  (<= :map :hash)  ;;=> :map
+  (<= :vec :hash)  ;;=> nil
 
- (parentof :hash :map) ;;=> :hash
- (parentof :hash :vec) ;;=> nil
+  (parents :map) ;;=> (:prim :coll :hash)
 
- ;; >= behaves like parentof but is also true if the two given typetag are equals
- (>= :hash :hash) ;;=> :hash
- (>= :hash :map)  ;;=> :hash
- (>= :hash :vec)  ;;=> nil
+  (parentof :hash :map) ;;=> :hash
+  (parentof :hash :vec) ;;=> nil
 
- ;; you can list all classes that belongs to a typetag
+  ;; >= behaves like parentof but is also true if the two given typetag are equals
+  (>= :hash :hash) ;;=> :hash
+  (>= :hash :map)  ;;=> :hash
+  (>= :hash :vec)  ;;=> nil
 
- (classes :word) ;;=> (clojure.lang.Keyword clojure.lang.Symbol java.lang.String)
+  ;; you can list all classes that belongs to a typetag
 
- (all-types)
- ;; #{:num :fun :hash :vec :key :coll :sym
- ;;   :str :line :word :nil :seq :set :atom
- ;;   :map :prim :char :any}
+  (classes :word) ;;=> (clojure.lang.Keyword clojure.lang.Symbol java.lang.String)
 
- ;; isa lets you test if something belongs to a typetag
- (isa :vec [])   ;;=> true
- (isa :vec "aze") ;;=> false
+  (all-types)
+  ;; #{:num :fun :hash :vec :key :coll :sym
+  ;;   :str :line :word :nil :seq :set :atom
+  ;;   :map :prim :char :any}
 
- ;; isa is kinf of slow, it is enough for non critical application (like compile time stuff)
- ;; if you want fast typechecks you can use those, for any registry update (prim+, group+) it is recomputed
+  ;; isa lets you test if something belongs to a typetag
+  (isa :vec [])   ;;=> true
+  (isa :vec "aze") ;;=> false
 
- (let [coll? (:coll guards)]
-   (coll? [1 2]) ;;=> [1 2]
-   (coll? "yo")  ;;=> nil
-   ))
+  ;; isa is kinf of slow, it is enough for non critical application (like compile time stuff)
+  ;; if you want fast typechecks you can use those, for any registry update (prim+, group+) it is recomputed
+
+  (let [coll? (:coll guards)]
+    (coll? [1 2]) ;;=> [1 2]
+    (coll? "yo")  ;;=> nil
+    ))
 
 
 

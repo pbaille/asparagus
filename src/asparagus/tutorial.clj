@@ -97,6 +97,11 @@
   (E+ mymodule.c.f 2
       foo.bar 'foob)
 
+  ;; is equivalent to
+
+  (E+ mymodule {c {f 2}}
+      foo {bar 'foob})
+
   ;; this definition does not overide our previous ones
 
   ;; foo is still defined
@@ -132,7 +137,8 @@
   ;; it could be defined with a map literal too
 
   (E+ stats
-      {;; for now i've hidden an important detail,
+      {
+       ;; for now i've hidden an important detail,
        ;; each identifier can have any number of what we will call attributes (or meta-keys, not really sure about the naming yet...)
        ;; attributes are stored and accessible using clojure keywords
        ;; for instance an identifier 'foo can have an attribute :size
@@ -166,7 +172,7 @@
   ;; any environment variable can have any number of those attributes
 
   (E+ stats
-      {:doc "a functions that takes some numbers and do some statistics on it"
+      {:doc "a function that takes some numbers and do some statistics on it"
        :version 0.1
        :tags #{:math}
        :foo :bar})
@@ -377,7 +383,7 @@
 
  (do
 
-  ;; constructor functions
+  ;; collection's constructor functions
   ;; compared to clojure, the API have been uniformized
 
   (is (vec 1 2 3) [1 2 3])
@@ -385,7 +391,7 @@
   (is (set 1 2 3) #{1 2 3})
   (is (map [:a 1] [:b 2]) {:a 1 :b 2})
 
-  ;; with sequential last argument (like core/list*)
+  ;; with sequential last argument (think of core/list*)
 
   (is (vec* (lst 1 2 3 4)) ;; with one argument it behaves like core.vec
       (vec* 1 2 [3 4])
@@ -403,8 +409,8 @@
       (map* [:a 1] [[:b 2] [:c 3] [:d 4]])
       {:a 1 :b 2 :c 3 :d 4})
 
-  ;; preds
-  ;; each collection have its pred, that returns the given collection on success or nil otherwise
+  ;; guards
+  ;; each collection have its guard, that returns the given collection on success or nil otherwise
 
   (is (vec? [1 2 3]) [1 2 3])
   (is (lst? (lst 1 2 3)) (lst 1 2 3))
@@ -485,8 +491,8 @@
   (is (+ :foo 'bar) :foobar)
   (is (+ "foo" 'bar :baz) "foobar:baz")
 
-  ;; on function it do composition
-  ;; (left to right, not like core.comp do)
+  ;; on function + do composition
+  ;; (left to right, unlike core/comp)
   (is ((+ inc inc (p mul 2)) 0)
       4)
 
@@ -494,7 +500,7 @@
 
   )
 
- ;; sip add one or several element into something
+ ;; sip, add one or several element into something
  ;; ---------------------------------------------
 
  (do
@@ -521,7 +527,7 @@
       6)
   )
 
- ;; 'pure returns the empty version of the given argument
+ ;; 'pure, returns the empty version of the given argument
  ;; ---------------------------------------------------
 
  (do
@@ -536,7 +542,7 @@
 
   )
 
- ;; pure? test for purity
+ ;; pure?, test for purity
  ;; ---------------------
 
  (do
@@ -568,9 +574,9 @@
      (is [a b . c b a] [1 2 3 4 2 1])
      ;; several spliced parts
      (is [a b . c . d] [1 2 3 4 5 6])
-     ;; shortcut (everything after the double dot is spliced)
+     ;; double dot is a shortcut (everything after it is spliced)
      (is [a b .. c d] [1 2 3 4 5 6])
-     ;; nested
+     ;; dots can be nested
      (is [a b [42 . d] . c]
          [1 2 [42 5 6] 3 4])
      ))
@@ -583,30 +589,26 @@
         b {:b 2}
         c [1 2 3]]
 
-    {:a 1
-     :c 3
-     . b}
-
     (is {:a 1
-           :c 3
-           . b} ;; we are merging b into the host map
+         :c 3
+         . b} ;; we are merging b into the host map
 
-          ;; if you want to splice several map into your literal use .. []
-          {:c 3
-           .. [a b]}
+        ;; if you want to splice several map into your literal use .. []
+        {:c 3
+         .. [a b]}
 
-          {:a 1 :b 2 :c 3})
+        {:a 1 :b 2 :c 3})
 
     ;; it can be nested
 
     (is
-       {:foo [0 . c 4] ;; a composite vector
-        :bar {:baz 1 . b}
-        . a}
+     {:foo [0 . c 4] ;; a composite vector
+      :bar {:baz 1 . b}
+      . a}
 
-       {:foo [0 1 2 3 4]
-        :bar {:baz 1 :b 2}
-        :a 1})
+     {:foo [0 1 2 3 4]
+      :bar {:baz 1 :b 2}
+      :a 1})
     ))
 
  ;; lists ----------
@@ -628,7 +630,7 @@
     ;; but unlike with apply it does not have to be the last argument that is a collection
     (is (add 1 . nums 5) 15)
 
-    ;; we have doubledot also
+    ;; doubledots also works in applications
     (is (add .. nums nums nums)
         (add . nums . nums . nums)
         27)
@@ -650,6 +652,7 @@
 
   ;; let form is similar to clojure's one but with extra capabilities
 
+   ;; basic usage (nothing new)
   (is (let [a 1] a)
       1)
 
@@ -702,6 +705,7 @@
               _b nil] ;; _b is bound to nil but this does not shorts
              a)
        1)
+
    )
 
   ;; !let (strict let) ------------------
@@ -754,7 +758,7 @@
         {:a 1 :b 2})
 
     ;; but it is more strict
-    ;; this does not pass because seed an pattern have different length 
+    ;; this does not pass because the seed and the pattern have different length 
     (isnt (let [[a b c] [1 2]] :ok)
           (let [[a b] [1 2 3]] :ok))
 
@@ -793,8 +797,6 @@
     (is (let [{:a aval . xs} {:a 1 :b 2 :c 3}] [aval xs])
         [1 {:b 2 :c 3}])
 
-    
-
     ;; as you may think, all binding modes are supported in destructuration bindings forms
     )
 
@@ -815,15 +817,15 @@
 
     (exp @E '(let [{:foo _foo} {}] (or foo "foo")))
 
-    ;; or keys let you define defult values for missing keys
+    ;; or keys let you define default values for missing keys
     (is "default"
         (?let [(ks-or foo "default") {}] foo))
 
     ;; you can use previous binding in further expressions
     (is "Bob Doe"
-        (?let [(ks-or name "John"
-                      firstname "Doe"
-                      fullname (+ name " " firstname)) ;; <- here
+        (?let [(ks-or firstname "John"
+                      lastname "Doe"
+                      fullname (+ firstname " " lastname)) ;; <- here
                {:name "Bob"}]
               fullname))
 
@@ -882,7 +884,7 @@
     ;; we can extend binding ops like this
 
     ;; as an exemple we are redefining the & operation
-    (E+ (bind.op+ ks [xs seed] ;; xs are the arguments passed to the operation, y is the expr we are binding
+    (E+ (bind.op+ ks [xs seed] ;; xs are the arguments passed to the operation, seed is the expr we are binding
                   (bind (zipmap ($ xs keyword) xs) seed)))
 
     ;; when this operation is used
@@ -917,7 +919,10 @@
    (is 1
 
        (?let [(pos? a) 1] ;; if 1 is pos then the return value of (pos? 1) which is 1 is bound to the symbol a
-               a) ;;=> 1
+             a) ;;=> 1
+
+       ;; we could have bound the input of the guard directly to a,
+       ;; but binding the return value of the guard is letting you use guards as coercing functions, which seems nice
 
        ;; is equivalent to
        (?let [a 1
@@ -925,6 +930,16 @@
              a))
 
    ;; this syntax is really making sense whith guards that returns their first argument unchanged in case of success
+   ;; this can be a bit confusing I guess, but wait a minute
+   ;; in asparagus there is a semantic convention that first argument to any function is "the thing the function's works on"
+   ;; in OO terms the first argument is the object ('this' or 'self')
+   ;; other arguments are just parametrizing the operation
+   ;; I think that oserving this convention is payful because it ease function composition
+   ;; as a counterexample in Clojure we often have mix -> and ->> because some functions are "working on" their first argument (as in asparagus)
+   ;; and others (map,filter etc..) on the last, it result in less clear code i think
+   ;; with this in mind, the fact that we bound the return value of the guard
+   ;; to the symbol that is in first argument position ('object position' we could say) makes a little more sense I guess
+   ;; disclaimer: someone that I trust has said to me that in the "data world" the convention is that the flowing data is the last argument, so... :)
 
    (is 4
        (?let [(gt a 3) 4] ;; guards can have more than one arg
@@ -1197,7 +1212,7 @@
       [(:num x) . xs] :two) ;; is ok
 
   ;; all previous variations are implemented: !cf, ?cf, cfu, !cfu
-  ;; maybe we should have considered cf1...
+  ;; maybe I should have considered cf1...
 
   ;; You may ask yourself what is the price for this expressivity
   ;; i've worked hard on compiling those forms into performant code,
@@ -1258,6 +1273,14 @@
    str? :hey
    (:sym x) x
    :nope)
+
+ (let [t (case_
+          num? _
+          str? _
+          :pouet)]
+   [(t 1)
+    (t "iop")
+    (t :iop)])
 
  )
 
@@ -1353,7 +1376,7 @@
 
   ;; map ($)
 
-  ;; like many asparagus functions, map is taking the object as first argument
+  ;; following the first argument convention we mentioned earlier,  map is taking the object as first argument
   (is ($ [0 1 2] inc)
       [1 2 3])
 
@@ -1435,9 +1458,9 @@
 
   ;; red
   ;; like core/reduce but with different argument order and variadic arity
-  ;; red takes the 'seed as first argument
+  ;; red takes the 'seed as first argument (because it is the data we are working on, we are following the convention)
   ;; a reducing function as second argument
-  ;; and as many iterables as you like (here one)
+  ;; and (unlike clojure.core/reduce) as many iterables as you like (here one)
   (is (red #{} sip [1 2 3 3 4 2 1 5 6 4 5]) ;; 'sip is asparagus conj(ish) function
       #{1 4 6 3 2 5})
 
@@ -1635,7 +1658,7 @@
   (let [f (argumentation assoc :a 1)]
     (f {}))
 
-  ;; many of the asparagus functions that follow this convention, have their subjectified version with the same name suffixed with _
+  ;; many of the asparagus functions that follow this convention, have their argumentation version with the same name suffixed with _
   ;; this is handy, for instance, to create chains of 1 argument functions
   (is (> (range 10) (drop_ 3) (dropend_ 2)) ;; will thread '(range 10) thru 2 functions, the semantics is analog to core/-> but it is a function
       (range 3 8))
@@ -1680,7 +1703,7 @@
 
   (isnt ($? {:a 1 :b nil}))
 
-  ;; ?$ is a composition of $ and ?$
+  ;; ?$ is a composition of $ and $?
   ;; it can be viewed as a map operation that succed if all values of the resulting collection are non nil
 
   (is (?$ [2 3 4 5] num? inc (gt_ 2))
@@ -1697,7 +1720,7 @@
   (isnt (?zip #(pos? (add %1 %2)) [1 2 3] [1 2 -3]))
 
   ;; ?deep
-  ;; a deep variant of $?
+  ;; a deep variant of ?$
   ;; check if all nested values are non nil
   (check
    (nil? (?deep {:a {:b 1 :c [1 2 nil]}}))
@@ -1876,7 +1899,7 @@
   ;; any invocable can serve as a leaf
   ;; don't know if you remember, but in asparagus almost everything is invocable,
   ;; in particular constant values like 42 or :foo return themselves
-  ;; to demonstrate that df can handle any invocable we will use some of those
+  ;; to demonstrate that df can handle any invocable, we will use some of those
   (let [f (df [inc dec :foo 42])]
     (is (f 1)
         [2 0 :foo 42]))
@@ -2228,6 +2251,8 @@
   ;; this technique is used at several place in asparagus source (feel free to look at it)
   ;; contrary to macros and substitutions, updates are recursivelly executed,
   ;; so an update functions can return an expression which is another update call, which will be further processed
+
+  ;; all clojure's macros that emits def forms falls into this category
   )
 
  ;; effects ----------------------------------
@@ -2326,7 +2351,7 @@
   ;; extension
   ;; here we will define an arity2 implementation for vectors
   ;; with clojure protocols, if we extend a protocol to our type, we have to implement all arities
-  ;; in asparagus this is not nescessary
+  ;; in asparagus this is not mandatory
 
   (E+ (my-generic2.extend
        [a b]
@@ -2484,6 +2509,11 @@
    (throws (:bark obj))
 
    ::ok
+
+   ;; this makes me think that we would like to be able to use this semantics in patterns maybe ?...
+   ;; the pattern (:quak x) match on anything that :quak
+   ;; the keyword syntax in pattern is already taken by typetags... but we will think about it
+   ;; maybe we should use exclusively type-guards instead e.g (mytype? x) ......
 
    )
 
