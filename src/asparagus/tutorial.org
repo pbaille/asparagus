@@ -10,7 +10,7 @@ It is far from being production ready, but I hope that it can be interesting as 
 I'm an autodidact with no proper computer science degree, my approch to programming is quite empirical.
 First of all I'm seeking for feedback, advices, discussions and even people to work with (and I'm also searching for a real job!)
 
-For now the main goals are:
+For now the main goals are: 
 
 - flexibility
 - extensibility
@@ -614,10 +614,6 @@ Like =sip= and =+=, =pure= is a generic operation that can be implemented by use
       b {:b 2}
       c [1 2 3]]
 
-  {:a 1
-   :c 3
-   . b}
-
   (is {:a 1
        :c 3
        . b} ;; we are merging b into the host map
@@ -668,8 +664,474 @@ Like =sip= and =+=, =pure= is a generic operation that can be implemented by use
 
 * Binding Things
 
+Asparagus has a whole family of let like binding forms.
+But unlike clojure's one, the binding behavior can be extended by the user in several ways.
+
 ** Let
+
+Basic usage (nothing new)
+
+#+begin_src clojure
+(is (let [a 1] a)
+    1)
+
+(is (let [a 1 b 2] (add a b))
+    3)
+
+;; refer earlier binding
+(is (let [a 1 b a] (add a b))
+    2)
+#+end_src
+
+Binding symbols can be prepended by special character to indicate special behavior
+
+*** Shortcircuiting bindings
+
+If a binding symbol is prefixed by ?,
+It has to bind to a not nil value else the whole let form is shortcircuited and return nil
+
+#+begin_src clojure
+(isnt (let [?a nil ;; this binding fail, therefore the next line will never be evaluated
+               b (error "never evaluated")] 42))
+#+end_src
+
+*** Strict bindings
+
+Binding symbol's prepended by ! must bind to non nil value, else an error is thrown.
+
+#+begin_src clojure
+(is :catched
+     (try (let [!a (pos? -1)] :never)
+          (catch Exception _ :catched)))
+#+end_src
+
+Those three modes of binding (regular (non prefixed symbols), shortcircuited, strict) can be combined inside let forms.
+Resulting, i think, in much expressivity
+  
 ** Let variants
-** Destruction 
-** Cased Let
+
+*** =?let= (shortcircuiting let)
+
+Is behaving like =let=, but the ? prefix is implicit to all binding symbols.
+
+#+begin_src clojure
+(?let [a 1 b 2] (add a b))
+#+end_src
+
+Is equivalent to
+
+#+begin_src clojure
+(let [?a 1 ?b 2] (add a b))
+#+end_src
+
+We can use strict bindings in a =?let= form, it will behave as in =let=.
+
+#+begin_src clojure
+(is :catched
+    (try (?let [a 1
+                !b (pos? -1)] (add a b))
+         (catch Exception _ :catched)))
+#+end_src
+
+If we want to allow regular bindings (as normal symbols in a classic =let=)
+We use the _ prefix:
+
+#+begin_src clojure
+(is (?let [a 1
+           _b nil] ;; _b is bound to nil but this does not shorts
+          a)
+    1)
+#+end_src
+
+*** =!let= (strict let)
+
+Is like =?let= but with implicit prefix !, it support ? and _ prefixes
+
+#+begin_src clojure
+(is :catched
+      (try (!let [a nil] :never)
+           (catch Exception _ :catched)))
+#+end_src
+
+*** =lut=
+
+In a unified let, all symbols that appears several times have to bind to the same value (equal values)
+otherwise it will shortcircuits
+
+#+begin_src clojure
+(is (lut [a 1 a (dec 2)] :success)
+    :success)
+
+(isnt
+ (lut [a 1
+       a 2] ;; this will shorts because a is already bound to 1
+      (error "never thrown")))
+#+end_src
+
+*** =!lut= (unified strict let)
+
+#+begin_src clojure
+(is :catched
+      (try (!lut [a 1
+                  a 2] ;; this will throw because a is already bound to 1
+                 :never)
+           (catch Exception _ :catched)))
+#+end_src
+
+** Destructuration 
+
+*** Literals
+
+
+Like clojure's let we support destructuration
+But unlike clojure, destructuration is an extensible mecanism
+The user can define its own destructuration special forms
+
+**** Sequential patterns
+
+Using a vector in pattern position do the same as clojure (at first glance)
+
+#+begin_src clojure
+(is (let [[a b] [1 2]] {:a a :b b})
+    {:a 1 :b 2})
+#+end_src
+
+But it is more strict
+This does not pass because the seed and the pattern have different length 
+
+#+begin_src clojure
+(isnt (let [[a b c] [1 2]] :ok)
+          (let [[a b] [1 2 3]] :ok))
+#+end_src
+
+Rest pattern
+
+#+begin_src clojure
+(is (let [[x . xs] (range 5)] [x xs])
+    [0 (range 1 5)])
+#+end_src
+
+In clojure the following is valid
+  
+#+begin_src clojure
+(clojure.core/let [[a b] [1 2 3]] {:a a :b b}) ;; {:a 1 :b 2}
+#+end_src
+ 
+The equivalent in asparagus should be written like this
+   
+#+begin_src clojure
+(is (let [[a b . _] (range 10)] {:a a :b b}) ;; with the . _ we allow extra elements
+    {:a 0 :b 1})
+;; This way lambda argument patterns and let patterns behaves the same, which seems like a good thing
+#+end_src 
+
+Preserves collection type
+
+#+begin_src clojure
+(is (let [[x . xs] (vec 1 2 3)] [x xs])
+    [1 [2 3]]) ;; in clojure [2 3] would be a seq
+#+end_src
+
+Post rest pattern
+In clojure the rest pattern has to be the last binding, here we can bind the last element easily
+ 
+#+begin_src clojure
+(is (let [[x . xs lastx] (range 6)] [x xs lastx])
+    [0 (range 1 5) 5])
+
+;; (we could also have bound several things after the rest pattern)
+(is (let [[x . xs y1 y2 y3] (range 6)] [x xs y1 y2 y3])
+    [0 (lst 1 2) 3 4 5])
+#+end_src
+
+
+**** Map patterns
+
+#+begin_src clojure
+(is (let [{:a aval :b bval} {:a 1 :b 2 :c 3}] [aval bval])
+    [1 2])
+#+end_src
+   
+In clojure the same is acheived like this (I don't really understand why)
+ 
+#+begin_src clojure
+(c/let [{aval :a bval :b} {:a 1 :b 2 :c 3}] [aval bval])
+#+end_src   
+
+Maps have rest patterns to
+
+#+begin_src clojure
+(is (let [{:a aval . xs} {:a 1 :b 2 :c 3}] [aval xs])
+    [1 {:b 2 :c 3}])
+#+end_src   
+
+As you may think, all binding modes are supported in destructuration bindings forms
+    
+*** Operators 
+
+=ks= is a builtin binding operator
+it behaves like clojure's :keys
+
+#+begin_src clojure
+(is (let [(ks a b) {:a 1 :b 2 :c 3}] (add a b))
+    3)
+#+end_src
+
+In a =?let= form it shorts on nil keys
+
+#+begin_src clojure
+(isnt (?let [(ks a) {}] (error "never"))) 
+#+end_src
+
+=opt-ks= for keys that may not be here
+
+#+begin_src clojure
+(is "foo"
+    (?let [(ks-opt foo) {:foo "foo"}] foo))
+
+(exp @E '(let [{:foo _foo} {}] (or foo "foo")))
+#+end_src
+
+=ks-or= let you define default values for missing keys
+
+#+begin_src clojure
+(is "default"
+    (?let [(ks-or foo "default") {}] foo))
+;; you can use previous binding in further expressions
+(is "Bob Doe"
+    (?let [(ks-or firstname "John"
+                  lastname "Doe"
+                  fullname (+ firstname " " lastname)) ;; <- here
+           {:name "Bob"}]
+          fullname))
+#+end_src
+
+=&= (parrallel bindings)
+several patterns can be bound to the same seed
+something that i've sometimes missed in clojure (lightly)
+
+#+begin_src clojure
+(is (?let [(& mymap
+              (ks a b)
+              (ks-opt c)
+              (ks-or d 42))
+           {:a 1 :b 2 :c 3}]
+          [mymap a b c d])
+    [{:a 1 :b 2 :c 3} 1 2 3 42])
+#+end_src
+
+=cons=
+
+#+begin_src clojure
+(is (let [(cons a b) [1 2 3]] [a b])
+    [1 [2 3]])
+#+end_src
+
+=quote=
+
+#+begin_src clojure
+(is (let ['iop 'iop] :ok)
+    :ok)
+(is (let [['foo :bar . xs] '[foo :bar 1 2 3]] xs)
+    [1 2 3])
+(is :ok
+    (let ['(add 1 2) (lst 'add 1 2)] :ok))
+#+end_src
+
+Some others builtin bindings exists, see source.
+
+**** Defining new bindings operators
+
+#+begin_src clojure
+;; we can extend binding ops like this
+
+;; as an exemple we are redefining the & operation
+(E+ (bind.op+ ks [xs seed] ;; xs are the arguments passed to the operation, seed is the expr we are binding
+              (bind (zipmap ($ xs keyword) xs) seed)))
+
+;; when this operation is used
+'(let [(ks a b) x] ...)
+
+;; at compile time the implementation is called with args: '(a b) and seed: 'x
+;; =>
+'(bind {:a 'a :b 'b} 'x) ;; we are using the map impl of bind
+;; =>
+'[G__244129 x
+  G__244128 (do.guards.builtins.map? G__244129)
+  a (clojure.core/get G__244129 :a)
+  b (clojure.core/get G__244129 :b)]
+
+;; finally it is substituted in the original form
+'(let [G__244129 x
+       G__244128 (do.guards.builtins.map? G__244129)
+       a (clojure.core/get G__244129 :a)
+       b (clojure.core/get G__244129 :b)]
+   ...)
+#+end_src
+
+*** Special Bindings
+
+when an sexpr in found in binding position (left side of let bindings)
+if it is not a binding operator call (like we've just seen =ks= and =&= for instance)
+it can be what we call a =guard pattern=
+
+**** Guard pattern
+
+a =guard pattern= is an expression with a binding symbol as first argument
+
+#+begin_src clojure
+(is 1
+
+    (?let [(pos? a) 1] ;; if 1 is pos then the return value of (pos? 1) which is 1 is bound to the symbol a
+          a) ;;=> 1
+
+    ;; we could have bound the input of the guard directly to a,
+    ;; but binding the return value of the guard is letting you use guards as coercing functions, which seems nice
+
+    ;; is equivalent to
+    (?let [a 1
+           a (pos? a)]
+          a))
+#+end_src
+
+this syntax is really making sense whith guards that returns their first argument unchanged in case of success
+this can be a bit confusing I guess, but wait a minute
+in asparagus there is a semantic convention that first argument to any function is "the thing the function's works on"
+in OO terms the first argument is the object ('this' or 'self')
+other arguments are just parametrizing the operation
+I think that oserving this convention is payful because it ease function composition
+as a counterexample in Clojure we often have mix -> and ->> because some functions are "working on" their first argument (as in asparagus)
+and others (map,filter etc..) on the last, it result in less clear code i think
+with this in mind, the fact that we bound the return value of the guard
+to the symbol that is in first argument position ('object position' we could say) makes a little more sense I guess
+disclaimer: someone that I trust has said to me that in the "data world" the convention is that the flowing data is the last argument, so... :)
+
+#+begin_src clojure
+(is 4
+    (?let [(gt a 3) 4] ;; guards can have more than one arg
+          a))
+
+(isnt
+ (?let [(gt a 3) 2]              ;; shorts
+       (error "never touched")))
+#+end_src
+
+**** Type guards
+
+An sexpr starting with a type keyword (see asparagus.boot.types) indicates a type guard pattern
+
+#+begin_src clojure
+(is [1 2 3]
+    (?let [(:vec v) [1 2 3]]
+          v))
+
+(isnt
+ (?let [(:seq v) [1 2 3]]
+       (error "never"))) ;;=> nil
+#+end_src
+
+*** Value Patterns
+
+Any value can be used in pattern position,
+
+#+begin_src clojure
+(is :ok (let [a (inc 2)
+              3 a] ;; 3 is in binding position, therefore the seed (a) is tested for equality against it, and it shorts if it fails
+          :ok))
+
+(isnt
+ (let [a (inc 2)
+       4 a]
+   (error "never")))
+
+;; some tests
+
+(is :ok
+    (let [42 42] :ok)
+    (?let [42 42] :ok)
+    (!let [42 42] :ok))
+
+(isnt 
+ (let [42 43] :ok)
+ (?let [42 43] :ok))
+
+(!! (throws (!let [42 43] :ok)))
+#+end_src
+
+** =clet= (Cased Let) 
+
+=clet= is like a cascade =?let= (shrotcircuiting let) forms
+it can be be compared to cond-let but is more powerful
+
+#+begin_src clojure
+(is (clet [x (pos? -1)] {:pos x}      ;first case
+          [x (neg? -1)] {:neg x}      ;second case
+          )
+    {:neg -1})
+#+end_src
+
+Each binding block can have several bindings
+
+#+begin_src clojure
+(let [f (fn [seed]
+          (clet [x (num? seed) x++ (inc x)] x++
+                [x (str? seed) xbang (+ x "!")] xbang))]
+  (is 2 (f 1))
+  (is "yo!" (f "yo"))
+  (isnt (f :pop)))
+#+end_src
+
+Default case 
+
+#+begin_src clojure 
+(is (clet [x (pos? 0) n (error "never touched")] :pos
+          [x (neg? 0) n (error "never touched")] :neg
+          :nomatch)
+    :nomatch)
+#+end_src
+
+Strict version
+
+#+begin_src clojure 
+(throws
+ (!clet [x (pos? 0)] :pos
+        [x (neg? 0)] :neg))
+#+end_src
+
+Unified version 
+#+begin_src clojure
+(let [f (fn [seed]
+          (clut [[a a] seed] :eq
+                [[a b] seed] :neq))]
+  (is :eq (f [1 1]))
+  (is :neq (f [1 2])))
+#+end_src
+
+Unified Version 
+
+#+begin_src clojure 
+(let [x [:tup [1 2]]]
+  (throws
+   (!clut [[:wat a] x] :nop
+          [(:vec vx) x [:tup [a a]] vx] :yep)))
+
+(let [p [:point 0 2]]
+  (clet [[:point x 0] p] :y0
+        [[:point 0 y] p] :x0
+        [[:point x y] p] [x y]))
+#+end_src
+
 ** Loop
+
+let can be given a name (here :rec) in order to loop
+
+#+begin_src clojure
+(is (let :rec [ret 0 [x . xs] (range 10)]
+            (if (pure? xs) ret
+                (rec (add ret x) xs)))
+       36)
+#+end_src
+
+
+
+
