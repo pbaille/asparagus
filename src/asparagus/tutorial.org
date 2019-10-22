@@ -34,7 +34,7 @@ You should start a REPL and load asparagus.core.
 (in-ns 'asparagus.core)
 #+end_src
 
-* the environment
+* Environment
 
 The asparagus environment is holded by the `asparagus.core/E` atom
 
@@ -487,7 +487,7 @@ As for collections, we use guards instead of preds
     "mystr_ab")
 #+end_src
 
-* Joining Things
+* Joining
 
 ** joining things together with =+=
 
@@ -584,7 +584,7 @@ Like =sip= and =+=, =pure= is a generic operation that can be implemented by use
 (isnt (pure? {:a 1}))
 #+end_src
 
-* Composing Things
+* Composing
 
 ** Vectors 
 
@@ -662,7 +662,7 @@ Like =sip= and =+=, =pure= is a generic operation that can be implemented by use
   )
 #+end_src
 
-* Binding Things
+* Binding
 
 Asparagus has a whole family of let like binding forms.
 But unlike clojure's one, the binding behavior can be extended by the user in several ways.
@@ -994,23 +994,21 @@ a =guard pattern= is an expression with a binding symbol as first argument
           a))
 #+end_src
 
-This syntax is mainly making sense with guards that returns their first argument unchanged in case of success.
-This can be a bit confusing I guess, but wait a minute.
+This can be a bit confusing I guess, but wait a minute. This syntax is firstly making sense with guards that returns their first argument unchanged in case of success.
+
 In asparagus there is a semantic convention that first argument to any function is "the thing the function is working on".
 
-In OO terms the first argument is the object ('this' or 'self').
+In OO terms the first argument is the object ('this' or 'self'). Other arguments are just parametrizing the operation.
 
-Other arguments are just parametrizing the operation.
-
-I think that oserving this convention is payful because it ease function composition.
+I think that observing this convention is payful because it ease function composition.
 
 As a counterexample in Clojure we often have mix -> and ->> because some functions are "working on" their first argument (as in asparagus)  
 and others (map,filter etc..) on the last, it result in less clear code i think.
   
 With this in mind, the fact that we bound the return value of the guard to the symbol that is in first argument position ('object position' we could say) makes a little more sense I guess.
+And last but not least, by behaving this way, guard patterns can serve as a way to coerce input data (seed) 
   
 Disclaimer: someone that I trust has said to me that in the "data world" the convention is that the flowing data is the last argument, so... :)  
-
 
 #+begin_src clojure
 (is 4
@@ -1140,4 +1138,1105 @@ let can be given a name (here :rec) in order to loop
 
 
 
+** =case= 
 
+
+#+begin_src clojure
+(let [x (range 12)]
+  ;; try those values:  42 "iop" :pouet
+  (case x
+    (num? x) {:num x}         ;; first clause, x is a number
+    (str? x) {:str x}         ;; second clause, x is a string
+    [x . xs] {:car x :cdr xs} ;; third clause, x is sequential
+    :nomatch))
+#+end_src
+
+=case= has its unified variant =casu=
+
+
+#+begin_src clojure
+(let [t (f [x]
+           (casu x
+                 [:point x 0] :y0
+                 [:point 0 y] :x0
+                 [:point (:num x) (:num x)] :twin
+                 [:point (:num x) (:num y)] [x y]
+                 :pouet))]
+  (is :y0 (t [:point 1 0]))
+  (is :x0 (t [:point 0 1]))
+  (is :twin (t [:point 1 1]))
+  (is [1 2] (t [:point 1 2]))
+  (is :pouet (t [:point 1 "io"])))
+#+end_src
+
+There is also =!case= and =!casu= that throws if nothing match the input.
+
+#+begin_src clojure
+(let [x 1]
+  (throws
+   (!case x
+          (str? x) :str
+          (vec? x) :vec)))
+#+end_src
+
+With the help of =case_= we can rewrite the first exemple more concisely.
+
+#+begin_src clojure
+(let [t (case_
+         [:point x 0] :y0
+         [:point 0 y] :x0
+         [:point (:num x) (:num y)] [x y]
+         :pouet)]
+  (and
+   (eq :y0 (t [:point 1 0]))
+   (eq :x0 (t [:point 0 1]))
+   (eq [1 2] (t [:point 1 2]))
+   (eq :pouet (t [:point 1 "io"]))))
+#+end_src
+
+We can put guard symbols in pattern position.
+
+#+begin_src clojure
+(case :zer ;42 ;'zer ;"iop"
+  num? :num ;; is equivalent to: (num? x) :num
+  str? :hey
+  (:sym x) x
+  :nope)
+
+(let [t (case_
+         num? _
+         str? _
+         :pouet)]
+  [(t 1)
+   (t "iop")
+   (t :iop)])
+#+end_src
+
+* Lambdas 
+
+** =f= (macro)
+
+All the binding forms that we have seen so far have their lambda equivalent.
+
+Regular monoarity lambda:
+
+#+begin_src clojure
+(let [fun (f [a b] (add a b))]
+  (is 3 (fun 1 2)))
+#+end_src
+
+Variadic syntax:
+
+#+begin_src clojure
+(let [fun (f [x . xs] (add x . xs))]
+  (is 10 (fun 1 2 3 4)))
+#+end_src
+
+All binding patterns are available:
+
+#+begin_src clojure
+(let [fun (f [x (ks a b)]
+             (+ x {:a a :b b}))]
+  (is (fun {:foo 1 :bar 2}
+           {:a 1 :b 2 :c 3})
+      {:foo 1, :bar 2, :a 1, :b 2}))
+
+(let [fun (f [(& x [x1 . xs])
+              (& y [y1 . ys])]
+             {:x x :y y :cars [x1 y1] :cdrs [xs ys]})]
+  (is
+   (fun [1 2 3 4] [7 8 9])
+   {:x [1 2 3 4],
+    :y [7 8 9],
+    :cars [1 7],
+    :cdrs [[2 3 4] [8 9]]}))
+#+end_src
+
+Like =let=, different binding modes are available via prefix syntax.
+
+#+begin_src clojure
+(let [fun (f [!a ?b] (lst a b))] ;; a is mandatory, and b can short the execution
+  (is (fun 1 2) (lst 1 2))
+  (isnt (fun 1 nil))
+  (throws (fun nil 2)))
+#+end_src
+
+For recursion, like =clojure/fn= we can give a name to a lambda (we use keyword litteral to indicate a name)
+
+#+begin_src clojure
+(let [g (f :mylambda [x . xs]
+           (if-not (c/seq xs) x
+                   (add x (mylambda . xs))))]
+  (is (g 1 2 3 4) 10))
+#+end_src
+
+The same can be acheive with =rec=
+
+#+begin_src clojure
+(let [g (f [x . xs]
+           (if-not (c/seq xs) x
+                   (add x (rec . xs))))]
+  (is (g 1 2 3 4) 10))
+#+end_src
+
+Like in scheme, binding pattern can be a simple symbol
+this is the reason why we need keyword litteral to name lambdas (to disambiguate)
+
+#+begin_src clojure
+(let [g (f xs (add . xs))]
+  (is (g  1 2 3 4) 10))
+#+end_src
+
+** Variants 
+
+Like let, =f= has its binding mode variants, =?f=, =!f=
+
+#+begin_src clojure
+(let [fun (?f [(vec? a) (num? b)] ;; this is guard patterns (see previous section)
+              (sip a b))]
+  ;; the binding succeed
+  (is (fun [1 2 3] 4) [1 2 3 4])
+  ;; first arg is not a vector so it shorts
+  (isnt (fun 1 2)))
+#+end_src
+
+And also unified variants: =fu= and =!fu=
+
+#+begin_src clojure
+(let [fun (fu [a b a] :ok)]
+  (is (fun 1 0 1) :ok)
+  (isnt (fun 1 2 3)))
+
+(let [fun (!fu [a a] :ok)]
+  (is (fun 1 1) :ok)
+  (throws (fun 1 2)))
+#+end_src
+
+** Syntactic sugar
+
+*** =f1= (arity 1 syntax)
+
+Functions that takes one argument are so common that it deserves, i think, some syntactic sugar.
+
+#+begin_src clojure
+(let [double (f1 a (add a a))]
+  (is (double 2) 4))
+#+end_src
+
+You can use any binding pattern:
+
+#+begin_src clojure
+(let [fun (f1 (:vec a) (+ a a))] ;; we use a type guard (check if the given arg is a vector)
+  (is (fun [1 2 3]) [1 2 3 1 2 3])
+  (isnt (fun 42)))
+#+end_src
+
+It has all the common variations: =!f1= =?f1= =!fu1= =fu1= that do what you should expect (if you have not skip previous parts of this file)
+
+We also have f_ that is a bit more concise than f1, if you don't need destructuring.
+
+#+begin_src clojure
+(let [double (f_ (add _ _))]
+  (is (double 2) 4))
+#+end_src
+
+It also have common variations, f_, ?f_ , !f_ (unification variants are useless here)
+
+** =cf= (case lambda)
+
+The =cf= macro is a bit like clojure's =fn=, it let's you define polyarity functions, but it benefits from all asparagus binding capabilities.
+
+#+begin_src clojure
+(let [fun (cf [a] 1
+              [a b] 2
+              [(:num a) b c . xs] :var1
+              [a b c . d] :var2)]
+  (is (fun "iop") 1)
+  (is (fun 1 2) 2)
+  (is (fun 1 2 3 4 5) :var1)
+  (is (fun "iop" 1 2 3) :var2))
+#+end_src
+
+It can have several implementaion with the same arity.
+
+#+begin_src clojure
+(let [fun (cf [(num? a)] {:num a}
+              [(str? a)] {:str a})]
+  (is (fun 1) {:num 1})
+  (is (fun "aze") {:str "aze"}))
+#+end_src
+
+Note that variadic cases must have the same length.
+
+#+begin_src clojure
+'(cf [x . xs] :one
+     [x y . zs] :two) ;;compile time error
+
+(cf [(:vec x) . xs] :one
+    [(:num x) . xs] :two) ;; is ok
+#+end_src
+
+all previous variations are implemented: =!cf=, =?cf=, =cfu=, =!cfu=. maybe I should have considered =cf1=...
+
+You may ask yourself what is the price for this expressivity. I've worked hard on compiling those forms into performant code, 
+There is certainly a price for the shortcircuit, strict and unified binding modes, but probably not as high as you may expect.
+Sometimes it is close to bare clojure's perfs.
+
+
+
+* Iterables
+** Basic
+
+=car= (is like Lisp's car or clojure.core/first)
+#+begin_src clojure
+(is 1 (car (lst 1 2)))
+(is 1 (car [1 2]))
+(is [:a 1] (car {:a 1 :b 2}))
+#+end_src
+
+=cdr= (is like clojure.core/rest but preserve collection type)
+#+begin_src clojure
+(is (cdr [1 2 3]) [2 3])
+(is (cdr (lst 1 2 3)) (lst 2 3))
+(is (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3}) ;; on map it does not make much sense but...
+#+end_src
+
+=last=
+#+begin_src clojure
+(is 2 (last (lst 1 2)))
+(is 2 (last [1 2]))
+(is [:b 2] (last {:a 1 :b 2})) ;; same here...
+#+end_src
+
+=butlast= (is like clojure.core/butlast but preserve collection type)
+#+begin_src clojure
+(is (cdr [1 2 3]) [2 3])
+(is (cdr (lst 1 2 3)) (lst 2 3))
+(is (cdr {:a 1 :b 2 :c 3}) {:b 2 :c 3})
+#+end_src
+
+=take= (like clojure.core/take with arguments reversed and preserving collection type)
+#+begin_src clojure
+(is (take (lst 1 2 3) 2) (lst 1 2))
+(is (take [1 2 3] 2) [1 2])
+(is (take {:a 1 :b 2 :c 3} 2) {:a 1 :b 2})
+#+end_src
+
+=drop=
+#+begin_src clojure
+(is (drop (lst 1 2 3) 2) (lst 3))
+(is (drop [1 2 3] 2) [3])
+(is (drop {:a 1 :b 2 :c 3} 2) {:c 3})
+#+end_src
+
+=takend=
+#+begin_src clojure
+(is (takend (lst 1 2 3) 2) (lst 2 3))
+(is (takend [1 2 3] 2) [2 3])
+(is (takend {:a 1 :b 2 :c 3} 2) {:b 2 :c 3})
+#+end_src
+
+=dropend=
+#+begin_src clojure
+(is (dropend (lst 1 2 3) 2) (lst 1))
+(is (dropend [1 2 3] 2) [1])
+(is (dropend {:a 1 :b 2 :c 3} 2) {:a 1})
+#+end_src
+
+=rev=
+#+begin_src clojure
+(is (rev [1 2 3]) [3 2 1])
+(is (rev (lst 1 2 3)) (lst 3 2 1))
+#+end_src
+
+=section= (select a subsection of a sequantial data structure)
+#+begin_src clojure
+(is (section [1 2 3 4 5 6] 2 5) [3 4 5])
+(is (section (lst 1 2 3 4 5 6) 1 5) (lst 2 3 4 5))
+#+end_src
+
+=splat= (split a sequential datastructure at the given index)
+#+begin_src clojure
+(is (splat [1 2 3 4] 2) [[1 2] [3 4]])
+(is (splat (lst 1 2 3 4) 2) [(lst 1 2) (lst 3 4)])
+#+end_src
+
+=uncs= (uncons)
+#+begin_src clojure
+(is (uncs [1 2 3]) [1 [2 3]])
+(is (uncs (lst 1 2 3)) [1 (lst 2 3)])
+#+end_src
+
+=runcs=
+#+begin_src clojure
+(is (runcs [1 2 3]) [[1 2] 3])
+(is (runcs (lst 1 2 3)) [(lst 1 2) 3])
+#+end_src
+
+=cons=
+#+begin_src clojure
+(is (cons 1 [2 3]) [1 2 3])
+(is (cons 1 (lst 2 3)) (lst 1 2 3))
+;; it can take more arguments
+(is (cons 0 1 [2 3]) [0 1 2 3])
+(is (cons 1 2 3 (lst)) (lst 1 2 3))
+#+end_src
+
+** =map=, =reduce= and friends
+
+*** =$= (map)
+
+Following the first argument convention we mentioned earlier,  =map= is taking the object as first argument.
+
+#+begin_src clojure
+(is ($ [0 1 2] inc)
+    [1 2 3])
+#+end_src
+
+It preserves collection type
+
+#+begin_src clojure
+(is ($ #{1 2 3} inc)
+    #{2 3 4})
+#+end_src
+
+On maps it behaves differently from =clojure.core/map=, given functions are receiving only the values.
+
+#+begin_src clojure
+(is ($ {:a 1 :b 2} inc)
+    {:a 2 :b 3})
+#+end_src
+
+*** =$i= (map-indexed)
+
+#+begin_src clojure
+(is ($i [:a :b :c] (f [idx val] {:idx idx :val val}))
+    [{:idx 0, :val :a}
+     {:idx 1, :val :b}
+     {:idx 2, :val :c}])
+#+end_src
+
+on maps it receives key-value pairs, given functions has to return only the value
+
+#+begin_src clojure
+(is ($i {:a 1 :b 2}
+        (f [idx val]
+           ;; we return the key-value pair as is
+           [idx val]))
+    ;; the key-value pair has been put in value position
+    ;; the keys cannot be altered with $i,
+    ;; if you think about it $i on a vector or sequence cannot alter indexes,
+    ;; map keys are like unordered indexes somehow, so it seems to be the correct behavior
+    {:a [:a 1], :b [:b 2]})
+#+end_src
+
+With sets, given functions receives a twin pair, which seems logical as sets can be viewed as maps with twin entries.
+It is pointless to use $i explicetly on a set, but in a ploymorphic context, sets have to have a meaningful implementation.
+
+#+begin_src clojure
+(is ($i #{:a :b :c}
+        ;; the same function we use above in the map exemple
+        (f [idx val] [idx val]))
+    #{[:a :a] [:b :b] [:c :c]})
+#+end_src
+
+so now you may wonder about what we leave behing from the clojure.core/map behavior, in particular, core/map can takes several sequences.
+
+*** =zip=
+
+#+begin_src clojure
+(c/map + (range 10) (range 10)) ;;=> (0 2 4 6 8 10 12 14 16 18)
+#+end_src
+
+In asparagus there is another function for that called =zip=. 
+Zipping several iterables together using the given function.
+
+#+begin_src clojure
+(is (zip add (range 10) (range 10))
+    (lst 0 2 4 6 8 10 12 14 16 18))
+#+end_src
+
+Like =core.map= it is variadic.
+#+begin_src clojure
+(is (zip add (range 10) (range 10) (range 10) (range 10))
+    (lst 0 4 8 12 16 20 24 28 32 36))
+#+end_src
+
+*** =$+=
+
+=$+= is to =$= what =mapcat= is to =map=
+
+#+begin_src clojure
+(is ($+ (range 6) (f_ (c/repeat _ _)))
+    (lst 1 2 2 3 3 3 4 4 4 4 5 5 5 5 5))
+
+(is ($+ [[3 2 1 0] [6 5 4] [9 8 7]] rev)
+    [0 1 2 3 4 5 6 7 8 9])
+#+end_src
+
+*** $i+ 
+
+indexed version of =$+=
+
+#+begin_src clojure
+(is ($i+ [[3 2 1 0] [6 5 4] [9 8 7]]
+         (f [i v] (cons [:idx i] (rev v))))
+    [[:idx 0] 0 1 2 3 [:idx 1] 4 5 6 [:idx 2] 7 8 9])
+#+end_src
+
+*** =zip+=
+
+#+begin_src clojure
+(is (zip+ (f [a b]
+             (c/sort
+              ;; set+ makes a set from several collections
+              (set+ a b)))
+          [[3 1 0] [6 5] [9 8 7]]
+          [[3 2 0] [5 4] [9 7]])
+    (lst 0 1 2 3 4 5 6 7 8 9))
+#+end_src
+
+while writing this i'm considering zipi and zipi+...
+
+*** =red=
+
+=red is like =core/reduce= but with different argument order and variadic arity.
+=red= takes the 'seed as first argument (because it is the data we are working on, we are following the convention), a reducing function as second argument and (unlike clojure.core/reduce) as many iterables as you like (here one).
+
+#+begin_src clojure
+(is (red #{} sip [1 2 3 3 4 2 1 5 6 4 5]) ;; 'sip is asparagus conj(ish) function
+    #{1 4 6 3 2 5})
+#+end_src
+
+With several iterables
+
+#+begin_src clojure
+(is (red []
+         (f [ret a b] ;; note that the reducing function arity is dependant on the number of given iterables (here two)
+            (sip ret (add a b)))
+         [1 2 3 4]
+         [2 3 4 5])
+    [3 5 7 9])
+#+end_src
+
+*** =filt= and =rem=
+
+#+begin_src clojure
+(is [1 2 3]  (filt [1 2 -1 -2 3] num? pos?))
+(is [-1 -2] (rem [1 2 -1 -2 3] pos?))
+#+end_src
+
+** =iter=, =idxs= and =vals=
+
+Under the hood many of the functions described in the previous section rely on those three basics operations.
+
+*** =iter= 
+
+Is like core/seq (but do not returns nil on empty things).
+
+#+begin_src clojure
+(is (iter {:a 1 :b 2})
+    (lst [:a 1] [:b 2]))
+(is (iter [1 2 3])
+    (lst 1 2 3))
+(is (iter (lst 1 2 3))
+    (lst 1 2 3))
+#+end_src
+
+*** =vals= 
+
+Returns a seq of values in the given argument.
+
+#+begin_src clojure
+(is (vals {:a 1 :b 2})
+    (lst 1 2))
+(is (vals [1 2 3])
+    (lst 1 2 3))
+(is (vals (lst 1 2 3))
+    (lst 1 2 3))
+#+end_src
+
+*** =idxs=
+
+Returns a seq of keys for maps, or a seq of idexes for sequentials.
+
+#+begin_src clojure
+(is (idxs {:a 1 :b 2})
+    (lst :a :b))
+(is (idxs [1 2 3])
+    (lst 0 1 2))
+(is (idxs (lst 1 2 3))
+    (lst 0 1 2))
+#+end_src
+
+those three functions are generic and can be implemented for your types
+
+** Extra operations 
+
+=scan= (like core/partition)
+#+begin_src clojure
+(is [[1 2] [3 4]]
+    (scan [1 2 3 4] 2 2))
+(is [[1 2] [2 3] [3 4]]
+    (scan [1 2 3 4] 2 1))
+(is '((0 1 2 3) (2 3 4))
+    (scan (c/range 5) 4 2))
+#+end_src
+
+=chunk=
+#+begin_src clojure
+(is [[1 2] [3]]
+    (chunk [1 2 3] 2))
+(is []
+    (chunk [] 2))
+#+end_src
+
+=braid= (like core/interleave)
+#+begin_src clojure
+(is '(1 4 2 5 3 6)
+    (braid [1 2 3] [4 5 6]))
+(is '(1 4 2 5)
+    (braid [1 2 3] [4 5]))
+#+end_src
+
+=nths=
+#+begin_src clojure
+(is (nths (range 10) 3)
+    (lst 0 3 6 9))
+#+end_src
+
+=car= and =cdr= compositions, like in scheme we have those little facilities, this is the main reason I chose car/cdr over first/rest.
+#+begin_src clojure
+(is :io
+    (cadr [1 :io])
+    (caddr [1 2 :io])
+    (caadr [1 [:io 2] 3])
+    (cadadr [1 [2 :io]]))
+#+end_src
+
+** Walking
+
+=depth first=
+#+begin_src clojure
+(!! (dfwalk [1 2 {:a 1 :b [1 2 3]}] p/prob))
+#+end_src
+
+=breadth first=
+#+begin_src clojure
+(!! (bfwalk [1 2 {:a 1 :b [1 2 3]}] p/prob))
+#+end_src
+
+=walk?=
+#+begin_src clojure
+(!! (walk? [1 2 {:a 1 :b [1 2 3]}]
+           coll? ;; this is call on each node, in order to decide to walk deeper or not
+           p/prob ;; when the above fails on a node, this one is called on it
+           ))
+#+end_src
+
+* Functional Programing
+
+One thing we all love in functional programming is the ability to compose functions together.
+Manipulating them easily, passing them to other functions, partially apply them etc... 
+In asparagus I've tried to push all those things further than clojure.
+
+** Application, Invocation
+
+Application and invocation are generic function that can be implemented for any type.
+Those operations are so central in functional programming that i've decided to give them really short symbols.
+
+- =*= for application
+- =§= for invocation
+
+*** =§= (invocation)
+
+for function it is trivial.
+
+#+begin_src clojure
+(is (§ add 1 2)
+    3)
+#+end_src
+
+For constants it returns itself.
+
+#+begin_src clojure
+(is (§ 42 "iop") 42)
+(is (§ "pouet" 1 2 3) "pouet")
+#+end_src
+
+
+Datastructures have their invocation implementation, that differs from clojure, it does not perform a get.
+
+Some exemples should speak by themselves:
+
+**** Vectors
+
+#+begin_src clojure
+(is (§ [inc dec] [0 0])
+    [1 -1])
+#+end_src
+
+You can nest invocables several level deep, it will do what you expect
+
+#+begin_src clojure
+(is (§ [inc dec [inc dec :foo]] [0 0 [0 0 0]])
+    [1 -1 [1 -1 :foo]])
+#+end_src
+
+But wait you can feed several arguments too!
+
+#+begin_src clojure
+(is (§ [add sub add] [1 2 3] [1 2 3] [1 2 3])
+    [3 -2 9])
+#+end_src
+
+It leaves extra indexes as is.
+
+#+begin_src clojure
+(is (§ [inc dec] [0 1 2 3])
+    [1 0 2 3])
+#+end_src
+
+**** Maps
+
+#+begin_src clojure
+(is (§ {:a inc :b dec :c [inc dec]}
+     {:a 0 :b 0 :c [0 0]})
+    {:a 1 :b -1 :c [1 -1]})
+#+end_src
+
+several args:
+
+#+begin_src clojure
+(is (§ {:a add :b sub}
+     {:a 1 :b 2}
+     {:a 1 :b 2})
+    {:a 2 :b 0})
+#+end_src
+
+Extra keys are left as is:
+
+#+begin_src clojure
+(is (§ {:a inc}
+     {:a 0 :b 0})
+    {:a 1 :b 0})
+#+end_src
+
+If extra keys are present in several args the last is kept.
+#+begin_src clojure
+(is (§ {:a add} {:a 1 :b 2} {:a 1 :b 7})
+    {:a 2 :b 7})
+#+end_src
+
+** The "object" convention
+
+In asparagus, many functions takes what we can call the object as first argument.
+
+I mean, the thing we are working on, for instance, in the expression (assoc mymap :a 1 :b 2), mymap is what we call the object. 
+
+All functions that can be viewed this way, will always take the 'object' as first argument.
+
+With this simple convention we can achieve a regularity that yield to easier function composition.
+
+The argumentation function will help to turn this kind of function into a one that takes only the arguments (in the previous exemple: :a 1 :b 2) and return a function that takes only the target object, and return the result.
+
+#+begin_src clojure
+(let [assoc_ (argumentation:val assoc)
+      assoc-a-and-b (assoc_ :a 1 :b 2)]
+  (assoc-a-and-b {}))
+#+end_src
+
+You can also pass arguments immediatly.
+#+begin_src clojure
+(let [f (argumentation assoc :a 1)]
+  (f {}))
+#+end_src
+
+many of the asparagus functions that follow this convention, have their argumentation version with the same name suffixed with _.
+
+This is handy, for instance, to create chains of 1 argument functions.
+
+#+begin_src clojure
+(is (> (range 10) (drop_ 3) (dropend_ 2)) ;; will thread '(range 10) thru 2 functions, the semantics is analog to core/-> but it is a function
+    (range 3 8))
+#+end_src
+
+the =>= function is defined in the :invocation-application-mapping section of =asparagus.core=
+
+It will return a function that wait for its first argument ('myseq in the previous example)
+
+#+begin_src clojure
+(!! (>_ (take_ 3) (dropend_ 2)))
+#+end_src
+
+** Guards
+
+One other thing that ease function composition is what I call guards (for lack of better name)
+Guards differs from predicate by the fact that they can either return nil or something (in most case the given 'object' unchanged) so they can be used like predicates, but do not stop the flowing data, therefore they can be chained via function composition.
+
+some examples of guards:
+#+begin_src clojure
+(is (vec? [1 2]) [1 2])
+(isnt (vec? (lst 1 2)))
+(is (pos? 1) 1)
+(isnt (pos? -1))
+#+end_src
+
+As we've seen we can chain them like this.
+#+begin_src clojure
+(let [g (>_ num? pos? (gt_ 2))] ;; gt is greater-than
+  (is 3 (g 3)))
+;; but + does the same
+(let [g (+ num? pos? (gt_ 2))]
+  (is 3 (g 3)))
+#+end_src
+
+*** Collection guards
+
+**** =$?=
+
+check if all values of a datastructure are not nil (see 'iterables section)
+
+#+begin_src clojure
+(is ($? [1 2 3])
+    [1 2 3])
+
+(isnt ($? [1 nil 2 3]))
+
+(is ($? {:a 1 :b 2})
+    {:a 1 :b 2})
+
+(isnt ($? {:a 1 :b nil}))
+#+end_src
+
+**** =?$=
+
+=?$= is a composition of =$= and =$?=
+
+It can be viewed as a map operation that succed if all values of the resulting collection are non nil
+
+#+begin_src clojure
+(is (?$ [2 3 4 5] num? inc (gt_ 2))
+    [3 4 5 6])
+
+(isnt (?$ [3 4 1 5] num? inc (gt_ 2)))
+#+end_src
+
+
+**** =?zip= 
+
+the zip variant
+
+#+begin_src clojure
+(is (?zip #(pos? (add %1 %2)) [1 2 3] [1 2 3])
+    (lst 2 4 6))
+
+(isnt (?zip #(pos? (add %1 %2)) [1 2 3] [1 2 -3]))
+#+end_src
+
+**** =?deep=
+
+a deep variant of =?$=, checks if all nested values are non =nil=
+
+#+begin_src clojure
+(check
+ (nil? (?deep {:a {:b 1 :c [1 2 nil]}}))
+ (nil? (?deep {:a {:b 1 :c [1 2 3 {:d nil}]}}))
+ ;; succeed
+ (?deep {:a {:b 1 :c [1 2 3]}}))
+#+end_src
+
+*** Creating Guards
+
+#+begin_src clojure
+(let [g (guard.unary c/odd?)]
+  (is 1 (g 1)))
+
+(let [g (guard.binary c/>=)]
+  (is 2 (g 2 1)))
+
+(let [g (guard.variadic c/>=)]
+  (is 8 (g 8 8 7 6 5 2)))
+
+;; or simply
+(let [g (guard:fn c/>=)]
+  (is 8 (g 8 8 7 6 5 2)))
+#+end_src
+
+**** the =guard= macro
+
+It has the same syntax than the f macro but the resulting function will return the first argument unchanged if its body succeeds, otherwise nil
+
+#+begin_src clojure
+(let [g (guard [x] (odd? (count x)))]
+  (is (g [1 2 3]) [1 2 3])
+  (isnt (g [1 2 3 4])))
+#+end_src
+
+
+**** wrapping and importing predicates 
+
+#+begin_src clojure
+(E+ (guards.import [odd? 1] [even? 1]))
+
+(is 1 (odd? 1))
+(isnt (even? 1))
+#+end_src
+
+** Control Flow
+
+*** =?>=
+
+Thread the object thru guards shorting on first nil result.
+
+#+begin_src clojure
+(is 1 (?> 1 num? pos?))
+(isnt (?> 1 num? neg?))
+#+end_src
+
+Shorts after str? (else it would be an error).
+
+#+begin_src clojure
+(isnt (?> 1 str? (+_ "aze")))
+#+end_src
+
+More exemples:
+
+#+begin_src clojure
+(is 3 (?> [1 2 3] (guard:fn (+ c/count c/odd?)) last))
+(isnt (?> [1 2] (guard [x] ((+ c/count c/odd?) x)) last))
+
+#+end_src
+
+More composed exemple:
+
+=?>= use =§= under the hood, so anything that implement invocation is allowed.
+
+#+begin_src clojure
+(is (?> -1
+        num? ;;=> -1
+        (c/juxt (add_ -2) (add_ 2)) ;;=> [-3 1]
+        [neg? (?>_ num? pos?)] ;; using _ version
+        )
+    [-3 1])
+#+end_src
+
+*** =?<=
+
+Trying all given guards against x until first non nil result.
+
+#+begin_src clojure
+(is 1 (?< 1 coll? num?))
+(isnt (?< 1 str? coll? sym?))
+#+end_src
+
+Build a guard that succeed for numbers or strings.
+
+#+begin_src clojure
+(let [f (?<_ num? str?)]
+  (is [1 "a" nil]
+      [(f 1) (f "a") (f :a)]))
+#+end_src
+
+Basic composition with =?<= and =?>_=:
+#+begin_src clojure
+(is 42
+    (?< 44
+        str?
+        (?>_ num? (gt_ 10) dec dec)))
+#+end_src
+
+*** =?c=
+
+A clojure-cond(ish) function.
+
+#+begin_src clojure
+(is 2
+    (?c 1
+        ;; like clojure cond
+        ;; works by couples
+        str? :pouet ;; if str? succeed :pouet is called
+        pos? inc
+        neg? dec))
+
+(is 10
+    (?c 10
+        num? (lt_ 3) ;; if the second pred fail, we go to next couple
+        num? (gt_ 7) ;; this line succeed
+        ))
+#+end_src
+
+(non function values act as constant functions).
+
+#+begin_src clojure
+(is :pouet
+    (?c "a"
+        str? :pouet
+        pos? inc
+        neg? dec))
+#+end_src
+
+Same with =?c_=
+
+#+begin_src clojure
+(is -2
+    (let [f (?c_
+             str? :pouet
+             pos? inc
+             neg? dec)]
+      (f -1)))
+#+end_src
+
+*** =?c>=
+
+A scheme-cond(ish) function.
+
+#+begin_src clojure
+(is -8
+    (?c> -2
+         ;; like scheme cond
+         ;; several vecs of guards
+         [str? :pouet]
+         [pos? inc inc inc]
+         [neg? dec dec (p mul 2)]))
+
+(is :1
+    (?c> 1
+         ;; here too, if the line does not succeed entirely,
+         ;; skip to the next line
+         [pos? dec pos? :gt1]
+         [pos? :1]))
+
+(is 5
+    (let [f (?c>_
+             [str? :pouet]
+             [pos? inc inc inc]
+             [neg? dec dec (p mul 2)])]
+      (f 2)))
+#+end_src
+
+*** =df= 
+
+data function:
+
+create a function from a data structure that apply all functions contained in it (deeply) to further args while preserving its original structure.
+
+you can use vectors and maps to compose the resulting function
+
+#+begin_src clojure
+(!! (df [inc
+         dec
+         {:doubled (f_ (mul 2 _))
+          :halfed (f_ (div _ 2))}])) ;;=> <fn>
+#+end_src
+
+Invoc it:
+#+begin_src clojure
+(let [f (df [inc dec
+             {:doubled (f_ (mul 2 _))
+              :halfed (f_ (div _ 2))}])]
+  (is (f 1)
+      [2 0 {:doubled 2 :halfed 1/2}]))
+
+;; is equivalent to write
+((f1 a [(inc a) (dec a)
+        {:doubled (mul 2 a)
+         :halfed (div a 2)}])
+ 1)
+#+end_src
+
+Any invocable can serve as a leaf. Don't know if you remember, but in asparagus almost everything is invocable.
+In particular constant values like 42 or :foo return themselves. To demonstrate that df can handle any invocable, we will use some of those.
+
+#+begin_src clojure
+(let [f (df [inc dec :foo 42])]
+  (is (f 1)
+      [2 0 :foo 42]))
+#+end_src
+
+Can take several arguments.
+#+begin_src clojure
+(let [f (df [add sub])]
+  (is (f 1 2 3)
+      [6 -4]))
+#+end_src
+
+You can deeply mix maps and vecs to compose your function.
+#+begin_src clojure
+(let [f (df {:addsub [add sub]
+             :average (f xs (div (* add xs) (count xs)))})]
+  (is (f 1 2 3)
+      {:addsub [6 -4], :average 2}))
+#+end_src
+
+Maybe you are wondering about our vec and map invocation behavior. This is prevented here because vecs and maps mean something else in this context.
+But you can use the =§= function to state that a leaf that is a map or a vec has to be treated as an invocable.
+
+#+begin_src clojure
+(let [f (df [concat
+             (§ [add sub mul]) ;; here
+             ])]
+  (is (f [1 2 3] [4 5 6])
+      ['(1 2 3 4 5 6) [5 -3 18]]))
+#+end_src
+
+*** Composing data flow 
+
+with guards, shortcircuiting binding/lambda forms (?let, clet, cf, ?f...) , invocable datastructures, data functions, conditional functions (?c and ?c>), guard connectors (?< and ?>)
+
+#+begin_src clojure
+(is
+
+ (?> ["foo" 0]
+     ;; with invocable data we can go inside the flowing data
+     [
+      ;; we check if the first idx is a :word (str, sym or keyword),
+      ;; if yes cast it to keyword
+      (?>_ word? key)
+
+      ;; with data functions we can do sort of the opposite (wrapping instead of going inside)
+      ;; (here we receiving 0 and returning {:val 0, :inc 1, :dec -1}
+      (df {:val id :++ inc :-- dec})]
+
+                                        ;p/prob
+
+     (case_ [:bar x] {:bar x}
+            [:foo (& x (ks val))] ;; we check that data idx 0 is :foo, and that the idx 1 has a :val key
+            (case val
+              pos? {:positive-foo x}
+              neg? {:negative-foo x}
+              {:zero-foo x})
+            (id x) {:fail x})
+
+                                        ;p/prob
+
+     (?c_ (?f1 {:fail x}) (f_ (pp "fail: " _) _) ;; shortcircuiting lambdas can be useful in those contexts
+          (?f1 {:zero-foo x}) (f_ (pp "zero-foo " _) _)
+          (f_ (pp "num-foo " _) _))
+
+     )
+
+ {:zero-foo {:val 0, :++ 1, :-- -1}})
+#+end_src
+
+
+#+begin_src clojure
+#+end_src
+
+#+begin_src clojure
+#+end_src
+
+#+begin_src clojure
+#+end_src
+
+#+begin_src clojure
+#+end_src
+
+#+begin_src clojure
+#+end_src
+
+#+begin_src clojure
+#+end_src
+
+#+begin_src clojure
+#+end_src
