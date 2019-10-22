@@ -2219,6 +2219,786 @@ with guards, shortcircuiting binding/lambda forms (?let, clet, cf, ?f...) , invo
  {:zero-foo {:val 0, :++ 1, :-- -1}})
 #+end_src
 
+* Templating, Quoting
+
+Asparagus does not have the same quasiquote semantics and syntax than clojure (in clojure, the ` character).
+Inspired by brandon bloom's backtic library, I tried to separate symbol qualification from templating.
+There is 3 tastes of quasiquotes in asparagus (in addition to the normal quote)
+
+** =sq= (syntax-quote or quasiquote)
+
+quasiquote expressions are useful for constructing datastructures when most but not all of the desired structure is known in advance.
+If no ~ (unquote) appear within the template (the first and only argument of the quasiquote form), the result of evaluating (sq template) is equivalent to the result of evaluating 'template.
+
+#+begin_src clojure
+(is (sq (a b c))
+    '(a b c))
+#+end_src
+
+If a ~ appears within the template, however, the expression following the ~ is evaluated ("unquoted") and its result is inserted into the structure replacing the ~ and the expression.
+
+#+begin_src clojure
+(is (sq (+ 1 ~(+ 2 3)))
+    '(+ 1 5))
+
+(is (sq (list ~(+ 1 2) 4))
+    '(list 3 4))
+
+(let [name 'a]
+  (is (sq (list ~name '~name))
+      '(list a (quote a))))
+#+end_src
+
+If a tilde (~) appears preceded immediately by a dot, then the following expression must evaluate to an iterable structure. 
+The evaluated iterable structure will be merged into its host structure, replacing the dot, the unquote and the expression.
+Therefore a 'dot unquote expr' (.~expr) structure has to appears only in an iterable structure (in order to be able to be merged into it).
+
+#+begin_src clojure
+
+(is (sq (0 .~($ [0 1 2] inc) 4))
+    '(0 1 2 3 4))
+
+(let [amap {:b 2 :c 3}]
+  (is (sq {:a 1 .~amap})
+      {:a 1, :b 2, :c 3}))
+#+end_src
+
+Quasiquote forms may be nested.
+Substitutions are made only for unquoted components appearing at the same nesting level as the outermost backquote.
+The nesting level increases by one inside each successive quasiquotation, and decreases by one inside each unquotation.
+
+#+begin_src clojure
+
+(is (sq (a (sq (b ~(+ 1 2) ~(foo ~(+ 1 3) d) e)) f))
+    '(a (sq (b ~(+ 1 2) ~(foo 4 d) e)) f))
+
+(let [name1 'x
+      name2 'y]
+  (is (sq (a (sq (b ~~name1 ~'~name2 d)) e))
+      '(a (sq (b ~x y d)) e)))
+#+end_src
+
+** =qq= (qualified quasiquote)
+
+Is somehow similar to clojure =quasiquote=, in the sense that it let you template a structure like =sq= do, but also qualifies symbols
+
+
+#+begin_src clojure
+(is (qq (+ 1 ~(+ 2 3)))
+    '(_.joining.+ 1 5))
+#+end_src
+
+A word on qualified symbols:
+When qualifying =+= we resolve it to =joining.+= (indicating that the =+= function lives in the =joining= module).
+The underscore prefix simply make explicit that it is an absolute path (preventing any relative or bubling resolution that could occur at a later stage).
+
+If a symbol is not resolvable it is left as is.
+#+begin_src clojure
+(is (qq (+ a b c))
+    '(_.joining.+ a b c))
+#+end_src
+
+All the things that we've seen with sq are possible with qq.
+
+** =qq!= (qualified strict quasiquote)
+
+The behavior is the same as =qq= but it throws when encountering an unqualifiable symbol
+#+begin_src clojure
+(is (qq! (+ 1 ~(+ 2 3)))
+      '(_.joining.+ 1 5))
+#+end_src
+
+the following will throw, indicating: "unqualifiable symbol: a"
+#+begin_src clojure
+'(!! (qq! (+ a b c)))
+#+end_src
+
+* Environment again 
+
+It's time to go deep into the environment and the =E+= macro
+
+let's talk about metaprograming first.
+As any Lisp, asparagus has metaprograming facilities (e.g macros but not only).
+Asparagus macro system is a bit different than regulars Lisps.
+
+It use a technique introduced by Daniel Friedman called "expansion passing style".
+In regular Lisps, macro calls are recursively expanded until no more macro calls appears in the resulting expression.
+It results in more concise macro definition, but is less powerfull and prevents you to do more advanced things.
+
+A macros in asparagus is a function that takes 2 arguments:
+- the current environment (in this, it can reminds you Fexprs, more precisely 'compile time fexprs')
+- the list of operands of the macro call
+
+Since macros have access to the environment, and are responsable to thread expansion further.
+They can do all sort of transformations/updates on the environment before passing it to further expansions.
+Therefore a macro has full control over its operands, which seems legitimate to me.
+
+
+Another interesting thing about asparagus macros, occuring from the fact that there is no automatic recursive expansions.
+Is that functions and macros can share the same name. you may ask yourself what is the point :).
+In fact in clojurescript, this kind of technique is used for compile time optimizations for exemple.
+
+** Macros
+
+A simple macro definition
+
+#+begin_src clojure
+(E+ postfix:mac ;; note the :mac sufix
+    (fn [e args]
+      (reverse args)))
+#+end_src
+
+Let's expand this form in the current global environment using =exp=.
+#+begin_src clojure
+(exp @E '(postfix 3 2 1 add))
+;;=> (add 1 2 3)
+#+end_src
+
+In trivial cases like this one it works but if the operands contains some macro calls, they will not be expanded.
+#+begin_src clojure
+(exp @E '(postfix (postfix 5 4 add) 3 2 1 add))
+;;=> (add 1 2 3 (postfix 5 4 add))
+#+end_src
+
+As we've said, we have to thread the expansion further. 
+We've just seen the 'exp function that perform expansion given an environment and an expression.
+#+begin_src clojure
+(E+ postfix:mac
+    (fn [e args]
+      (reverse
+       ;; we are mapping the expansion over the arguments, with the same environment e
+       ($ args (p exp e)) ;; equivalent to (clojure.core/map (partial exp e) args)
+       )))
+
+;; therefore
+(exp @E '(postfix (postfix 5 4 add) 3 2 1 add))
+;;=> (add:val 1 2 3 (add:val 4 5))
+
+(is (postfix (postfix 5 4 add) 3 2 1 add)
+    15)
+#+end_src
+
+It is not a high price to pay I think, given the flexibility and power it can provide.
+
+You can do many crazy things with this behavior, but you don't have to.
+Those days I personaly tends to prefer technologies that let the power to the user, even if I agree that strong opinions and good practices enforcement can yield to a powerfull language and strong community (like clojure)
+Its a matter of taste and needs after all (at a point in time).
+
+All the binding forms and lambda macros are defined this way, so maybe its time to look at the asparagus.core namespace
+
+** =mac=
+
+And as you may have guessed, we can implement regular Lisp behavior in terms of those semantics, using the builtin 'mac macro, we will define a dummy 'fi macro (same as clojure's if-not)
+
+#+begin_src clojure
+ (E+ fi:mac
+      ;; the 'mac macro let you define a macro in a standard way
+      (mac [p f t] ;; we do not receive the environment
+           (lst 'if p t f) ;; we don't thread the expansion, it will be automatically done
+           ))
+
+  (exp @E '(fi (pos? 1)
+               (fi (neg? 1) :zero :neg)
+               :pos))
+#+end_src
+
+And operands are expanded as they would be with regular Lisp macro.
+
+#+begin_src clojure
+'(if (guards.builtins.pos?:val 1)
+     :pos
+     (if (guards.builtins.neg?:val 1)
+       :neg
+       :zero))
+#+end_src
+
+** Dual Stage
+
+Our =fancy-add= function, will check the presence of litteral numbers in its operands and preprocess them at compile time, living others operands as is for runtime.
+
+#+begin_src clojure
+(E+ fancy-add
+    { ;; compile time behavior
+     :mac
+     (f [e xs]
+        (let [lit-nums (shrink+ xs num?) ;; we grab all litteral numbers
+              others (shrink- xs num?)]  ;; and we keep others operands
+          ;; we return the preprocessed form (expanded with e)
+          (exp e
+               (qq (fancy-add:val ;; we have to explicitly write the :val suffix in this case
+                    ;; we peform the compile time work
+                    ~(* add lit-nums)
+                    ;; we thread the expansion mapping exp on others operands and splice the result
+                    .~($ others (p exp e)))))))
+
+     ;; runtime behavior, a normal addition
+     ;; using the scheme's variadic args syntax and the composite syntax (the dot)
+     :val
+     (f xs (add . xs)) ;; equivalent to (fn [& xs] (apply add xs))
+     }) 
+
+(exp @E '(let [a 1]
+           (fancy-add 1 a 2)))
+(is 4
+    (let [a 1]
+      (fancy-add 1 a 2)))
+#+end_src
+
+** Substitutions
+
+'substitutions' are another metaprograming device that deserve attention I think.
+It gives the user a way to replace a simple symbol with an arbitrary expression.
+
+Trivial substitution
+#+begin_src clojure
+(E+ macro-exemple.foo:sub ;; :sub attribute denotes a substitution function 
+    (fn [e]
+      ;; we return a simple keyword, but this could have been any expression
+      ;; (built or not with the help of the environment. bound to 'e here)
+      :foofoofoo)) 
+
+(exp @E 'macro-exemple.foo)
+#+end_src
+
+Substitutions are performed at expansion time, like macros.
+
+Another simple substitution:
+A really dummy exemple just to demonstrate that you have access to the environment.
+
+#+begin_src clojure
+(E+ substitution-exemple.bar:sub
+    (f [e]
+       (or
+        ;; the bubget function try to resolve a symbol in the given env
+        (bubget e 'substitution-exemple.bar:val)
+        ;; if not found, it will be substitute by this expression
+        '(some expression) 
+        )))
+
+(exp @E 'substitution-exemple.bar)    ;=> (some expression)
+
+(E+ substitution-exemple.bar 42) ;; now we define a :val
+#+end_src
+
+So now it is substituted by what's in substitution-exemple.bar:val.
+#+begin_src clojure
+(exp @E 'substitution-exemple.bar)    ;=> 42
+#+end_src
+
+** Updates 
+
+Extending E+ behavior with the :upd attribute.
+
+It can hold a function that creates an update datastructure (like the one E+ takes), hold on, see the exemple:
+
+We declare an update called tagged.
+#+begin_src clojure
+(E+ tagged:upd ;; note the :upd suffix
+      (f [e [tag data]]
+         ;; an update function has to return any datastructure that is understood by E+
+         ;; like expansions and substitutions it has access to the environment (not used in this case)
+         [:tag tag :val data]))
+#+end_src
+
+we can use it in an E+ form like this
+#+begin_src clojure
+(E+ upd-function-demo.foo (tagged :my-tag 42))
+#+end_src
+
+when E+ see an :upd call it will execute it and substitute it with its return value. 
+In this case it will be equivalent to this
+
+#+begin_src clojure
+(E+ upd-function-demo.foo [:tag :my-tag :val 42])
+
+(env-inspect 'upd-function-demo.foo)
+#+end_src
+
+this technique is used at several place in asparagus source (feel free to look at it)
+Contrary to macros and substitutions, updates are recursivelly executed, so an update functions can return an expression which is another update call, which will be further processed.
+
+All clojure's macros that emits def forms falls into this category
+
+** Side effects
+
+sometimes you need to do dirty/real things,
+=:fx= let you write an expression that will be executed at environment extension time, the expression being previously compiled with the current environment.
+
+#+begin_src clojure
+(E+ fx-demo.foo [:fx (println "defining fx-demo.foo") :val 42])
+#+end_src
+
+In practice it is used for things like, extending a protocol or running tests for exemple.
+See the 'generic section (which wrap clojure's protocols)
+
+All those special attributes may appears abstract at this time, but looking at asparagus source (that is highly documented) will show them in practice, and it will become more clear I hope.
+
+* Generics
+
+Generic functions are at heart of asparagus, every core operations are defined this way.
+
+*** mono arity
+
+#+begin_src clojure
+(E+ my-generic
+    (generic
+     [a]                         ;; the argument vector
+     :vec (str "vector: " a)     ;; the vector implementation
+     :num (str "number: " a)     ;; the number implementation
+     :coll (str "collection: " a) ;; collection impl
+     (str "something else: " a)   ;; default case
+     ))
+
+(check
+ (eq (my-generic [1 2]) "vector: [1 2]")
+ (eq (my-generic 1) "number: 1")
+ (eq (my-generic (lst 1 2)) "collection: (1 2)")
+ (eq (my-generic :iop) "something else: :iop"))
+#+end_src
+
+*** poly arity
+
+As clojure.core/fn generics a multi arity syntax.
+
+#+begin_src clojure
+(E+ my-generic2
+    (generic
+     ([a]
+      ;; coll impl
+      :coll {:coll a}
+      ;; default case
+      {:something a})
+     ([a b]
+      ;; line impl
+      :line {:line a :extra-arg b}
+      ;; default case
+      {:my-generic2-arity2-default-case [a b]})
+     ;; unlike clojure protocols, asparagus genric functions can have a variadic arity
+     ([a b . (& c [c1 . cs])] ;; you can put any asparagus binding pattern in arguments
+      ;; default case
+      {:my-generic2-variadic-arity
+       {:a a :b b :c c :c1 c1 :cs cs}})
+     ))
+
+(!! (my-generic2.inspect))
+
+(check
+ (eq (my-generic2 [1 2 3]) {:coll [1 2 3]})
+ (eq (my-generic2 "iop") {:something "iop"})
+ (eq (my-generic2 (lst 1 2 3) 42) {:line (lst 1 2 3) :extra-arg 42})
+ (eq (my-generic2 :iop 42) {:my-generic2-arity2-default-case [:iop 42]})
+ (eq (my-generic2 [1 2 3] 1 :iop {})
+     {:my-generic2-variadic-arity
+      {:a [1 2 3] :b 1
+       :c (lst :iop {})
+       :c1 :iop
+       :cs (lst {})}})
+ )
+#+end_src
+
+*** inspection, extension
+
+We can inspect your generic like this.
+
+#+begin_src clojure
+(!! (my-generic2.inspect))
+#+end_src
+
+Here we will define an arity2 implementation for vectors.
+With clojure protocols, if we extend a protocol to our type, we have to implement all arities.
+In asparagus this is not mandatory.
+#+begin_src clojure
+(E+ (my-generic2.extend
+     [a b]
+     :vec {:vec a :extra-arg b}))
+
+(is (my-generic2 [1 2 3] "iop")
+    {:vec [1 2 3], :extra-arg "iop"})
+#+end_src
+
+We still benefits from the others arity implementations.
+#+begin_src clojure
+(is (my-generic2 [1 2 3])
+    {:coll [1 2 3]})
+(is (my-generic2 [1 2 3] 1 2 3)
+    {:my-generic2-variadic-arity
+     {:a [1 2 3], :b 1, :c '(2 3), :c1 2, :cs '(3)}})
+#+end_src
+
+The extend form is letting you implement several things at once.
+It has the same syntax as the initial definition.
+#+begin_src clojure
+(E+ (my-generic2.extend
+     ([a]
+      :num {:num a}
+      :str {:str a}
+      :lst {:seq a})
+     ([a b . c]
+      :vec {:variadic-arity-vec-extension [a b c]})))
+
+(check
+ (eq (my-generic2 1) {:num 1})
+ (eq (my-generic2 "yo") {:str "yo"})
+ (eq (my-generic2 (lst 1 2)) {:seq (lst 1 2)})
+ (eq (my-generic2 {:a 1}) {:coll {:a 1}})
+ (eq (my-generic2 [1 2] 1 2 3)
+     {:variadic-arity-vec-extension [[1 2] 1 (lst 2 3)]})
+ (eq (my-generic2 "hey" 1 2 3)
+     {:my-generic2-variadic-arity
+      {:a "hey", :b 1, :c (lst 2 3), :c1 2, :cs (lst 3)}}))
+#+end_src
+
+***  'à la carte' polymorphism
+
+One consideration that came to my mind and that is experimented at the end of =asparagus.boot.generics= 
+is that each implementation should be callable directly when there is no need for polymorphism.
+
+Candidate syntaxes would be:
+#+begin_src clojure
+  (my-generic2_vec my-vec arg1 arg2)
+  (my-generic2.case :vec my-vec arg1 arg2)
+#+end_src
+
+It seems reasonable to be able to disambiguate when we can do so.
+And for critical code it can speed things a bit...
+It looks like best of both world to me
+
+* Types
+
+Declaring a simple new type.
+#+begin_src clojure
+(E+ (type+
+     :split ;; type tag
+     [left right] ;; fields
+     ))
+#+end_src
+
+Definition with generic implementations. 
+#+begin_src clojure
+(E+
+ (type+ :mytyp ;; type tag
+
+        [bar baz] ;; fields
+
+        ;; generic implementations ...
+        ;; only one here but there can be several of them
+        (+ [a b]
+           (!let [(:mytyp b) b]
+                 (mytyp (+ (:bar a) (:bar b))
+                        (+ (:baz a) (:baz b)))))))
+#+end_src
+
+#+begin_src clojure
+;; instantiation
+(is (mytyp 1 2)
+    (map->mytyp {:bar 1 :baz 2}))
+
+;; typecheck
+(is (mytyp? (mytyp 1 2))
+    (mytyp 1 2))
+
+;; type
+(is (type (mytyp 1 2))
+    :mytyp) ;;=> :mytyp
+
+;; using generic implmentations
+(is (+ (mytyp 1 2) (mytyp 1 2))
+    (mytyp 2 4))
+#+end_src
+
+Also have pattern matching for free.
+#+begin_src clojure
+(let [p1 (mytyp "Bob" "Wallace")
+      (mytyp x y) p1]
+  (is [x y]
+      ["Bob" "Wallace"]))
+#+end_src
+
+Types can be sort-of namespaced.
+the folling declare a foo.kons type
+#+begin_src clojure
+(E+ foo ;; we are in the foo module
+    (type+ :kons [kar kdr]) ;; we declare a type
+    )
+
+(let [p1 (foo.kons 12 34)
+      (foo.kons x y) p1]
+  (is [12 34] [x y]))
+#+end_src
+
+* Object Orientation
+
+A light way to mimic object oriented programming in clojure is to put methods inside a map
+
+#+begin_src clojure
+(let [obj
+      {;; the greet method, taking the object has first argument and a name
+       ;; returning a greet string
+       :greet
+       (fn [o name]
+         (str "Hello " name " my name is "
+              (c/get o :name))) ;; we use the object to retreive its name
+       ;; a name attribute
+       :name "Bob"}]
+
+  ;; in asparagus when the verb of the expression is a literal keyword, it denotes a method call
+  ;; this syntax comes from the Janet language (which you should check if you haven't already)
+  (is (:greet obj "Joe")
+      "Hello Joe my name is Bob")
+
+  ;; (:greet obj "Joe") it is compiled roughly to
+  ;; notice that the method receives the object as first argument
+  (§ (c/get obj :greet) obj "Joe") ;; where § is invocation
+
+  ;; since it compile to an explicit invocation
+  ;; anything with an § impl can be fetch with this syntax
+
+  (is (:name obj) "Bob")
+
+  ;; (:name obj) will be compiled to
+  (§ (c/get obj :name) obj)
+
+  ;; it can seems problematic at first, but strings are constant and constants returns themselves when invoked
+  ;; so it returns "Bob" as we want
+
+  ;; on missing method it throw an informative error
+  (throws (:bark obj))
+
+  ::ok
+
+  ;; this makes me think that we would like to be able to use this semantics in patterns maybe ?...
+  ;; the pattern (:quak x) match on anything that :quak
+  ;; the keyword syntax in pattern is already taken by typetags... but we will think about it
+  ;; maybe we should use exclusively type-guards instead e.g (mytype? x) ......
+)
+#+end_src
+
+Here's an experimental way to create objects that shares prototypes.
+
+#+begin_src clojure
+(E+ (obj+ :named
+          [name] ;; fields
+          ;; proto
+          {:greet
+           (fn [o name]
+             (str "Hello " name " my name is "
+                  (c/get o :name)))}))
+
+
+(!! (named "Bob"))
+
+(E+ (obj+ :person
+          [firstname name] ;; fields
+          [:named] ;; ancestors (we will inherit from their prototypes)
+          {:walk (f1 o "i'm walking")} ;; proto
+          [] ;; a vector of generic implementations
+          ))
+
+#_(env-inspect 'named)
+
+(let [o (named "Bob")]
+  (is (:greet o "Joe")
+      "Hello Joe my name is Bob"))
+
+(let [o (person "Bob" "Wallace")]
+  (is (:greet o "Joe")
+      "Hello Joe my name is Wallace" )
+  (is (:walk o)
+      "i'm walking")
+  person.proto)
+#+end_src
+
+* Dive and Tack
+
+** Dive
+
+The =dive= generic function, let you get something inside something else.
+Its first argument represent the address of what you want to get.
+The second is the thing in which you want to find it.
+
+It is like core/get but with arguments reversed, and being a generic function, it can be extended.
+
+For key and syms it does what core/get had done.
+#+begin_src clojure
+(is 1 (dive :a {:a 1}))
+(is 1 (dive 'a {'a 1}))
+#+end_src
+
+For nums it search an idx.
+#+begin_src clojure
+(is :io (dive 2 [0 0 :io 0]))
+;; negative idxs supported
+(is :io (dive -1 [0 0 :io]))
+#+end_src
+
+For vector it goes deep.
+#+begin_src clojure
+(is :io (dive [:a :b] {:a {:b :io}}))
+;; but any valid diving-address can be used
+(is :io (dive [:a -1] {:a [0 0 0 :io]}))
+#+end_src
+
+It also accpets raw functions.
+#+begin_src clojure
+(is 1 (dive inc 0))
+;; which does not seems to really make sense at first but it can be handy in more complex dives
+(is 1
+    (dive [:a num? inc]
+          {:a 0}))
+#+end_src
+
+
+Also, we can mention that it is a concrete exemple of something that is a function and a macro at the same time
+Here we use a technique that is analog to the one we used in =bind= (binding operators)
+The =dive= module holds a map of operations implementations in =dive.ops=
+At expansion time, if the first argument to =dive= is an sexpr, the verb will be searched in =dive.ops=
+If an implementation is found, it will be executed (at expansion time) and the return value will take the place of the original expression
+
+As an exemple, we use the 'ks operation.
+#+begin_src clojure
+(!! (dive (ks a b) {:a 1 :b 2 :c 2}))
+#+end_src
+
+=ks= is resolved in =dive.ops= and applied to the given args (here :a and :b), producing this form
+#+begin_src clojure
+'(dive (fn [y] (select-keys y [:a :b]))
+       {:a 1 :b 2 :c 2})
+#+end_src
+
+Functions implement dive so the expansion time work is done, the form will now ready for runtime.
+
+ As you may have deduced by yourself, dive.ops can be extended with new operations.
+Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :)).
+
+*** Extension
+
+adding a wtf op that do something that does not make sense
+
+#+begin_src clojure
+(E+ (dive.op+ wtf [x]
+              (qq (f_ [:wtf ~x _]))))
+#+end_src
+
+ using it
+#+begin_src clojure
+(is (dive (wtf 42) {:a 1 :b 2})
+    [:wtf 42 {:a 1 :b 2}])
+#+end_src
+
+inspecting the ops table
+#+begin_src clojure
+(ppenv dive.ops)
+#+end_src
+
+** =Tack=
+
+=tack= is not really intended to be used directly
+
+In most cases we will use =put= and =upd= (that are defined in terms of it)
+
+It is semantically similar to assoc with different arg order.
+
+Like in =dive= the first argument is the address (and is used to dispatch). 
+The second argument is the object we work on (the tacking-target :)). 
+The third is the thing we want to put at this location.
+
+#+begin_src clojure
+(is  (tack 1      ;; the address
+             [1 2 3] ;; the object (target)
+             :io     ;; what we put
+             )
+       [1 :io 3])
+#+end_src
+
+It supports neg idexes like dive does.
+#+begin_src clojure
+(is (tack -1 [1 2 3] :foo))
+(is (tack -1 '(1 2 3) :foo))
+#+end_src
+
+Vectors denotes nesting.
+#+begin_src clojure
+(is (tack [:a :b] {} 42)
+    {:a {:b 42}})
+
+(is (tack [:a :b] nil 42)
+    {:a {:b 42}})
+
+(is (tack [:a 2] nil 42)
+    {:a [nil nil 42]})
+
+(is [[[nil nil 42]]]
+    (tack [0 0 2] [] 42))
+#+end_src
+
+*** =put=
+
+=put= is the same as tack but takes the target as first argument, more similar to assoc.
+#+begin_src clojure
+(is {:a 1}
+    (put nil :a 1))
+
+(is {:a {:b 1}}
+    (put {} [:a :b] 1))
+
+(is [[[nil nil 42]]]
+    (put nil [0 0 2] 42))
+
+(is [nil [nil nil [1]] nil 89]
+    (put [] [1 2 0] 1 3 89))
+
+(is {:a {:b 1, :p {:l [0 1 2]}}}
+    (put {} [:a :b] 1 [:a :p :l] [0 1 2]))
+#+end_src
+
+*** =upd=
+
+Like clojure update but using tack under the hood.
+
+#+begin_src clojure
+(is [0 [1 1]]
+    (upd [0 [0 1]] [1 0] inc))
+#+end_src
+
+It can take several updates at once.
+
+#+begin_src clojure
+(is {:a {:b [0 2 2], :c {:d 42}}}
+    (upd {:a {:b [0 1 2]}}
+         [:a :b 1] inc
+         [:a :c :d] (k 42)))
+#+end_src
+
+*** Extension 
+
+TODO
+
+* Dev utilities
+
+Inspecting the environment 
+
+#+begin_src clojure
+;; function
+(env-inspect 'take)
+;; macro
+(ppenv take)
+#+end_src
+
+Printing documentation.
+#+begin_src clojure
+(ppdoc bind.ops)
+(ppdoc dive)
+#+end_src
+
+Expanding an update call.
+#+begin_src clojure
+(updxp (generic.reduced [a b] :num (add a b)))
+
+(updxp (bindings.bind.op+ pouet [[n] x]
+                          [(gensym) (qq (c/repeat ~n ~x))]))
+#+end_src
+
+TODO
 
 #+begin_src clojure
 #+end_src
@@ -2229,14 +3009,15 @@ with guards, shortcircuiting binding/lambda forms (?let, clet, cf, ?f...) , invo
 #+begin_src clojure
 #+end_src
 
-#+begin_src clojure
-#+end_src
+* At last...
 
-#+begin_src clojure
-#+end_src
+First of all, If you made it until here, thank you very much :)
 
-#+begin_src clojure
-#+end_src
+There is much things that are still to be done in order to make asparagus a usable language.
 
-#+begin_src clojure
-#+end_src
+- tooling is lacking
+- error messages are not always so helpful
+- we need a proper inspector for the environment (wich will certainly be fun to implement when asparagus will be ported to clojurescript)
+- the port to clojurescript will not be trivial, because asparagus rely on eval (but bootstrapped clojurescript is here, so it should be possible)
+
+TODO
