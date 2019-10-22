@@ -995,10 +995,8 @@ a =guard pattern= is an expression with a binding symbol as first argument
 #+end_src
 
 This syntax is mainly making sense with guards that returns their first argument unchanged in case of success.
-
 This can be a bit confusing I guess, but wait a minute.
-
-In asparagus there is a semantic convention that first argument to any function is "the thing the function's works on".
+In asparagus there is a semantic convention that first argument to any function is "the thing the function is working on".
 
 In OO terms the first argument is the object ('this' or 'self').
 
