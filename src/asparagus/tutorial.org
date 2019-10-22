@@ -994,17 +994,24 @@ a =guard pattern= is an expression with a binding symbol as first argument
           a))
 #+end_src
 
-this syntax is really making sense whith guards that returns their first argument unchanged in case of success  
-this can be a bit confusing I guess, but wait a minute  
-in asparagus there is a semantic convention that first argument to any function is "the thing the function's works on"  
-in OO terms the first argument is the object ('this' or 'self')  
-other arguments are just parametrizing the operation  
-I think that oserving this convention is payful because it ease function composition  
-as a counterexample in Clojure we often have mix -> and ->> because some functions are "working on" their first argument (as in asparagus)  
-and others (map,filter etc..) on the last, it result in less clear code i think  
-with this in mind, the fact that we bound the return value of the guard  
-to the symbol that is in first argument position ('object position' we could say) makes a little more sense I guess  
-disclaimer: someone that I trust has said to me that in the "data world" the convention is that the flowing data is the last argument, so... :)  
+This syntax is mainly making sense with guards that returns their first argument unchanged in case of success.
+
+This can be a bit confusing I guess, but wait a minute.
+
+In asparagus there is a semantic convention that first argument to any function is "the thing the function's works on".
+
+In OO terms the first argument is the object ('this' or 'self').
+
+Other arguments are just parametrizing the operation.
+
+I think that oserving this convention is payful because it ease function composition.
+
+As a counterexample in Clojure we often have mix -> and ->> because some functions are "working on" their first argument (as in asparagus)  
+and others (map,filter etc..) on the last, it result in less clear code i think.
+  
+With this in mind, the fact that we bound the return value of the guard to the symbol that is in first argument position ('object position' we could say) makes a little more sense I guess.
+  
+Disclaimer: someone that I trust has said to me that in the "data world" the convention is that the flowing data is the last argument, so... :)  
 
 
 #+begin_src clojure
