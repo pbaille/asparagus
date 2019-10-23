@@ -10,10 +10,10 @@
   - [[#collections][Collections]]
   - [[#words][Words]]
 - [[#joining][Joining]]
-  - [[#joining-things-together-with-][joining things together with =+=]]
-  - [[#sip-add-one-or-several-element-into-something][=sip= add one or several element into something]]
-  - [[#pure-returns-the-empty-version-of-the-given-argument][=pure= returns the empty version of the given argument]]
-  - [[#pure-test-for-purity][=pure?= test for purity]]
+  - [[#][=+=]]
+  - [[#sip][=sip=]]
+  - [[#pure][=pure=]]
+  - [[#pure-1][=pure?=]]
 - [[#composing][Composing]]
   - [[#vectors][Vectors]]
   - [[#maps][Maps]]
@@ -23,10 +23,10 @@
   - [[#let-variants][Let variants]]
   - [[#destructuration][Destructuration]]
   - [[#clet-cased-let][=clet= (Cased Let)]]
-  - [[#loop][Loop]]
+  - [[#let-rec-loop][=let :rec= (loop)]]
   - [[#case][=case=]]
 - [[#lambdas][Lambdas]]
-  - [[#f-macro][=f= (macro)]]
+  - [[#f-lambda][=f= (lambda)]]
   - [[#variants][Variants]]
   - [[#syntactic-sugar][Syntactic sugar]]
   - [[#cf-case-lambda][=cf= (case lambda)]]
@@ -56,22 +56,22 @@
 - [[#types][Types]]
 - [[#object-orientation][Object Orientation]]
 - [[#dive-and-tack][Dive and Tack]]
-  - [[#dive][Dive]]
-  - [[#tack][=Tack=]]
+  - [[#dive][=dive=]]
+  - [[#tack][=tack=]]
 - [[#dev-utilities][Dev utilities]]
 - [[#at-last][At last...]]
 
 * Introduction
 
 Asparagus is my last experience in language design.
-after several attempt, i've compiled some of the ideas I like, found in other languages/books/papers
+After several attempt, i've compiled some of the ideas I like, found in other languages/books/papers.
 
 It is embedded in clojure, but at the same time is quite far from it.
 It has its own environment/namespaces mecanism, and another kind of macro system.
 It is far from being production ready, but I hope that it can be interesting as an experiment for some of you.
 
 I'm an autodidact with no proper computer science degree, my approch to programming is quite empirical.
-First of all I'm seeking for feedback, advices, discussions and even people to work with (and I'm also searching for a real job!)
+First of all I'm seeking for feedback, advices, discussions and people to work with.
 
 For now the main goals are: 
 
@@ -88,10 +88,10 @@ The main ways/devices to acheive them:
 - generic functions at heart (all core operations of the language will be implementable by user types and implemented meaningfully by core types)
 - holy datastructures's litterals (maps, vecs, lists and sets) at the heart (giving them more usages and extra syntax sugar)
 
-This tutorial assumes familiarity with clojure. or at least another Lisp.
+This tutorial assumes familiarity with clojure, or at least another Lisp.
 
 In order to be able to evaluate the forms contained in this file,
-You should start a REPL and load asparagus.core.
+You should start a REPL and load =asparagus.core=.
 
 #+begin_src clojure
 (in-ns 'asparagus.core)
@@ -99,7 +99,7 @@ You should start a REPL and load asparagus.core.
 
 * Environment
 
-The asparagus environment is holded by the `asparagus.core/E` atom
+The asparagus environment is holded by the =asparagus.core/E= atom
 
 #+begin_src clojure
 @E
@@ -108,13 +108,13 @@ The asparagus environment is holded by the `asparagus.core/E` atom
 ** simple defintions
 
 You can define a variable like this (=E+= stands for extend-environment).
-Its like a really (really!) fancy =def=
+Its like a really (really!) fancy =def=.
 
 #+begin_src clojure 
 (E+ foo 1)
 #+end_src
 
-Or several at once
+Or several at once.
 
 #+begin_src clojure 
 (E+ bar \a
@@ -136,7 +136,7 @@ The =is= macro just assert equality of its arguments.
 #+end_src
 
 You can modularize definitions (one of the motivational point of all this).
-Here we use a hashmap literal to define several variables in 'mymodule and 'mymodule.c
+Here we use a hashmap literal to define several variables in 'mymodule and =mymodule.c=.
 
 #+begin_src clojure 
 (E+ mymodule
@@ -164,7 +164,7 @@ We use dot notation to access nested environment members
     (add mymodule.a mymodule.c.d)) ;; will add 1 and 42
 #+end_src
 
-Dot notation can be used in definitions too
+Dot notation can be used in definitions too.
 
 #+begin_src clojure 
 (E+ mymodule.c.f 2
@@ -318,6 +318,7 @@ Finally we can redefine stats with doc litterals.
 So you may have a question now :)
 If hashmaps, vectors and strings have special semantics in =E+=,
 How can I use them as normal values for my variables?!
+
 The answer is the =:val= field.
 
 #+begin_src clojure 
@@ -423,8 +424,6 @@ If there is no link at the current level, we go up (bubling) and loop, until roo
 ;; with this we can acheive some of the things we do with :require and :use in clojure ns's form
 ;; it will not be oftenly used directly, but will be used under the hood by higher level macros...
 
-(E- links.demo)
-
 #+end_src
  
 ** E-
@@ -495,9 +494,9 @@ With sequential last argument (like =core/list*=).
     {:a 1 :b 2 :c 3 :d 4})
 #+end_src
 
-*** preds
+*** Guards
 
-Each collection have its pred, that returns the given collection on success or nil otherwise.
+Each collection have its guard, that returns the given collection on success or nil otherwise.
 
 #+begin_src clojure
 (is (vec? [1 2 3]) [1 2 3])
@@ -508,7 +507,7 @@ Each collection have its pred, that returns the given collection on success or n
 
 We will see that in asparagus we avoid predicates (functions that returns booleans)
 in favor of guards (functions that can return nil indicating failure, or data).
-For instance (pos? 1) may be, more useful if it returns 1 in case of success and nil otherwise.
+For instance (pos? 1) may be more useful if it returns 1 in case of success and nil otherwise.
 This way it can be composed more easily I think.
 More on control flow, shortcircuiting and stuff later...
 
@@ -530,7 +529,7 @@ Symbols and keywords have their core/str(ish) construtors
 
 #+begin_src clojure
 (is (sym* "ab" (lst "cd" "ef" "gh"))
-      'abcdefgh)
+    'abcdefgh)
 (is (key* "my" :keyword "_" [:foo :bar "baz"])
     :mykeyword_foobarbaz)
 (is (str* "mystr_" ["a" "b"])
@@ -542,20 +541,21 @@ Symbols and keywords have their core/str(ish) construtors
 As for collections, we use guards instead of preds
 
 #+begin_src clojure
-(is (sym* "ab" (lst "cd" "ef" "gh"))
-    'abcdefgh)
-(is (key* "my" :keyword "_" [:foo :bar "baz"])
-    :mykeyword_foobarbaz)
-(is (str* "mystr_" ["a" "b"])
-    "mystr_ab")
+(is (key? :iop) :iop)
+(is (sym? 'bob) 'bob)
+(is (str? "hi") "hi")
 #+end_src
 
 * Joining
 
-** joining things together with =+=
+** =+= 
+
+=+= is joining things together.
 
 As I mentioned in the rational, core operations are generic functions that can be extended. 
 =+= is one of them
+
+*** Collections
 
 #+begin_src clojure
 (is (+ [1 2] '(3 4))
@@ -572,9 +572,9 @@ As I mentioned in the rational, core operations are generic functions that can b
     #{1 2 3 4 5})
 #+end_src
 
-As you have seen, the return type is determined by the first argument
+As you have seen, the return type is determined by the first argument.
 
-*** strs syms and keywords
+*** Strings, symbols and keywords
 
 #+begin_src clojure
 (is (+ 'foo "bar") 'foobar)
@@ -582,23 +582,25 @@ As you have seen, the return type is determined by the first argument
 (is (+ "foo" 'bar :baz) "foobar:baz")
 #+end_src
 
-*** functions 
+*** Functions 
 
-On function it do composition (left to right, not like core.comp do)
+On functions it do composition (left to right, not like core.comp do).
 
 #+begin_src clojure
 (is ((+ inc inc (p mul 2)) 0)
     4)
 #+end_src
 
-** =sip= add one or several element into something
+** =sip= 
+
+=sip= adds one or several element into something
 
 #+begin_src clojure 
 (is (sip [] 1 2)
     [1 2])
 #+end_src
 
-For lists it adds at the end (not like conj do)
+For lists it adds at the end (not like =core/conj= do)
 It is a choice that can be discutable, in my own pratice i'm not realying often on way that clojure lists implements conj
 =sip= being a generic operation (extendable by user types) we could add a datatype that conj elements at its head like clojure lists...
 
@@ -610,14 +612,14 @@ It is a choice that can be discutable, in my own pratice i'm not realying often 
     #{1 2 3 4})
 #+end_src
 
-For maps it works on entries
+For maps it works on entries.
 
 #+begin_src clojure 
 (is (sip {:a 1} [:b 2] [:c 3])
     {:a 1 :b 2 :c 3})
 #+end_src
 
-For function it partially apply given args
+For function it partially apply given args.
 (i'm not sure it should behave that way, it's more like an experimental fantasy that is not used in core code)
 
 #+begin_src clojure
@@ -626,7 +628,9 @@ For function it partially apply given args
 #+end_src
 
 
-** =pure= returns the empty version of the given argument
+** =pure= 
+
+Returns the empty version of the given argument.
 
 
 #+begin_src clojure
@@ -637,9 +641,11 @@ For function it partially apply given args
 (is (pure inc) id)
 #+end_src
 
-Like =sip= and =+=, =pure= is a generic operation that can be implemented by user types
+Like =sip= and =+=, =pure= is a generic function.
 
-** =pure?= test for purity
+** =pure?= 
+
+Tests for purity.
 
 #+begin_src clojure
 (is {} (pure? {}))
@@ -648,6 +654,8 @@ Like =sip= and =+=, =pure= is a generic operation that can be implemented by use
 #+end_src
 
 * Composing
+
+I've always wondered why splicing was available only at certain places, it should be so handy to be able to use it anywhere...
 
 ** Vectors 
 
@@ -750,8 +758,8 @@ Binding symbols can be prepended by special character to indicate special behavi
 
 *** Shortcircuiting bindings
 
-If a binding symbol is prefixed by ?,
-It has to bind to a not nil value else the whole let form is shortcircuited and return nil
+If a binding symbol is prefixed by =?=,
+It has to bind to a non =nil= value else the whole =let= form is shortcircuited and return =nil=
 
 #+begin_src clojure
 (isnt (let [?a nil ;; this binding fail, therefore the next line will never be evaluated
@@ -760,7 +768,7 @@ It has to bind to a not nil value else the whole let form is shortcircuited and 
 
 *** Strict bindings
 
-Binding symbol's prepended by ! must bind to non nil value, else an error is thrown.
+Binding symbol's prepended by =!= must bind to non =nil= value, else an error is thrown.
 
 #+begin_src clojure
 (is :catched
@@ -768,14 +776,14 @@ Binding symbol's prepended by ! must bind to non nil value, else an error is thr
           (catch Exception _ :catched)))
 #+end_src
 
-Those three modes of binding (regular (non prefixed symbols), shortcircuited, strict) can be combined inside let forms.
-Resulting, i think, in much expressivity
+Those three modes of binding (regular (non prefixed symbols), shortcircuited, strict) can be combined inside =let= forms.
+Resulting, I think, in much expressivity.
   
 ** Let variants
 
 *** =?let= (shortcircuiting let)
 
-Is behaving like =let=, but the ? prefix is implicit to all binding symbols.
+Is behaving like =let=, but the =?= prefix is implicit to all binding symbols.
 
 #+begin_src clojure
 (?let [a 1 b 2] (add a b))
@@ -797,7 +805,7 @@ We can use strict bindings in a =?let= form, it will behave as in =let=.
 #+end_src
 
 If we want to allow regular bindings (as normal symbols in a classic =let=)
-We use the _ prefix:
+We use the =_= prefix:
 
 #+begin_src clojure
 (is (?let [a 1
@@ -808,7 +816,7 @@ We use the _ prefix:
 
 *** =!let= (strict let)
 
-Is like =?let= but with implicit prefix !, it support ? and _ prefixes
+Is like =?let= but with implicit prefix =!=, it support =?= and =_= prefixes
 
 #+begin_src clojure
 (is :catched
@@ -816,10 +824,9 @@ Is like =?let= but with implicit prefix !, it support ? and _ prefixes
            (catch Exception _ :catched)))
 #+end_src
 
-*** =lut=
+*** =lut= (unified let)
 
-In a unified let, all symbols that appears several times have to bind to the same value (equal values)
-otherwise it will shortcircuits
+In a =lut=, all symbols that appears several times have to bind to the same value (equal values), otherwise it will shortcircuits.
 
 #+begin_src clojure
 (is (lut [a 1 a (dec 2)] :success)
@@ -846,41 +853,42 @@ otherwise it will shortcircuits
 *** Literals
 
 
-Like clojure's let we support destructuration
-But unlike clojure, destructuration is an extensible mecanism
-The user can define its own destructuration special forms
+Like =core/let= we support destructuration. 
+But unlike clojure, destructuration is an extensible mecanism. 
+The user can define its own destructuration special forms.
 
 **** Sequential patterns
 
-Using a vector in pattern position do the same as clojure (at first glance)
+Using a vector in pattern position do the same as clojure (at first glance).
 
 #+begin_src clojure
 (is (let [[a b] [1 2]] {:a a :b b})
     {:a 1 :b 2})
 #+end_src
 
-But it is more strict
-This does not pass because the seed and the pattern have different length 
+But it is more strict.
+
+This does not pass because the seed and the pattern have different length.
 
 #+begin_src clojure
 (isnt (let [[a b c] [1 2]] :ok)
           (let [[a b] [1 2 3]] :ok))
 #+end_src
 
-Rest pattern
+Rest pattern:
 
 #+begin_src clojure
 (is (let [[x . xs] (range 5)] [x xs])
     [0 (range 1 5)])
 #+end_src
 
-In clojure the following is valid
+In clojure the following is valid.
   
 #+begin_src clojure
 (clojure.core/let [[a b] [1 2 3]] {:a a :b b}) ;; {:a 1 :b 2}
 #+end_src
  
-The equivalent in asparagus should be written like this
+The equivalent in asparagus should be written like this:
    
 #+begin_src clojure
 (is (let [[a b . _] (range 10)] {:a a :b b}) ;; with the . _ we allow extra elements
@@ -888,15 +896,16 @@ The equivalent in asparagus should be written like this
 ;; This way lambda argument patterns and let patterns behaves the same, which seems like a good thing
 #+end_src 
 
-Preserves collection type
+Preserves collection type.
 
 #+begin_src clojure
 (is (let [[x . xs] (vec 1 2 3)] [x xs])
     [1 [2 3]]) ;; in clojure [2 3] would be a seq
 #+end_src
 
-Post rest pattern
-In clojure the rest pattern has to be the last binding, here we can bind the last element easily
+Post rest pattern.
+
+In clojure the rest pattern has to be the last binding, here we can bind the last element easily.
  
 #+begin_src clojure
 (is (let [[x . xs lastx] (range 6)] [x xs lastx])
@@ -907,7 +916,6 @@ In clojure the rest pattern has to be the last binding, here we can bind the las
     [0 (lst 1 2) 3 4 5])
 #+end_src
 
-
 **** Map patterns
 
 #+begin_src clojure
@@ -915,38 +923,38 @@ In clojure the rest pattern has to be the last binding, here we can bind the las
     [1 2])
 #+end_src
    
-In clojure the same is acheived like this (I don't really understand why)
+In clojure the same is acheived like this (I don't really understand why).
  
 #+begin_src clojure
 (c/let [{aval :a bval :b} {:a 1 :b 2 :c 3}] [aval bval])
 #+end_src   
 
-Maps have rest patterns to
+Maps have rest patterns to:
 
 #+begin_src clojure
 (is (let [{:a aval . xs} {:a 1 :b 2 :c 3}] [aval xs])
     [1 {:b 2 :c 3}])
 #+end_src   
 
-As you may think, all binding modes are supported in destructuration bindings forms
+As you may think, all binding modes are supported in destructuration bindings forms.
     
 *** Operators 
 
-=ks= is a builtin binding operator
-it behaves like clojure's :keys
+=ks= is a builtin binding operator.
+It behaves like clojure's =:keys=.
 
 #+begin_src clojure
 (is (let [(ks a b) {:a 1 :b 2 :c 3}] (add a b))
     3)
 #+end_src
 
-In a =?let= form it shorts on nil keys
+In a =?let= form it shorts on =nil= keys.
 
 #+begin_src clojure
 (isnt (?let [(ks a) {}] (error "never"))) 
 #+end_src
 
-=opt-ks= for keys that may not be here
+=opt-ks= for keys that may not be here.
 
 #+begin_src clojure
 (is "foo"
@@ -955,7 +963,7 @@ In a =?let= form it shorts on nil keys
 (exp @E '(let [{:foo _foo} {}] (or foo "foo")))
 #+end_src
 
-=ks-or= let you define default values for missing keys
+=ks-or= let you define default values for missing keys.
 
 #+begin_src clojure
 (is "default"
@@ -970,8 +978,9 @@ In a =?let= form it shorts on nil keys
 #+end_src
 
 =&= (parrallel bindings)
-several patterns can be bound to the same seed
-something that i've sometimes missed in clojure (lightly)
+
+Several patterns can be bound to the same seed. 
+Something that i've sometimes missed in clojure (lightly).
 
 #+begin_src clojure
 (is (?let [(& mymap
@@ -1008,7 +1017,7 @@ Some others builtin bindings exists, see source.
 #+begin_src clojure
 ;; we can extend binding ops like this
 
-;; as an exemple we are redefining the & operation
+;; as an exemple we are redefining the '& operation
 (E+ (bind.op+ ks [xs seed] ;; xs are the arguments passed to the operation, seed is the expr we are binding
               (bind (zipmap ($ xs keyword) xs) seed)))
 
@@ -1034,13 +1043,11 @@ Some others builtin bindings exists, see source.
 
 *** Special Bindings
 
-when an sexpr in found in binding position (left side of let bindings)
-if it is not a binding operator call (like we've just seen =ks= and =&= for instance)
-it can be what we call a =guard pattern=
+When a sexpr in found in binding position (left side of let bindings), if it is not a binding operator call (like we've just seen =ks= and =&= for instance), it can be what we call a 'guard pattern'.
 
 **** Guard pattern
 
-a =guard pattern= is an expression with a binding symbol as first argument
+a 'guard pattern' is an expression with a binding symbol as first argument
 
 #+begin_src clojure
 (is 1
@@ -1057,7 +1064,8 @@ a =guard pattern= is an expression with a binding symbol as first argument
           a))
 #+end_src
 
-This can be a bit confusing I guess, but wait a minute. This syntax is firstly making sense with guards that returns their first argument unchanged in case of success.
+This can be a bit confusing I guess, but wait a minute. 
+This syntax is firstly making sense with guards that returns their first argument unchanged in case of success.
 
 In asparagus there is a semantic convention that first argument to any function is "the thing the function is working on".
 
@@ -1069,7 +1077,7 @@ As a counterexample in Clojure we often have mix -> and ->> because some functio
 and others (map,filter etc..) on the last, it result in less clear code i think.
   
 With this in mind, the fact that we bound the return value of the guard to the symbol that is in first argument position ('object position' we could say) makes a little more sense I guess.
-And last but not least, by behaving this way, guard patterns can serve as a way to coerce input data (seed) 
+And last but not least, by behaving this way, guard patterns can serve as a way to coerce input data (seed).
   
 Disclaimer: someone that I trust has said to me that in the "data world" the convention is that the flowing data is the last argument, so... :)  
 
@@ -1085,7 +1093,7 @@ Disclaimer: someone that I trust has said to me that in the "data world" the con
 
 **** Type guards
 
-An sexpr starting with a type keyword (see asparagus.boot.types) indicates a type guard pattern
+A sexpr starting with a type keyword (see asparagus.boot.types) indicates a type guard pattern
 
 #+begin_src clojure
 (is [1 2 3]
@@ -1127,8 +1135,8 @@ Any value can be used in pattern position,
 
 ** =clet= (Cased Let) 
 
-=clet= is like a cascade =?let= (shrotcircuiting let) forms
-it can be be compared to cond-let but is more powerful
+=clet= is like a cascade of =?let= (shortcircuiting let) forms. 
+It can be be compared to =cond-let= but is more powerful.
 
 #+begin_src clojure
 (is (clet [x (pos? -1)] {:pos x}      ;first case
@@ -1137,7 +1145,7 @@ it can be be compared to cond-let but is more powerful
     {:neg -1})
 #+end_src
 
-Each binding block can have several bindings
+Each binding block can have several bindings.
 
 #+begin_src clojure
 (let [f (fn [seed]
@@ -1148,7 +1156,7 @@ Each binding block can have several bindings
   (isnt (f :pop)))
 #+end_src
 
-Default case 
+Default case:
 
 #+begin_src clojure 
 (is (clet [x (pos? 0) n (error "never touched")] :pos
@@ -1157,7 +1165,7 @@ Default case
     :nomatch)
 #+end_src
 
-Strict version
+*** =!clet= (strist version) 
 
 #+begin_src clojure 
 (throws
@@ -1165,7 +1173,7 @@ Strict version
         [x (neg? 0)] :neg))
 #+end_src
 
-Unified version 
+*** =clut= (unified version) 
 #+begin_src clojure
 (let [f (fn [seed]
           (clut [[a a] seed] :eq
@@ -1174,7 +1182,7 @@ Unified version
   (is :neq (f [1 2])))
 #+end_src
 
-Unified Version 
+*** =!clut= (unified strict version) 
 
 #+begin_src clojure 
 (let [x [:tup [1 2]]]
@@ -1188,7 +1196,7 @@ Unified Version
         [[:point x y] p] [x y]))
 #+end_src
 
-** Loop
+** =let :rec= (loop)
 
 let can be given a name (here :rec) in order to loop
 
@@ -1198,8 +1206,6 @@ let can be given a name (here :rec) in order to loop
                 (rec (add ret x) xs)))
        36)
 #+end_src
-
-
 
 ** =case= 
 
@@ -1214,8 +1220,7 @@ let can be given a name (here :rec) in order to loop
     :nomatch))
 #+end_src
 
-=case= has its unified variant =casu=
-
+*** =casu= (unified version)
 
 #+begin_src clojure
 (let [t (f [x]
@@ -1232,7 +1237,9 @@ let can be given a name (here :rec) in order to loop
   (is :pouet (t [:point 1 "io"])))
 #+end_src
 
-There is also =!case= and =!casu= that throws if nothing match the input.
+*** =!case= and =!casu= (strict versions)
+
+Throws if nothing match the input.
 
 #+begin_src clojure
 (let [x 1]
@@ -1241,6 +1248,8 @@ There is also =!case= and =!casu= that throws if nothing match the input.
           (str? x) :str
           (vec? x) :vec)))
 #+end_src
+
+*** Misc
 
 With the help of =case_= we can rewrite the first exemple more concisely.
 
@@ -1277,7 +1286,7 @@ We can put guard symbols in pattern position.
 
 * Lambdas 
 
-** =f= (macro)
+** =f= (lambda)
 
 All the binding forms that we have seen so far have their lambda equivalent.
 
@@ -1342,8 +1351,8 @@ The same can be acheive with =rec=
   (is (g 1 2 3 4) 10))
 #+end_src
 
-Like in scheme, binding pattern can be a simple symbol
-this is the reason why we need keyword litteral to name lambdas (to disambiguate)
+Like in scheme, binding pattern can be a simple symbol, 
+this is the reason why we need keyword litteral to name lambdas (to disambiguate).
 
 #+begin_src clojure
 (let [g (f xs (add . xs))]
@@ -1394,16 +1403,16 @@ You can use any binding pattern:
   (isnt (fun 42)))
 #+end_src
 
-It has all the common variations: =!f1= =?f1= =!fu1= =fu1= that do what you should expect (if you have not skip previous parts of this file)
+It has all the common variations: =!f1=, =?f1=, =!fu1= and =fu1= that do what you should expect (if you have not skip previous parts of this file)
 
-We also have f_ that is a bit more concise than f1, if you don't need destructuring.
+We also have =f_= that is a bit more concise than =f1=, if you don't need destructuring.
 
 #+begin_src clojure
 (let [double (f_ (add _ _))]
   (is (double 2) 4))
 #+end_src
 
-It also have common variations, f_, ?f_ , !f_ (unification variants are useless here)
+It also have common variations, =f_=, =?f_= and =!f_= (unification variants are useless here)
 
 ** =cf= (case lambda)
 
@@ -1441,11 +1450,9 @@ Note that variadic cases must have the same length.
 
 all previous variations are implemented: =!cf=, =?cf=, =cfu=, =!cfu=. maybe I should have considered =cf1=...
 
-You may ask yourself what is the price for this expressivity. I've worked hard on compiling those forms into performant code, 
+You may ask yourself what is the price for this expressivity. I've worked hard on compiling those forms into performant code. 
 There is certainly a price for the shortcircuit, strict and unified binding modes, but probably not as high as you may expect.
 Sometimes it is close to bare clojure's perfs.
-
-
 
 * Iterables
 ** Basic
@@ -1556,7 +1563,7 @@ Following the first argument convention we mentioned earlier,  =map= is taking t
     [1 2 3])
 #+end_src
 
-It preserves collection type
+It preserves collection type.
 
 #+begin_src clojure
 (is ($ #{1 2 3} inc)
@@ -1579,7 +1586,7 @@ On maps it behaves differently from =clojure.core/map=, given functions are rece
      {:idx 2, :val :c}])
 #+end_src
 
-on maps it receives key-value pairs, given functions has to return only the value
+On maps it receives key-value pairs, given functions has to return only the value.
 
 #+begin_src clojure
 (is ($i {:a 1 :b 2}
@@ -1603,7 +1610,7 @@ It is pointless to use $i explicetly on a set, but in a ploymorphic context, set
     #{[:a :a] [:b :b] [:c :c]})
 #+end_src
 
-so now you may wonder about what we leave behing from the clojure.core/map behavior, in particular, core/map can takes several sequences.
+So now you may wonder about what we leave behing from the =clojure.core/map= behavior, in particular, =core/map= can takes several sequences.
 
 *** =zip=
 
@@ -1627,7 +1634,7 @@ Like =core.map= it is variadic.
 
 *** =$+=
 
-=$+= is to =$= what =mapcat= is to =map=
+=$+= is to =$= what =mapcat= is to =map=.
 
 #+begin_src clojure
 (is ($+ (range 6) (f_ (c/repeat _ _)))
@@ -1639,7 +1646,7 @@ Like =core.map= it is variadic.
 
 *** =$i+= 
 
-indexed version of =$+=
+Indexed version of =$+=.
 
 #+begin_src clojure
 (is ($i+ [[3 2 1 0] [6 5 4] [9 8 7]]
@@ -1659,7 +1666,7 @@ indexed version of =$+=
     (lst 0 1 2 3 4 5 6 7 8 9))
 #+end_src
 
-while writing this i'm considering zipi and zipi+...
+While writing this i'm considering =zipi= and =zipi+=...
 
 *** =red=
 
@@ -1671,7 +1678,7 @@ while writing this i'm considering zipi and zipi+...
     #{1 4 6 3 2 5})
 #+end_src
 
-With several iterables
+With several iterables.
 
 #+begin_src clojure
 (is (red []
@@ -1695,7 +1702,7 @@ Under the hood many of the functions described in the previous section rely on t
 
 *** =iter= 
 
-Is like core/seq (but do not returns nil on empty things).
+Is like =core/seq= (but do not returns nil on empty things).
 
 #+begin_src clojure
 (is (iter {:a 1 :b 2})
@@ -1732,11 +1739,11 @@ Returns a seq of keys for maps, or a seq of idexes for sequentials.
     (lst 0 1 2))
 #+end_src
 
-those three functions are generic and can be implemented for your types
+Those three functions are generic and can be implemented for your types.
 
 ** Extra operations 
 
-=scan= (like core/partition)
+=scan= (like =core/partition=)
 #+begin_src clojure
 (is [[1 2] [3 4]]
     (scan [1 2 3 4] 2 2))
@@ -1754,7 +1761,7 @@ those three functions are generic and can be implemented for your types
     (chunk [] 2))
 #+end_src
 
-=braid= (like core/interleave)
+=braid= (like =core/interleave=)
 #+begin_src clojure
 (is '(1 4 2 5 3 6)
     (braid [1 2 3] [4 5 6]))
@@ -1768,7 +1775,7 @@ those three functions are generic and can be implemented for your types
     (lst 0 3 6 9))
 #+end_src
 
-=car= and =cdr= compositions, like in scheme we have those little facilities, this is the main reason I chose car/cdr over first/rest.
+=car= and =cdr= compositions, like in scheme we have those little facilities, this is the main reason I chose =car=/=cdr= over =first=/=rest=.
 #+begin_src clojure
 (is :io
     (cadr [1 :io])
@@ -1799,7 +1806,7 @@ those three functions are generic and can be implemented for your types
 
 * Functional Programing
 
-One thing we all love in functional programming is the ability to compose functions together.
+One thing we all love in functional programming is the ability to compose functions together. 
 Manipulating them easily, passing them to other functions, partially apply them etc... 
 In asparagus I've tried to push all those things further than clojure.
 
@@ -1826,7 +1833,6 @@ For constants it returns itself.
 (is (§ 42 "iop") 42)
 (is (§ "pouet" 1 2 3) "pouet")
 #+end_src
-
 
 Datastructures have their invocation implementation, that differs from clojure, it does not perform a get.
 
@@ -1891,11 +1897,20 @@ If extra keys are present in several args the last is kept.
     {:a 2 :b 7})
 #+end_src
 
+
+*** =*= (apply)
+
+#+begin_src clojure
+(is (* add 40 [1 1]) 42)
+#+end_src
+
+TODO
+
 ** The "object" convention
 
 In asparagus, many functions takes what we can call the object as first argument.
 
-I mean, the thing we are working on, for instance, in the expression (assoc mymap :a 1 :b 2), mymap is what we call the object. 
+I mean, the thing we are working on, for instance, in the expression =(assoc mymap :a 1 :b 2)=, =mymap= is what we call the object. 
 
 All functions that can be viewed this way, will always take the 'object' as first argument.
 
@@ -1915,7 +1930,7 @@ You can also pass arguments immediatly.
   (f {}))
 #+end_src
 
-many of the asparagus functions that follow this convention, have their argumentation version with the same name suffixed with _.
+Many of the asparagus functions that follow this convention, have their argumentation version with the same name suffixed with =_=.
 
 This is handy, for instance, to create chains of 1 argument functions.
 
@@ -1924,7 +1939,7 @@ This is handy, for instance, to create chains of 1 argument functions.
     (range 3 8))
 #+end_src
 
-the =>= function is defined in the :invocation-application-mapping section of =asparagus.core=
+the =>= function is defined in the =:invocation-application-mapping= section of =asparagus.core=
 
 It will return a function that wait for its first argument ('myseq in the previous example)
 
@@ -1934,10 +1949,10 @@ It will return a function that wait for its first argument ('myseq in the previo
 
 ** Guards
 
-One other thing that ease function composition is what I call guards (for lack of better name)
-Guards differs from predicate by the fact that they can either return nil or something (in most case the given 'object' unchanged) so they can be used like predicates, but do not stop the flowing data, therefore they can be chained via function composition.
+One other thing that ease function composition is what I call guards (for lack of better name). 
+Guards differs from predicate by the fact that they can either return =nil= or something (in most case the given 'object' unchanged) so they can be used like predicates, but do not stop the flowing data, therefore they can be chained via function composition.
 
-some examples of guards:
+Some examples of guards:
 #+begin_src clojure
 (is (vec? [1 2]) [1 2])
 (isnt (vec? (lst 1 2)))
@@ -1958,7 +1973,7 @@ As we've seen we can chain them like this.
 
 **** =$?=
 
-check if all values of a datastructure are not nil (see 'iterables section)
+check if all values of a datastructure are not =nil= (see =iterables= section)
 
 #+begin_src clojure
 (is ($? [1 2 3])
@@ -1974,9 +1989,9 @@ check if all values of a datastructure are not nil (see 'iterables section)
 
 **** =?$=
 
-=?$= is a composition of =$= and =$?=
+=?$= is a composition of =$= and =$?=.
 
-It can be viewed as a map operation that succed if all values of the resulting collection are non nil
+It can be viewed as a =map= operation that succed if all values of the resulting collection are non =nil=
 
 #+begin_src clojure
 (is (?$ [2 3 4 5] num? inc (gt_ 2))
@@ -1985,10 +2000,9 @@ It can be viewed as a map operation that succed if all values of the resulting c
 (isnt (?$ [3 4 1 5] num? inc (gt_ 2)))
 #+end_src
 
+**** =?zip=
 
-**** =?zip= 
-
-the zip variant
+the =zip= variant
 
 #+begin_src clojure
 (is (?zip #(pos? (add %1 %2)) [1 2 3] [1 2 3])
@@ -2028,14 +2042,13 @@ a deep variant of =?$=, checks if all nested values are non =nil=
 
 **** the =guard= macro
 
-It has the same syntax than the f macro but the resulting function will return the first argument unchanged if its body succeeds, otherwise nil
+It has the same syntax than the =f= macro but the resulting function will return the first argument unchanged if its body succeeds, otherwise =nil=.
 
 #+begin_src clojure
 (let [g (guard [x] (odd? (count x)))]
   (is (g [1 2 3]) [1 2 3])
   (isnt (g [1 2 3 4])))
 #+end_src
-
 
 **** wrapping and importing predicates 
 
@@ -2050,14 +2063,14 @@ It has the same syntax than the f macro but the resulting function will return t
 
 *** =?>=
 
-Thread the object thru guards shorting on first nil result.
+Thread the object thru guards shorting on first =nil= result.
 
 #+begin_src clojure
 (is 1 (?> 1 num? pos?))
 (isnt (?> 1 num? neg?))
 #+end_src
 
-Shorts after str? (else it would be an error).
+Shorts after =str?= (else it would be an error).
 
 #+begin_src clojure
 (isnt (?> 1 str? (+_ "aze")))
@@ -2086,7 +2099,7 @@ More composed exemple:
 
 *** =?<=
 
-Trying all given guards against x until first non nil result.
+Trying all given guards against its first argument until first non =nil= result.
 
 #+begin_src clojure
 (is 1 (?< 1 coll? num?))
@@ -2178,9 +2191,7 @@ A scheme-cond(ish) function.
       (f 2)))
 #+end_src
 
-*** =df= 
-
-data function:
+*** =df= (data function) 
 
 create a function from a data structure that apply all functions contained in it (deeply) to further args while preserving its original structure.
 
@@ -2193,7 +2204,7 @@ you can use vectors and maps to compose the resulting function
           :halfed (f_ (div _ 2))}])) ;;=> <fn>
 #+end_src
 
-Invoc it:
+Invoking it:
 #+begin_src clojure
 (let [f (df [inc dec
              {:doubled (f_ (mul 2 _))
@@ -2209,7 +2220,7 @@ Invoc it:
 #+end_src
 
 Any invocable can serve as a leaf. Don't know if you remember, but in asparagus almost everything is invocable.
-In particular constant values like 42 or :foo return themselves. To demonstrate that df can handle any invocable, we will use some of those.
+In particular constant values like =42= or =:foo= return themselves. To demonstrate that =df= can handle any invocable, we will use some of those.
 
 #+begin_src clojure
 (let [f (df [inc dec :foo 42])]
@@ -2246,6 +2257,8 @@ But you can use the =§= function to state that a leaf that is a map or a vec ha
 *** Composing data flow 
 
 with guards, shortcircuiting binding/lambda forms (?let, clet, cf, ?f...) , invocable datastructures, data functions, conditional functions (?c and ?c>), guard connectors (?< and ?>)
+
+This example is really dummy but tries to show how those things can be used together...
 
 #+begin_src clojure
 (is
@@ -2312,9 +2325,9 @@ If a ~ appears within the template, however, the expression following the ~ is e
       '(list a (quote a))))
 #+end_src
 
-If a tilde (~) appears preceded immediately by a dot, then the following expression must evaluate to an iterable structure. 
+If a tilde (=~=) appears preceded immediately by a dot, then the following expression must evaluate to an iterable structure. 
 The evaluated iterable structure will be merged into its host structure, replacing the dot, the unquote and the expression.
-Therefore a 'dot unquote expr' (.~expr) structure has to appears only in an iterable structure (in order to be able to be merged into it).
+Therefore a 'dot unquote expr' (=.~expr=) structure has to appears only in an iterable structure (in order to be able to be merged into it).
 
 #+begin_src clojure
 
@@ -2326,7 +2339,7 @@ Therefore a 'dot unquote expr' (.~expr) structure has to appears only in an iter
       {:a 1, :b 2, :c 3}))
 #+end_src
 
-Quasiquote forms may be nested.
+Quasiquote forms may be nested. 
 Substitutions are made only for unquoted components appearing at the same nesting level as the outermost backquote.
 The nesting level increases by one inside each successive quasiquotation, and decreases by one inside each unquotation.
 
@@ -2343,15 +2356,15 @@ The nesting level increases by one inside each successive quasiquotation, and de
 
 ** =qq= (qualified quasiquote)
 
-Is somehow similar to clojure =quasiquote=, in the sense that it let you template a structure like =sq= do, but also qualifies symbols
-
+Is somehow similar to clojure =quasiquote=, in the sense that it let you template a structure like =sq= do, but also qualifies symbols.
 
 #+begin_src clojure
 (is (qq (+ 1 ~(+ 2 3)))
     '(_.joining.+ 1 5))
 #+end_src
 
-A word on qualified symbols:
+A word on qualified symbols: 
+
 When qualifying =+= we resolve it to =joining.+= (indicating that the =+= function lives in the =joining= module).
 The underscore prefix simply make explicit that it is an absolute path (preventing any relative or bubling resolution that could occur at a later stage).
 
@@ -2361,7 +2374,7 @@ If a symbol is not resolvable it is left as is.
     '(_.joining.+ a b c))
 #+end_src
 
-All the things that we've seen with sq are possible with qq.
+All the things that we've seen with =sq= are possible with =qq=.
 
 ** =qq!= (qualified strict quasiquote)
 
@@ -2396,14 +2409,13 @@ Since macros have access to the environment, and are responsable to thread expan
 They can do all sort of transformations/updates on the environment before passing it to further expansions.
 Therefore a macro has full control over its operands, which seems legitimate to me.
 
-
 Another interesting thing about asparagus macros, occuring from the fact that there is no automatic recursive expansions.
 Is that functions and macros can share the same name. you may ask yourself what is the point :).
 In fact in clojurescript, this kind of technique is used for compile time optimizations for exemple.
 
 ** Macros
 
-A simple macro definition
+A simple macro definition.
 
 #+begin_src clojure
 (E+ postfix:mac ;; note the :mac sufix
@@ -2424,7 +2436,7 @@ In trivial cases like this one it works but if the operands contains some macro 
 #+end_src
 
 As we've said, we have to thread the expansion further. 
-We've just seen the 'exp function that perform expansion given an environment and an expression.
+We've just seen the =exp= function that perform expansion given an environment and an expression.
 #+begin_src clojure
 (E+ postfix:mac
     (fn [e args]
@@ -2447,11 +2459,11 @@ You can do many crazy things with this behavior, but you don't have to.
 Those days I personaly tends to prefer technologies that let the power to the user, even if I agree that strong opinions and good practices enforcement can yield to a powerfull language and strong community (like clojure)
 Its a matter of taste and needs after all (at a point in time).
 
-All the binding forms and lambda macros are defined this way, so maybe its time to look at the asparagus.core namespace
+All the binding forms and lambda macros are defined this way, so maybe its time to look at the =asparagus.core= namespace
 
 ** =mac=
 
-And as you may have guessed, we can implement regular Lisp behavior in terms of those semantics, using the builtin 'mac macro, we will define a dummy 'fi macro (same as clojure's if-not)
+And as you may have guessed, we can implement regular Lisp behavior in terms of those semantics, using the builtin =mac= macro, we will define a dummy 'fi macro (same as clojure's if-not)
 
 #+begin_src clojure
  (E+ fi:mac
@@ -2550,11 +2562,11 @@ So now it is substituted by what's in substitution-exemple.bar:val.
 
 ** Updates 
 
-Extending E+ behavior with the :upd attribute.
+Extending =E+= behavior with the :upd attribute.
 
-It can hold a function that creates an update datastructure (like the one E+ takes), hold on, see the exemple:
+It can hold a function that creates an update datastructure (like the one =E+= takes), hold on, see the exemple:
 
-We declare an update called tagged.
+We declare an update called =tagged=.
 #+begin_src clojure
 (E+ tagged:upd ;; note the :upd suffix
       (f [e [tag data]]
@@ -2563,13 +2575,13 @@ We declare an update called tagged.
          [:tag tag :val data]))
 #+end_src
 
-we can use it in an E+ form like this
+we can use it in an =E+= form like this
 #+begin_src clojure
 (E+ upd-function-demo.foo (tagged :my-tag 42))
 #+end_src
 
-when E+ see an :upd call it will execute it and substitute it with its return value. 
-In this case it will be equivalent to this
+when =E+= see an =:upd= call it will execute it and substitute it with its return value. 
+In this case it will be equivalent to this:
 
 #+begin_src clojure
 (E+ upd-function-demo.foo [:tag :my-tag :val 42])
@@ -2577,14 +2589,14 @@ In this case it will be equivalent to this
 (env-inspect 'upd-function-demo.foo)
 #+end_src
 
-this technique is used at several place in asparagus source (feel free to look at it)
+This technique is used at several place in asparagus source (feel free to look at it)
 Contrary to macros and substitutions, updates are recursivelly executed, so an update functions can return an expression which is another update call, which will be further processed.
 
 All clojure's macros that emits def forms falls into this category
 
 ** Side effects
 
-sometimes you need to do dirty/real things,
+Sometimes you need to do dirty/real things,
 =:fx= let you write an expression that will be executed at environment extension time, the expression being previously compiled with the current environment.
 
 #+begin_src clojure
@@ -2592,13 +2604,13 @@ sometimes you need to do dirty/real things,
 #+end_src
 
 In practice it is used for things like, extending a protocol or running tests for exemple.
-See the 'generic section (which wrap clojure's protocols)
+See the =generic= section (which wrap clojure's protocols)
 
 All those special attributes may appears abstract at this time, but looking at asparagus source (that is highly documented) will show them in practice, and it will become more clear I hope.
 
 * Generics
 
-Generic functions are at heart of asparagus, every core operations are defined this way.
+Generic functions are at heart of asparagus, every core operations is defined this way.
 
 *** mono arity
 
@@ -2711,7 +2723,7 @@ It has the same syntax as the initial definition.
       {:a "hey", :b 1, :c (lst 2 3), :c1 2, :cs (lst 3)}}))
 #+end_src
 
-***  'à la carte' polymorphism
+*** 'à la carte' polymorphism
 
 One consideration that came to my mind and that is experimented at the end of =asparagus.boot.generics= 
 is that each implementation should be callable directly when there is no need for polymorphism.
@@ -2777,8 +2789,8 @@ Also have pattern matching for free.
       ["Bob" "Wallace"]))
 #+end_src
 
-Types can be sort-of namespaced.
-the folling declare a foo.kons type
+Types can be sort-of namespaced. 
+the folling declare a foo.kons type:
 #+begin_src clojure
 (E+ foo ;; we are in the foo module
     (type+ :kons [kar kdr]) ;; we declare a type
@@ -2791,7 +2803,7 @@ the folling declare a foo.kons type
 
 * Object Orientation
 
-A light way to mimic object oriented programming in clojure is to put methods inside a map
+A light way to mimic object oriented programming in clojure is to put methods inside a map.
 
 #+begin_src clojure
 (let [obj
@@ -2873,15 +2885,15 @@ Here's an experimental way to create objects that shares prototypes.
 
 * Dive and Tack
 
-** Dive
+** =dive=
 
 The =dive= generic function, let you get something inside something else.
 Its first argument represent the address of what you want to get.
 The second is the thing in which you want to find it.
 
-It is like core/get but with arguments reversed, and being a generic function, it can be extended.
+It is like =core/get= but with arguments reversed, and being a generic function, it can be extended.
 
-For key and syms it does what core/get had done.
+For key and syms it does what =core/get= had done.
 #+begin_src clojure
 (is 1 (dive :a {:a 1}))
 (is 1 (dive 'a {'a 1}))
@@ -2911,59 +2923,59 @@ It also accpets raw functions.
 #+end_src
 
 
-Also, we can mention that it is a concrete exemple of something that is a function and a macro at the same time
-Here we use a technique that is analog to the one we used in =bind= (binding operators)
-The =dive= module holds a map of operations implementations in =dive.ops=
-At expansion time, if the first argument to =dive= is an sexpr, the verb will be searched in =dive.ops=
-If an implementation is found, it will be executed (at expansion time) and the return value will take the place of the original expression
+Also, we can mention that it is a concrete exemple of something that is a function and a macro at the same time. 
+Here we use a technique that is analog to the one we used in =bind= (binding operators). 
+The =dive= module holds a map of operations implementations in =dive.ops=. 
+At expansion time, if the first argument to =dive= is an sexpr, the verb will be searched in =dive.ops=. 
+If an implementation is found, it will be executed (at expansion time) and the return value will take the place of the original expression.
 
 As an exemple, we use the 'ks operation.
 #+begin_src clojure
 (!! (dive (ks a b) {:a 1 :b 2 :c 2}))
 #+end_src
 
-=ks= is resolved in =dive.ops= and applied to the given args (here :a and :b), producing this form
+=ks= is resolved in =dive.ops= and applied to the given args (here :a and :b), producing this form:
 #+begin_src clojure
 '(dive (fn [y] (select-keys y [:a :b]))
        {:a 1 :b 2 :c 2})
 #+end_src
 
-Functions implement dive so the expansion time work is done, the form will now ready for runtime.
+Functions implements =dive= so the expansion time work is done, the form will now ready for runtime.
 
- As you may have deduced by yourself, dive.ops can be extended with new operations.
-Keep in mind that it will not alter all previous call to dive, which are already compiled. (this is a good thing :)).
+As you may have deduced by yourself, =dive.ops= can be extended with new operations. 
+Keep in mind that it will not alter all previous call to =dive=, which are already compiled. (this is a good thing :)).
 
 *** Extension
 
-adding a wtf op that do something that does not make sense
+Adding a =wtf= op that do something that does not make sense. 
 
 #+begin_src clojure
 (E+ (dive.op+ wtf [x]
               (qq (f_ [:wtf ~x _]))))
 #+end_src
 
- using it
+Using it.
 #+begin_src clojure
 (is (dive (wtf 42) {:a 1 :b 2})
     [:wtf 42 {:a 1 :b 2}])
 #+end_src
 
-inspecting the ops table
+Inspecting the ops table.
 #+begin_src clojure
 (ppenv dive.ops)
 #+end_src
 
-** =Tack=
+** =tack=
 
-=tack= is not really intended to be used directly
+=tack= is not really intended to be used directly.
 
-In most cases we will use =put= and =upd= (that are defined in terms of it)
+In most cases we will use =put= and =upd= (that are defined in terms of it, and follow the 'object convention')
 
-It is semantically similar to assoc with different arg order.
+It is semantically similar to =core/assoc= with different arg order.
 
 Like in =dive= the first argument is the address (and is used to dispatch). 
 The second argument is the object we work on (the tacking-target :)). 
-The third is the thing we want to put at this location.
+The third is the thing we want to put at this location. 
 
 #+begin_src clojure
 (is  (tack 1      ;; the address
@@ -2973,13 +2985,13 @@ The third is the thing we want to put at this location.
        [1 :io 3])
 #+end_src
 
-It supports neg idexes like dive does.
+It supports neg idexes like dive does. 
 #+begin_src clojure
 (is (tack -1 [1 2 3] :foo))
 (is (tack -1 '(1 2 3) :foo))
 #+end_src
 
-Vectors denotes nesting.
+Vectors denotes nesting. 
 #+begin_src clojure
 (is (tack [:a :b] {} 42)
     {:a {:b 42}})
@@ -3038,7 +3050,7 @@ TODO
 
 * Dev utilities
 
-Inspecting the environment 
+Inspecting the environment. 
 
 #+begin_src clojure
 ;; function
@@ -3062,15 +3074,6 @@ Expanding an update call.
 #+end_src
 
 TODO
-
-#+begin_src clojure
-#+end_src
-
-#+begin_src clojure
-#+end_src
-
-#+begin_src clojure
-#+end_src
 
 * At last...
 
