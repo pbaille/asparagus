@@ -4,13 +4,13 @@
   - [[#simple-defintions][simple defintions]]
   - [[#bubbling-resolution][Bubbling resolution]]
   - [[#links][Links]]
-  - [[#e-][E-]]
+  - [[#e-][ =E-= ]]
 - [[#data-primitives][Data Primitives]]
   - [[#literals][Literals]]
   - [[#collections][Collections]]
   - [[#words][Words]]
 - [[#joining][Joining]]
-  - [[#][ =+= ]]
+  - [[#-concatish][ =+= (concat(ish))]]
   - [[#sip][ =sip= ]]
   - [[#pure][ =pure= ]]
   - [[#pure-1][ =pure?= ]]
@@ -426,7 +426,7 @@ If there is no link at the current level, we go up (bubling) and loop, until roo
 
 #+end_src
  
-** E-
+** =E-=
 
 You can remove global environment's members with =E-=
 
@@ -548,7 +548,7 @@ As for collections, we use guards instead of preds
 
 * Joining
 
-** =+= 
+** =+= (concat(ish)) 
 
 =+= is joining things together.
 
