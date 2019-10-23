@@ -3,5 +3,6 @@
   criterium {:mvn/version "0.4.4"}
   instaparse {:mvn/version "1.4.10"}
   org.clojure/core.match {:mvn/version "0.3.0"}}
- :aliases {}
+ :aliases {:tutorial/build {:extra-paths ["scripts"]
+                            :main-opts ["scripts/build_tutorial.clj"]}}
  :paths ["src"]}
