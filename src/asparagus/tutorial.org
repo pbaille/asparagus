@@ -11,7 +11,7 @@
   - [[#words][Words]]
 - [[#joining][Joining]]
   - [[#joining-things-together-with-][joining things together with =+=]]
-  - [[#sip-add-one-or-several-element-into-something][=sip= add one or several element into something]]
+  - [[#-sip-add-one-or-several-element-into-something][: =sip= add one or several element into something]]
   - [[#pure-returns-the-empty-version-of-the-given-argument][=pure= returns the empty version of the given argument]]
   - [[#pure-test-for-purity][=pure?= test for purity]]
 - [[#composing][Composing]]
@@ -591,7 +591,7 @@ On function it do composition (left to right, not like core.comp do)
     4)
 #+end_src
 
-** =sip= add one or several element into something
+** : =sip= add one or several element into something
 
 #+begin_src clojure 
 (is (sip [] 1 2)
