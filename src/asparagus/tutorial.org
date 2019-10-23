@@ -1,4 +1,4 @@
-* Content :TOC_2_gh:
+* Content :TOC_2:
 - [[#introduction][Introduction]]
 - [[#environment][Environment]]
   - [[#simple-defintions][simple defintions]]
