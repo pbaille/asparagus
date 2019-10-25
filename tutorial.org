@@ -1,7 +1,7 @@
 * Content :TOC_2:
 - [[#introduction][Introduction]]
 - [[#environment][Environment]]
-  - [[#simple-defintions][simple defintions]]
+  - [[#simple-definitions][simple definitions]]
   - [[#bubbling-resolution][Bubbling resolution]]
   - [[#links][Links]]
   - [[#e-][ =E-= ]]
@@ -63,14 +63,14 @@
 
 * Introduction
 
-Asparagus is my last experience in language design.
+Asparagus is my latest experience in language design.
 After several attempt, i've compiled some of the ideas I like, found in other languages/books/papers.
 
 It is embedded in clojure, but at the same time is quite far from it.
-It has its own environment/namespaces mecanism, and another kind of macro system.
+It has its own environment/namespaces mechanism, and another kind of macro system.
 It is far from being production ready, but I hope that it can be interesting as an experiment for some of you.
 
-I'm an autodidact with no proper computer science degree, my approch to programming is quite empirical.
+I'm an autodidact with no formal computer science degree, my approach to programming is quite empirical.
 First of all I'm seeking for feedback, advices, discussions and people to work with.
 
 For now the main goals are: 
@@ -80,13 +80,13 @@ For now the main goals are:
 - expressivity
 - performance (close to clojure)
 
-The main ways/devices to acheive them:
+The main ways/devices to achieve them:
 
 - (environment/expansion)-passing-style macros (a more general/powerful macro system)
 - pattern matching (built in to lambdas and binding-forms, extensible binding semantics)
-- functional control flow (heavy use of function composition and guards, nil based shortcuiting constructs)
+- functional control flow (heavy use of function composition and guards, nil-based short-cutting constructs)
 - generic functions at heart (all core operations of the language will be implementable by user types and implemented meaningfully by core types)
-- holy datastructures's litterals (maps, vecs, lists and sets) at the heart (giving them more usages and extra syntax sugar)
+- holy data structure literals (maps, vectors, lists and sets) at the heart (giving them more usages and extra syntax sugar)
 
 This tutorial assumes familiarity with clojure, or at least another Lisp.
 
@@ -99,13 +99,13 @@ You should start a REPL and load =asparagus.core=.
 
 * Environment
 
-The asparagus environment is holded by the =asparagus.core/E= atom
+The asparagus environment is held by the =asparagus.core/E= atom
 
 #+begin_src clojure
 @E
 #+end_src
 
-** simple defintions
+** simple definitions
 
 You can define a variable like this (=E+= stands for extend-environment).
 Its like a really (really!) fancy =def=.
@@ -171,7 +171,7 @@ Dot notation can be used in definitions too.
     foo.bar 'foob)
 #+end_src
 
-This definition does not overide our previous ones, =foo= is still defined.
+This definition does not override our previous ones, =foo= is still defined.
 
 #+begin_src clojure 
 (is 1 foo)
@@ -256,7 +256,7 @@ Any environment variable can have any number of those attributes.
      :foo :bar})
 #+end_src
 
-They can be refered in code with colon notation.
+They can be referred in code with colon notation.
 
 #+begin_src clojure 
 (is stats:doc
@@ -284,7 +284,7 @@ We also could have used vector syntax to define stats.
 #+end_src
 
 In =E+=, top level's strings literals represent documentation (a bold choice maybe...).
-But I've said to myself, maybe hardcoded string in code are not so common? (at least at the top level) far less than keywords for instance.
+But I've said to myself, maybe hard-coded string in code are not so common? (at least at the top level) far less than keywords for instance.
 
 #+begin_src clojure 
 (E+ myvar
@@ -365,34 +365,34 @@ e.g =.sum=, =.mean= and =..sum= (in the stats previous definition)
 #+end_src
 
 You may wonder about interop... it is not supported for now, more thinking is required on that matter.
-At those early stages I tought that the core design is the main focus,
+At those early stages I thought that the core design is the main focus,
 Asparagus is not at the get-the-things-done stage for now ;)
 
 ** Bubbling resolution
 
 Using absolute and relative paths for all our vars is kind of painfull and ugly.
-Sometimes it is needed to desambiguate but certainely not all the time.
-When a symbol cannot be resolved at the current level, it will be searched bubling up the environment.
+Sometimes it is needed to disambiguate but certainly not all the time.
+When a symbol cannot be resolved at the current level, it will be searched bubbling up the environment.
 
 #+begin_src clojure 
 
-(E+ bubling.demo
+(E+ bubbling.demo
     {a 1
      b.c
      (fn []
-       ;; here 'a will be resolved bubling up the environment
-       ;; in this case it will be resolved to bubling.demo.a
+       ;; here 'a will be resolved bubbling up the environment
+       ;; in this case it will be resolved to bubbling.demo.a
        a)
      c
      {a 2
       b
       (fn []
-        ;; here it will be resolved to bubling.demo.c.a
+        ;; here it will be resolved to bubbling.demo.c.a
         a)}}
     )
 
-(is 1 (bubling.demo.b.c))
-(is 2 (bubling.demo.c.b))
+(is 1 (bubbling.demo.b.c))
+(is 2 (bubbling.demo.c.b))
 
 #+end_src
 
@@ -401,8 +401,8 @@ When a symbol cannot be resolved at the current level, it will be searched bubli
 The =:links= attribute let you define shorter accesses to other modules or members.
 When a non relative symbol cannot be resolved at the current location,
 its first segment will be searched in the current module links.
-If there is an existant link it will be substituted by it.
-If there is no link at the current level, we go up (bubling) and loop, until root.
+If there is an existent link it will be substituted by it.
+If there is no link at the current level, we go up (bubbling) and loop, until root.
 
 #+begin_src  clojure
 
@@ -412,7 +412,7 @@ If there is no link at the current level, we go up (bubling) and loop, until roo
      mod2
      {:links {m1 links.demo.mod1
               m1c links.demo.mod1.c
-              bub bubling.demo} ;; <- defined in previous section
+              bub bubbling.demo} ;; <- defined in previous section
       f
       (fn []
         ;; here m1.a will be substituted by links.demo.mod1.a
@@ -421,7 +421,7 @@ If there is no link at the current level, we go up (bubling) and loop, until roo
 
 (is (links.demo.mod2.f) 5)
 
-;; with this we can acheive some of the things we do with :require and :use in clojure ns's form
+;; with this we can achieve some of the things we do with :require and :use in clojure ns's form
 ;; it will not be oftenly used directly, but will be used under the hood by higher level macros...
 
 #+end_src
@@ -434,7 +434,7 @@ You can remove global environment's members with =E-=
 
 (E-
  foo bar baz my.module
- stats myval myvar rawvals relative-access bubling.demo links.demo)
+ stats myval myvar rawvals relative-access bubbling.demo links.demo)
 
 ;; it no longer exists
 (isnt (env.get @E 'relative-access))
@@ -509,13 +509,13 @@ We will see that in asparagus we avoid predicates (functions that returns boolea
 in favor of guards (functions that can return nil indicating failure, or data).
 For instance (pos? 1) may be more useful if it returns 1 in case of success and nil otherwise.
 This way it can be composed more easily I think.
-More on control flow, shortcircuiting and stuff later...
+More on control flow, short-circuiting and stuff later...
 
 ** Words
 
 *** Constructors 
 
-Symbols and keywords have their core/str(ish) construtors
+Symbols and keywords have their core/str(ish) constructors
 
 #+begin_src clojure 
 (is (sym "foo") 'foo)
@@ -601,7 +601,7 @@ On functions it do composition (left to right, not like core.comp do).
 #+end_src
 
 For lists it adds at the end (not like =core/conj= do)
-It is a choice that can be discutable, in my own pratice i'm not realying often on way that clojure lists implements conj
+It is a choice that can be discussed, in my own practice i'm not relying often on way that clojure lists implements conj
 =sip= being a generic operation (extendable by user types) we could add a datatype that conj elements at its head like clojure lists...
 
 #+begin_src clojure
@@ -756,10 +756,10 @@ Basic usage (nothing new)
 
 Binding symbols can be prepended by special character to indicate special behavior
 
-*** Shortcircuiting bindings
+*** Short-circuiting bindings
 
 If a binding symbol is prefixed by =?=,
-It has to bind to a non =nil= value else the whole =let= form is shortcircuited and return =nil=
+It has to bind to a non =nil= value else the whole =let= form is short-circuited and return =nil=
 
 #+begin_src clojure
 (isnt (let [?a nil ;; this binding fail, therefore the next line will never be evaluated
@@ -776,12 +776,12 @@ Binding symbol's prepended by =!= must bind to non =nil= value, else an error is
           (catch Exception _ :catched)))
 #+end_src
 
-Those three modes of binding (regular (non prefixed symbols), shortcircuited, strict) can be combined inside =let= forms.
+Those three modes of binding (regular (non prefixed symbols), short-circuited, strict) can be combined inside =let= forms.
 Resulting, I think, in much expressivity.
   
 ** Let variants
 
-*** =?let= (shortcircuiting let)
+*** =?let= (short-circuiting let)
 
 Is behaving like =let=, but the =?= prefix is implicit to all binding symbols.
 
@@ -826,7 +826,7 @@ Is like =?let= but with implicit prefix =!=, it support =?= and =_= prefixes
 
 *** =lut= (unified let)
 
-In a =lut=, all symbols that appears several times have to bind to the same value (equal values), otherwise it will shortcircuits.
+In a =lut=, all symbols that appears several times have to bind to the same value (equal values), otherwise it will short-circuit.
 
 #+begin_src clojure
 (is (lut [a 1 a (dec 2)] :success)
@@ -923,7 +923,7 @@ In clojure the rest pattern has to be the last binding, here we can bind the las
     [1 2])
 #+end_src
    
-In clojure the same is acheived like this (I don't really understand why).
+In clojure the same is achieved like this (I don't really understand why).
  
 #+begin_src clojure
 (c/let [{aval :a bval :b} {:a 1 :b 2 :c 3}] [aval bval])
@@ -977,7 +977,7 @@ In a =?let= form it shorts on =nil= keys.
           fullname))
 #+end_src
 
-=&= (parrallel bindings)
+=&= (parallel bindings)
 
 Several patterns can be bound to the same seed. 
 Something that i've sometimes missed in clojure (lightly).
@@ -1017,7 +1017,7 @@ Some others builtin bindings exists, see source.
 #+begin_src clojure
 ;; we can extend binding ops like this
 
-;; as an exemple we are redefining the '& operation
+;; as an example we are redefining the '& operation
 (E+ (bind.op+ ks [xs seed] ;; xs are the arguments passed to the operation, seed is the expr we are binding
               (bind (zipmap ($ xs keyword) xs) seed)))
 
@@ -1135,7 +1135,7 @@ Any value can be used in pattern position,
 
 ** =clet= (Cased Let) 
 
-=clet= is like a cascade of =?let= (shortcircuiting let) forms. 
+=clet= is like a cascade of =?let= (short-circuiting let) forms. 
 It can be be compared to =cond-let= but is more powerful.
 
 #+begin_src clojure
@@ -2256,7 +2256,7 @@ But you can use the =§= function to state that a leaf that is a map or a vec ha
 
 *** Composing data flow 
 
-with guards, shortcircuiting binding/lambda forms (?let, clet, cf, ?f...) , invocable datastructures, data functions, conditional functions (?c and ?c>), guard connectors (?< and ?>)
+with guards, short-circuiting binding/lambda forms (?let, clet, cf, ?f...) , invocable datastructures, data functions, conditional functions (?c and ?c>), guard connectors (?< and ?>)
 
 This example is really dummy but tries to show how those things can be used together...
 
@@ -2286,7 +2286,7 @@ This example is really dummy but tries to show how those things can be used toge
 
                                         ;p/prob
 
-     (?c_ (?f1 {:fail x}) (f_ (pp "fail: " _) _) ;; shortcircuiting lambdas can be useful in those contexts
+     (?c_ (?f1 {:fail x}) (f_ (pp "fail: " _) _) ;; short-circuiting lambdas can be useful in those contexts
           (?f1 {:zero-foo x}) (f_ (pp "zero-foo " _) _)
           (f_ (pp "num-foo " _) _))
 
@@ -2366,7 +2366,7 @@ Is somehow similar to clojure =quasiquote=, in the sense that it let you templat
 A word on qualified symbols: 
 
 When qualifying =+= we resolve it to =joining.+= (indicating that the =+= function lives in the =joining= module).
-The underscore prefix simply make explicit that it is an absolute path (preventing any relative or bubling resolution that could occur at a later stage).
+The underscore prefix simply make explicit that it is an absolute path (preventing any relative or bubbling resolution that could occur at a later stage).
 
 If a symbol is not resolvable it is left as is.
 #+begin_src clojure
