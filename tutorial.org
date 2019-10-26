@@ -94,6 +94,7 @@ In order to be able to evaluate the forms contained in this file,
 You should start a REPL and load =asparagus.core=.
 
 #+begin_src clojure
+(load-file "src/asparagus/core.clj")
 (in-ns 'asparagus.core)
 #+end_src
 
@@ -973,7 +974,7 @@ In a =?let= form it shorts on =nil= keys.
     (?let [(ks-or firstname "John"
                   lastname "Doe"
                   fullname (+ firstname " " lastname)) ;; <- here
-           {:name "Bob"}]
+           {:firstname "Bob"}]
           fullname))
 #+end_src
 
@@ -3087,4 +3088,5 @@ There is much things that are still to be done in order to make asparagus a usab
 - the port to clojurescript will not be trivial, because asparagus rely on eval (but bootstrapped clojurescript is here, so it should be possible)
 
 TODO
+
 
