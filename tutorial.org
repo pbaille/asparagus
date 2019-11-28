@@ -764,7 +764,7 @@ It has to bind to a non =nil= value else the whole =let= form is short-circuited
 
 #+begin_src clojure
 (isnt (let [?a nil ;; this binding fail, therefore the next line will never be evaluated
-               b (error "never evaluated")] 42))
+            b (error "never evaluated")] 42))
 #+end_src
 
 *** Strict bindings
@@ -873,7 +873,7 @@ This does not pass because the seed and the pattern have different length.
 
 #+begin_src clojure
 (isnt (let [[a b c] [1 2]] :ok)
-          (let [[a b] [1 2 3]] :ok))
+      (let [[a b] [1 2 3]] :ok))
 #+end_src
 
 Rest pattern:
@@ -1030,13 +1030,13 @@ Some others builtin bindings exists, see source.
 '(bind {:a 'a :b 'b} 'x) ;; we are using the map impl of bind
 ;; =>
 '[G__244129 x
-  G__244128 (do.guards.builtins.map? G__244129)
+  G__244128 (guards.builtins.map? G__244129)
   a (clojure.core/get G__244129 :a)
   b (clojure.core/get G__244129 :b)]
 
 ;; finally it is substituted in the original form
 '(let [G__244129 x
-       G__244128 (do.guards.builtins.map? G__244129)
+       G__244128 (guards.builtins.map? G__244129)
        a (clojure.core/get G__244129 :a)
        b (clojure.core/get G__244129 :b)]
    ...)
@@ -1094,7 +1094,7 @@ Disclaimer: someone that I trust has said to me that in the "data world" the con
 
 **** Type guards
 
-A sexpr starting with a type keyword (see asparagus.boot.types) indicates a type guard pattern
+A sexpr starting with a type keyword (see =asparagus.boot.types=) indicates a type guard pattern
 
 #+begin_src clojure
 (is [1 2 3]
@@ -1776,7 +1776,7 @@ Those three functions are generic and can be implemented for your types.
     (lst 0 3 6 9))
 #+end_src
 
-=car= and =cdr= compositions, like in scheme we have those little facilities, this is the main reason I chose =car=/=cdr= over =first=/=rest=.
+=car= and =cdr= compositions, like in scheme we have those little facilities, this is the main reason I chose =car= =cdr= over =first= =rest=.
 #+begin_src clojure
 (is :io
     (cadr [1 :io])

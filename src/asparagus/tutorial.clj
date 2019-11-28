@@ -650,7 +650,7 @@
       ; It has to bind to a non =nil= value else the whole =let= form is short-circuited and return =nil=
 
       (isnt (let [?a nil ;; this binding fail, therefore the next line will never be evaluated
-                     b (error "never evaluated")] 42))
+                  b (error "never evaluated")] 42))
 
 )
 
@@ -751,7 +751,7 @@
         ; This does not pass because the seed and the pattern have different length.
 
         (isnt (let [[a b c] [1 2]] :ok)
-                  (let [[a b] [1 2 3]] :ok))
+              (let [[a b] [1 2 3]] :ok))
 
         ; Rest pattern:
 
@@ -880,13 +880,13 @@
         '(bind {:a 'a :b 'b} 'x) ;; we are using the map impl of bind
         ;; =>
         '[G__244129 x
-          G__244128 (do.guards.builtins.map? G__244129)
+          G__244128 (guards.builtins.map? G__244129)
           a (clojure.core/get G__244129 :a)
           b (clojure.core/get G__244129 :b)]
 
         ;; finally it is substituted in the original form
         '(let [G__244129 x
-               G__244128 (do.guards.builtins.map? G__244129)
+               G__244128 (guards.builtins.map? G__244129)
                a (clojure.core/get G__244129 :a)
                b (clojure.core/get G__244129 :b)]
            ...)
@@ -943,7 +943,7 @@
 
       (do "Type guards"
 
-        ; A sexpr starting with a type keyword (see asparagus.boot.types) indicates a type guard pattern
+        ; A sexpr starting with a type keyword (see =asparagus.boot.types=) indicates a type guard pattern
 
         (is [1 2 3]
             (?let [(:vec v) [1 2 3]]
@@ -1545,7 +1545,7 @@
     (is (nths (range 10) 3)
         (lst 0 3 6 9))
 
-    ; =car= and =cdr= compositions, like in scheme we have those little facilities, this is the main reason I chose =car=/=cdr= over =first=/=rest=.
+    ; =car= and =cdr= compositions, like in scheme we have those little facilities, this is the main reason I chose =car= =cdr= over =first= =rest=.
     (is :io
         (cadr [1 :io])
         (caddr [1 2 :io])
